@@ -1,0 +1,76 @@
+// 桌宠默认配置（用户配置写到 ~/.dsh_pet_flutter/config.jsonc，整段覆盖对应字段）
+// 结构与上游 dsh-pet 的 config.jsonc 保持同一套语义：display = web/desktop/both/none。
+{
+  "pets": [
+    {
+      "id": "main",
+      "name": "蓝毛小女仆",
+      "size": 220,
+      "display": "desktop",
+      "whisperEnabled": true,
+      "workStatusEnabled": true
+    }
+  ],
+
+  // 内置 AI 对话/碎碎念：provider = none（关闭）/ openai（OpenAI 兼容）/ ollama。
+  // API Key 不写这里，设置页会写进系统安全存储（失败时回退到 0600 文件）。
+  "ai": {
+    "provider": "none",
+    "baseUrl": "https://api.openai.com/v1",
+    "model": "gpt-4o-mini",
+    "whisperIntervalSec": 300,
+    "memoryRounds": 8
+  },
+
+  // 物理参数：与上游 shared/physics.ts 的默认值一致，改这里即可调手感
+  "physics": {
+    "gravity": 1400,
+    "restitution": 0.78,
+    "groundFriction": 2.5,
+    "ceilingBounce": true,
+    "throwPower": 1.0,
+    // 松手速度超过该值（px/s）才甩出；低于它视为摆放并钉在原地
+    "throwThreshold": 500
+  },
+
+  "linkage": {
+    // 当前关联的 AI 软件：trae-cn / chatgpt / workbuddy / builtin
+    "active": "trae-cn",
+    // 是否允许读取前台窗口正文（需要系统“辅助功能”授权；读不到只降级，不阻塞）
+    "contentRead": false,
+    // 本地事件服务：Trae skill / petctl / 自动化脚本把状态与 thinking 推给桌宠
+    "eventServer": { "port": 7341 },
+    "adapters": {
+      "trae-cn": {
+        "displayName": "Trae CN",
+        "appName": "Trae",
+        "bundleId": "cn.trae.app",
+        "uriTemplate": "trae-cn://",
+        "delivery": "clipboard"
+      },
+      "chatgpt": {
+        "displayName": "ChatGPT",
+        "appName": "ChatGPT",
+        "bundleId": "com.openai.codex",
+        "uriTemplate": "codex://",
+        "delivery": "clipboard"
+      },
+      "workbuddy": {
+        "displayName": "WorkBuddy",
+        "appName": "WorkBuddy",
+        "bundleId": "",
+        "uriTemplate": "",
+        "delivery": "clipboard",
+        "endpoint": "",
+        "token": ""
+      },
+      "builtin": {
+        "displayName": "内置对话",
+        "appName": "",
+        "bundleId": "",
+        "uriTemplate": "",
+        "delivery": "clipboard"
+      }
+    }
+  }
+}

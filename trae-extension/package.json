@@ -1,0 +1,17 @@
+{
+  "name": "dsh-pet-bridge",
+  "displayName": "DSH Pet Bridge",
+  "description": "把桌面宠物 dsh_pet_flutter 的输入直接送进 Trae 对话（走 workbench.action.chat.open，不需要辅助功能授权）",
+  "version": "0.1.1",
+  "publisher": "dsh",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js"
+}

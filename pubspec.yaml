@@ -1,0 +1,36 @@
+name: dsh_pet_flutter
+description: "dsh-pet 的 Flutter 跨平台桌宠：透明置顶窗口 + 动画 + Trae CN / ChatGPT / WorkBuddy 联动。"
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # 配置与网络：联动层要用本地 HTTP/WS 端点与 SSE 客户端
+  http: ^1.2.0
+  path_provider: ^2.1.0
+  url_launcher: ^6.3.0
+  flutter_secure_storage: ^9.2.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/config.default.jsonc
+    - assets/animations/
+    - assets/memes/
+    - assets/pic/
+
+  fonts:
+    - family: ShangShouRuanTang
+      fonts:
+        - asset: assets/fonts/上首软糖体.ttf
