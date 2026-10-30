@@ -271,7 +271,7 @@ void main() {
     controller.dispose();
   });
 
-  testWidgets('回到初始位置会停到当前屏底部中央并触发 Q 弹', (tester) async {
+  testWidgets('回到初始位置会停到当前屏右下角并触发 Q 弹', (tester) async {
     final platform = _FakePlatform();
     final controller = _controller(platform);
     controller.onDragStart(controller.petRect.center);
@@ -280,8 +280,8 @@ void main() {
     expect(controller.petRect.top, lessThan(721));
 
     controller.resetPosition();
-    expect(controller.petRect.left, closeTo(646, 0.01));
-    expect(controller.petRect.top, closeTo(721.25, 0.01));
+    expect(controller.petRect.left, closeTo(1272, 0.01));
+    expect(controller.petRect.top, closeTo(701.25, 0.01));
     expect(controller.squash.value.dy, lessThan(1), reason: '重置也要有 Q 弹反馈');
     controller.dispose();
   });

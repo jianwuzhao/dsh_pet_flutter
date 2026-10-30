@@ -22,7 +22,7 @@ import 'behavior/roaming.dart';
 import 'hit_test.dart';
 import 'render/sprite_player.dart';
 
-enum PetPanel { menu, chat, settings, actions }
+enum PetPanel { menu, chat, settings }
 
 class BubbleState {
   const BubbleState({
@@ -62,8 +62,11 @@ class PetController {
   final PetPlatform platform;
   final Size petSize;
 
-  /// 上次退出时的落点（窗口本地坐标）；为 null 时出生在当前屏底部中央。
+  /// 上次退出时的落点（窗口本地坐标）；为 null 时出生在当前屏右下角。
   final Offset? initialPosition;
+
+  /// 默认摆放离屏幕右边/底边的留白：贴死边角在视觉上太挤，也容易压到 Dock。
+  static const double _defaultMargin = 20;
 
   /// 宠物左上角（窗口逻辑坐标）。
   final ValueNotifier<Offset> position;
@@ -269,7 +272,7 @@ class PetController {
     _viewport = size;
     _syncActiveScreenIndex();
     if (first) {
-      // 出生在主屏（原生侧保证 NSScreen.screens.first 是系统主屏）中央底部。
+      // 出生在主屏（原生侧保证 NSScreen.screens.first 是系统主屏）右下角。
       // 之前用 NSScreen.main，它会跟着“当前焦点窗口”漂移到外接屏，用户在主屏
       // 上就完全看不到宠物——这是“桌宠不显示”的根因之一。
       final screens = _screens;
@@ -278,10 +281,7 @@ class PetController {
           : _fallbackScreen;
       final saved = initialPosition;
       _body.position = saved == null
-          ? Offset(
-              home.left + (home.width - petSize.width) / 2,
-              home.bottom - petSize.height,
-            )
+          ? _homePosition(home)
           : _clampPlacement(saved, home);
       // 自由摆放：出生后也不被重力拉走；拖动会临时取消 pinned，松手再钉住。
       _body.pinned = true;
@@ -326,6 +326,20 @@ class PetController {
   void _clampDragBody() {
     _body.position = _clampPlacement(_body.position, _activeDomain);
     position.value = _body.position;
+  }
+
+  /// 默认落点：当前屏右下角，留 [_defaultMargin] 边距。
+  Offset _homePosition(Rect screen) {
+    final maxX = math.max(screen.left, screen.right - petSize.width);
+    final maxY = math.max(screen.top, screen.bottom - petSize.height);
+    return Offset(
+      (screen.right - petSize.width - _defaultMargin)
+          .clamp(screen.left, maxX)
+          .toDouble(),
+      (screen.bottom - petSize.height - _defaultMargin)
+          .clamp(screen.top, maxY)
+          .toDouble(),
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -809,17 +823,14 @@ class PetController {
     closePanel();
   }
 
-  /// 右键“回到初始位置”：回到当前屏幕底部中央，并清掉甩出/拖拽残留状态。
+  /// 右键“回到初始位置”：回到当前屏幕右下角，并清掉甩出/拖拽残留状态。
   void resetPosition() {
     final screen = activeScreen;
     _poseTimer?.cancel();
     _movePlan = null;
     _thrown = false;
     _dragDomain = null;
-    _body.position = Offset(
-      screen.left + (screen.width - petSize.width) / 2,
-      screen.bottom - petSize.height,
-    );
+    _body.position = _homePosition(screen);
     _body.pin();
     _wasOnGround = true;
     position.value = _body.position;
@@ -1027,6 +1038,7 @@ class PetController {
       'activeScreenIndex': _activeScreenIndex,
       'interactive': _interactive,
       'mode': _mode.name,
+      'animation': _currentAnimation,
       'panel': panel.value?.name,
       'squash': {'x': squash.value.dx, 'y': squash.value.dy},
     };

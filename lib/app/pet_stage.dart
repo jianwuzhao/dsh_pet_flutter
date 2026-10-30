@@ -13,7 +13,6 @@ import '../core/result.dart';
 import '../features/bubble/bubble_widget.dart';
 import '../features/chat/chat_panel.dart';
 import '../features/linkage/assistant_adapters.dart';
-import '../features/menu/action_picker.dart';
 import '../features/menu/pet_menu.dart';
 import '../features/pet/pet_controller.dart';
 import '../features/pet/render/pet_view.dart';
@@ -160,43 +159,21 @@ class _PetStageState extends State<PetStage> {
         if (controller.panel.value != PetPanel.menu) {
           return const SizedBox.shrink();
         }
-        final screen = controller.activeScreen;
-        final anchor = controller.menuAnchor ?? controller.petRect.center;
-        // 菜单打开期间整窗可交互，必须给一个“点空白处收起”的屏障，
-        // 否则那一下点击会被透明窗口吞掉，看起来像桌面被挡住。
-        return Stack(
-          children: [
-            Positioned.fill(
-              child: GestureDetector(
-                behavior: HitTestBehavior.opaque,
-                onTap: controller.closeMenu,
-              ),
-            ),
-            Positioned.fill(
-              child: CustomSingleChildLayout(
-                delegate: PetFlyoutLayout(
-                  screen: screen,
-                  pet: controller.petRect,
-                  anchor: anchor,
-                  placement: FlyoutPlacement.pointer,
-                  padding: 8,
-                  gap: 8,
-                ),
-                child: PetMenu(
-                  petName: controller.pet.name,
-                  activeName: widget.activeName,
-                  onChat: () => controller.openPanel(PetPanel.chat),
-                  onSettings: () => controller.openPanel(PetPanel.settings),
-                  onQuit: widget.onQuit,
-                  onActions: () => controller.openPanel(PetPanel.actions),
-                  onResetPosition: controller.resetPosition,
-                  onOpenApp: widget.onOpenApp,
-                  onReloadConfig: widget.onReloadConfig,
-                  onWhisper: widget.onWhisper,
-                ),
-              ),
-            ),
-          ],
+        // dsh-pet 模式：菜单自己负责根面板/级联子面板的定位与点外关闭。
+        return PetMenu(
+          screen: controller.activeScreen,
+          anchor: controller.menuAnchor ?? controller.petRect.center,
+          manifest: controller.manifest,
+          activeName: widget.activeName,
+          onChat: () => controller.openPanel(PetPanel.chat),
+          onSettings: () => controller.openPanel(PetPanel.settings),
+          onQuit: widget.onQuit,
+          onPlayAnimation: controller.playAnimation,
+          onClose: controller.closeMenu,
+          onResetPosition: controller.resetPosition,
+          onOpenApp: widget.onOpenApp,
+          onReloadConfig: widget.onReloadConfig,
+          onWhisper: widget.onWhisper,
         );
       },
     );
@@ -221,11 +198,6 @@ class _PetStageState extends State<PetStage> {
           PetPanel.settings => SettingsPage(
             config: widget.config,
             onSave: widget.onSaveConfig,
-            onClose: controller.closePanel,
-          ),
-          PetPanel.actions => ActionPicker(
-            manifest: controller.manifest,
-            onPick: controller.playAnimation,
             onClose: controller.closePanel,
           ),
           PetPanel.menu => const SizedBox.shrink(),
@@ -255,7 +227,7 @@ class _PetStageState extends State<PetStage> {
                   ),
                   // 对话页用自己的输入框 autofocus；设置页没有输入焦点，
                   // 这里补一个 Focus，Esc 才能从设置页冒泡到快捷键。
-                  child: panel == PetPanel.settings || panel == PetPanel.actions
+                  child: panel == PetPanel.settings
                       ? Focus(autofocus: true, child: content)
                       : content,
                 ),
