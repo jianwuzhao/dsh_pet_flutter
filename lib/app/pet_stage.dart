@@ -17,6 +17,7 @@ import '../features/menu/pet_menu.dart';
 import '../features/pet/pet_controller.dart';
 import '../features/pet/render/pet_view.dart';
 import '../features/settings/settings_page.dart';
+import '../persona/profile_store.dart';
 import '../platform/pet_platform.dart';
 import 'flyout_layout.dart';
 
@@ -26,8 +27,10 @@ class PetStage extends StatefulWidget {
     required this.controller,
     required this.activeName,
     required this.config,
+    required this.privacy,
     required this.onSend,
     required this.onSaveConfig,
+    required this.onCheckAccessibility,
     required this.onQuit,
     this.onOpenApp,
     this.onReloadConfig,
@@ -37,8 +40,19 @@ class PetStage extends StatefulWidget {
   final PetController controller;
   final String activeName;
   final AppConfig config;
+
+  /// 隐私四开关当前值：传给设置页当草稿初值。
+  final PrivacySettings privacy;
+
   final Future<Result<DispatchOutcome>> Function(String prompt) onSend;
-  final Future<Result<void>> Function(AppConfig config) onSaveConfig;
+
+  /// 保存时一并回写隐私四开关（配置与隐私档案分开落盘）。
+  final Future<Result<void>> Function(AppConfig config, PrivacySettings privacy)
+  onSaveConfig;
+
+  /// 辅助功能授权检测（含触发系统授权弹窗）。
+  final Future<bool> Function() onCheckAccessibility;
+
   final VoidCallback onQuit;
   final VoidCallback? onOpenApp;
   final VoidCallback? onReloadConfig;
@@ -220,7 +234,9 @@ class _PetStageState extends State<PetStage> {
           ),
           PetPanel.settings => SettingsPage(
             config: widget.config,
+            privacy: widget.privacy,
             onSave: widget.onSaveConfig,
+            onCheckAccessibility: widget.onCheckAccessibility,
             onClose: controller.closePanel,
           ),
           PetPanel.menu => const SizedBox.shrink(),

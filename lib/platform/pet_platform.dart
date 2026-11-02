@@ -285,4 +285,43 @@ class PetPlatform {
     if (!_native) return false;
     return await _input.invokeMethod<bool>('openUrl', {'url': url}) ?? false;
   }
+
+  // ---------------------------------------------------------------------------
+  // 全局快捷键：macOS Carbon RegisterEventHotKey，无需辅助功能授权。
+  // Windows 首期不实现，register 恒返回 false（设置页据此提示不支持）。
+  // ---------------------------------------------------------------------------
+
+  /// 热键回调通道：原生侧 invoke，这里只挂 handler（照托盘通道模式）。
+  static const MethodChannel _hotkey = MethodChannel('dsh_pet/hotkey');
+
+  /// 注册全局快捷键，combo 为归一组合串（如 `cmd+shift+p`）。
+  Future<bool> registerHotkey(String combo) async {
+    if (!Platform.isMacOS) return false;
+    try {
+      return await _input.invokeMethod<bool>('registerHotkey', {
+            'combo': combo,
+          }) ??
+          false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  Future<bool> unregisterHotkey() async {
+    if (!Platform.isMacOS) return false;
+    try {
+      return await _input.invokeMethod<bool>('unregisterHotkey') ?? false;
+    } on PlatformException {
+      return false;
+    }
+  }
+
+  /// 原生热键回调：按下时触发（幂等注册，重复调用只保留最后一个 handler）。
+  void listenHotkey(void Function() onPressed) {
+    if (!Platform.isMacOS) return;
+    _hotkey.setMethodCallHandler((call) async {
+      if (call.method == 'hotkeyPressed') onPressed();
+      return null;
+    });
+  }
 }

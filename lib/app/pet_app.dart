@@ -10,6 +10,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
+import '../ai/llm_router.dart';
+import '../ai/providers/ollama_provider.dart';
+import '../ai/providers/openai_provider.dart';
+import '../ai/providers/trae_bridge_provider.dart';
 import '../core/config/animation_manifest.dart';
 import '../core/config/app_config.dart';
 import '../core/paths/app_paths.dart';
@@ -24,6 +28,10 @@ import '../features/linkage/event_server.dart';
 import '../features/linkage/status/app_watch_source.dart';
 import '../features/linkage/status/assistant_event.dart';
 import '../features/pet/pet_controller.dart';
+import '../gateway/hotkey_source.dart';
+import '../gateway/interaction_gateway.dart';
+import '../gateway/privacy_center.dart';
+import '../persona/profile_store.dart';
 import '../platform/pet_platform.dart';
 import 'pet_stage.dart';
 
@@ -42,11 +50,16 @@ class _PetAppState extends State<PetApp> {
   PetController? _controller;
   StatusAggregator? _aggregator;
   PetEventServer? _server;
-  Dispatcher? _dispatcher;
   AppWatchSource? _watch;
   StreamSubscription<StatusSnapshot?>? _statusSubscription;
   String? _error;
   Timer? _positionSaveTimer;
+
+  /// 四层核心：隐私门禁、LLM 选路、统一输入网关、全局热键。
+  PrivacyCenter? _privacy;
+  LlmRouter? _router;
+  InteractionGateway? _gateway;
+  HotkeySource? _hotkey;
 
   /// Trae 扩展桥：事件服务与适配器注册表共用同一个实例。
   final BridgeHub _bridgeHub = BridgeHub();
@@ -78,6 +91,9 @@ class _PetAppState extends State<PetApp> {
     _positionSaveTimer?.cancel();
     _whisperTimer?.cancel();
     _ai?.dispose();
+    final router = _router;
+    if (router != null) _disposeRouter(router);
+    unawaited(_hotkey?.unregister());
     _statusSubscription?.cancel();
     _watch?.dispose();
     unawaited(_server?.stop());
@@ -112,8 +128,10 @@ class _PetAppState extends State<PetApp> {
       controller: controller,
       activeName: _activeName,
       config: config,
+      privacy: _privacy?.settings ?? const PrivacySettings(),
       onSend: _dispatch,
       onSaveConfig: _saveConfig,
+      onCheckAccessibility: _platform.requestAccessibility,
       onQuit: _platform.quit,
       onOpenApp: config.linkage.active == 'builtin'
           ? null
@@ -179,6 +197,12 @@ class _PetAppState extends State<PetApp> {
         registry: registry,
         activeId: config.linkage.active,
       );
+      final router = _buildRouter(config);
+      final gateway = InteractionGateway(dispatcher: dispatcher, router: router);
+      final privacy = PrivacyCenter(
+        legacyContentRead: config.linkage.contentRead,
+      );
+      final privacyLoad = privacy.load();
       final aggregator = StatusAggregator();
       final server = PetEventServer(
         port: config.linkage.port,
@@ -187,6 +211,7 @@ class _PetAppState extends State<PetApp> {
         hub: _bridgeHub,
         platform: _platform,
         petState: controller.state,
+        onChat: gateway.chat,
       );
       final statusSubscription = aggregator.changes.listen(
         controller.applyStatus,
@@ -197,8 +222,10 @@ class _PetAppState extends State<PetApp> {
         registry: registry,
         aggregator: aggregator,
         activeId: config.linkage.active,
-        contentRead: config.linkage.contentRead,
+        privacy: privacy,
       )..start();
+      final hotkey = _syncHotkey(config);
+      hotkey.listen(() => _onHotkeyPressed());
       controller.start();
       _platform.listenTray(_onTrayAction);
       _positionSaveTimer?.cancel();
@@ -213,23 +240,32 @@ class _PetAppState extends State<PetApp> {
         unawaited(server.stop());
         controller.dispose();
         aggregator.dispose();
+        _disposeRouter(router);
         return;
       }
 
       setState(() {
         _config = config;
         _controller = controller;
-        _dispatcher = dispatcher;
         _aggregator = aggregator;
         _server = server;
         _watch = watch;
         _statusSubscription = statusSubscription;
+        _privacy = privacy;
+        _router = router;
+        _gateway = gateway;
+        _hotkey = hotkey;
       });
 
       if (serverError != null) {
         // 服务起不来时宠物多半在屏上不可见处，气泡没人看见；日志必须留痕。
         debugPrint('[pet] $serverError');
         controller.showBubble(serverError);
+      }
+      if (privacyLoad is Failure<void>) {
+        // 隐私档案读不出来：继续用内存默认值，但不能让用户以为授权被记住了。
+        debugPrint('[pet] ${privacyLoad.reason}');
+        controller.showBubble('隐私授权档案读取失败：${privacyLoad.reason}');
       }
       _restartWhisper();
       Timer(const Duration(milliseconds: 900), () {
@@ -322,6 +358,12 @@ class _PetAppState extends State<PetApp> {
     _whisperTimer = null;
     _ai?.dispose();
     _ai = null;
+    if (_router != null) _disposeRouter(_router!);
+    _router = null;
+    _gateway = null;
+    unawaited(_hotkey?.unregister());
+    _hotkey = null;
+    _privacy = null;
     await _statusSubscription?.cancel();
     _statusSubscription = null;
     _watch?.dispose();
@@ -332,7 +374,6 @@ class _PetAppState extends State<PetApp> {
     _controller = null;
     _aggregator?.dispose();
     _aggregator = null;
-    _dispatcher = null;
     if (mounted) {
       setState(() => _config = null);
     }
@@ -363,11 +404,15 @@ class _PetAppState extends State<PetApp> {
   // 配置
   // ---------------------------------------------------------------------------
 
-  Future<Result<void>> _saveConfig(AppConfig config) async {
+  /// 设置页保存：配置落 config.jsonc，授权落 privacy.json（由隐私中心负责）。
+  Future<Result<void>> _saveConfig(
+    AppConfig config,
+    PrivacySettings privacy,
+  ) async {
     final result = await _repository.save(config);
     if (result is! Success<void>) return result;
 
-    _applyConfig(config);
+    _applyConfig(config, privacy);
     _controller?.closePanel();
     _controller?.showBubble(
       '已保存：关联 ${config.linkage.activeAdapter?.displayName ?? config.linkage.active}',
@@ -375,7 +420,7 @@ class _PetAppState extends State<PetApp> {
     return result;
   }
 
-  void _applyConfig(AppConfig config) {
+  void _applyConfig(AppConfig config, [PrivacySettings? privacyUpdate]) {
     final pet = config.desktopPet;
     final ai = AiService(config: config.ai, keyLoader: _keyStore.read);
     _ai?.dispose();
@@ -389,28 +434,114 @@ class _PetAppState extends State<PetApp> {
       memory: _memory,
       persona: pet == null ? '' : _personaFor(pet),
     );
+    final dispatcher = Dispatcher(
+      registry: registry,
+      activeId: config.linkage.active,
+    );
+    final oldRouter = _router;
+    final router = _buildRouter(config);
     setState(() {
       _config = config;
-      _dispatcher = Dispatcher(
-        registry: registry,
-        activeId: config.linkage.active,
-      );
+      _router = router;
+      final gateway = _gateway;
+      if (gateway != null) {
+        gateway.dispatcher = dispatcher;
+        gateway.router = router;
+      }
     });
+    if (oldRouter != null && !identical(oldRouter, router)) {
+      _disposeRouter(oldRouter);
+    }
+    unawaited(_hotkey?.register(config.gateway.hotkey));
     _restartWhisper();
+
+    if (privacyUpdate != null) _applyPrivacy(privacyUpdate);
 
     final aggregator = _aggregator;
     if (aggregator == null) return;
     aggregator.clear(StatusSourceKind.watch);
-    if (!config.linkage.contentRead) aggregator.clear(StatusSourceKind.content);
 
     _watch?.dispose();
+    final privacy = _privacy;
+    if (privacy == null) return;
     _watch = AppWatchSource(
       platform: _platform,
       registry: registry,
       aggregator: aggregator,
       activeId: config.linkage.active,
-      contentRead: config.linkage.contentRead,
+      privacy: privacy,
     )..start();
+  }
+
+  /// 授权变更：只有写盘成功才改内存门禁，并回收被关掉能力已发布的状态。
+  void _applyPrivacy(PrivacySettings update) {
+    final privacy = _privacy;
+    if (privacy == null) return;
+    final result = privacy.update(update);
+    if (result is Failure<void>) {
+      debugPrint('[pet] 隐私授权保存失败：${result.reason}');
+      _controller?.showBubble('隐私授权保存失败：${result.reason}');
+      return;
+    }
+    final aggregator = _aggregator;
+    if (aggregator == null) return;
+    if (!privacy.settings.appWatch) aggregator.clear(StatusSourceKind.watch);
+    if (!privacy.settings.screenAwareness) {
+      aggregator.clear(StatusSourceKind.content);
+    }
+  }
+
+  /// 装配 LLM 路由：openai / ollama 共用扁平 ai 配置段的 baseUrl/model
+  ///（provider 决定谁是 active，另一路 isReady 不过自然沉到降级链后面）；
+  /// trae 桥永远在，兜底转发到关联软件。
+  LlmRouter _buildRouter(AppConfig config) {
+    return LlmRouter(
+      providers: [
+        OpenAiProvider(
+          baseUrl: config.ai.baseUrl,
+          model: config.ai.model,
+          keyLoader: _keyStore.read,
+        ),
+        OllamaProvider(baseUrl: config.ai.baseUrl, model: config.ai.model),
+        TraeBridgeProvider(
+          send: (prompt) {
+            final gateway = _gateway;
+            if (gateway == null) {
+              return Future.value(
+                const Failure('dispatch.not-ready', '联动通道还没准备好'),
+              );
+            }
+            return gateway.dispatcher.send(prompt);
+          },
+        ),
+      ],
+      activeId: config.ai.provider,
+    );
+  }
+
+  /// 路由整体替换后，旧 provider 里自建的 http client 必须显式关掉。
+  void _disposeRouter(LlmRouter router) {
+    for (final provider in router.providers) {
+      if (provider is OpenAiProvider) provider.dispose();
+      if (provider is OllamaProvider) provider.dispose();
+    }
+  }
+
+  /// 热键同步：注册失败只留日志——唤起入口缺位不该打断启动。
+  HotkeySource _syncHotkey(AppConfig config) {
+    final hotkey = _hotkey ?? HotkeySource();
+    unawaited(
+      hotkey.register(config.gateway.hotkey).then((result) {
+        if (result is Failure<bool>) {
+          debugPrint('[pet] 热键注册失败（${config.gateway.hotkey}）：${result.reason}');
+        }
+      }),
+    );
+    return hotkey;
+  }
+
+  void _onHotkeyPressed() {
+    _controller?.openPanel(PetPanel.chat);
   }
 
   // ---------------------------------------------------------------------------
@@ -559,13 +690,16 @@ class _PetAppState extends State<PetApp> {
     if (event.isTerminal) _thinkingBuffer = '';
   }
 
-  /// 面板与本地事件服务共用的投递入口。
-  Future<Result<DispatchOutcome>> _dispatch(String prompt) async {
-    final dispatcher = _dispatcher;
-    if (dispatcher == null) {
+  /// 面板与本地事件服务共用的投递入口：统一走交互网关。
+  Future<Result<DispatchOutcome>> _dispatch(
+    String prompt, [
+    InputSource source = InputSource.panel,
+  ]) async {
+    final gateway = _gateway;
+    if (gateway == null) {
       return const Failure('dispatch.not-ready', '联动通道还没准备好');
     }
-    final result = await dispatcher.send(prompt);
+    final result = await gateway.submit(prompt, source);
     final controller = _controller;
     if (!mounted || !identical(_controller, controller)) return result;
     switch (result) {
@@ -585,7 +719,7 @@ class _PetAppState extends State<PetApp> {
 
   /// 事件服务的 /dispatch 只返回原因串（空串表示成功）。
   Future<String> _dispatchFromServer(String prompt) async {
-    final result = await _dispatch(prompt);
+    final result = await _dispatch(prompt, InputSource.eventServer);
     return switch (result) {
       Success(value: final outcome) => outcome.ok ? '' : outcome.reason,
       Failure(reason: final reason) => reason,

@@ -12,6 +12,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 
 import '../../../core/paths/app_paths.dart';
+import '../../../gateway/interaction_gateway.dart';
 import '../../../platform/pet_platform.dart';
 import 'bridge_hub.dart';
 import 'status/assistant_event.dart';
@@ -24,11 +25,15 @@ class PetEventServer {
     required this.hub,
     required this.platform,
     this.petState,
+    this.onChat,
   });
 
   final int port;
   final void Function(AssistantEvent event) onEvent;
   final Future<String> Function(String prompt) onDispatch;
+
+  /// `/v2/chat`：走网关 router 直连能回复的提供者，拿结构化回复。
+  final Future<GatewayChatReply> Function(String text)? onChat;
 
   /// Trae 扩展桥：轮询取消息 + 回执。
   final BridgeHub hub;
@@ -124,6 +129,16 @@ class PetEventServer {
           return;
         }
         await _handleDispatch(request);
+        return;
+      case '/v2/chat':
+        if (request.method != 'POST') {
+          _json(request.response, {
+            'ok': false,
+            'reason': '只接受 POST',
+          }, status: 405);
+          return;
+        }
+        await _handleChat(request);
         return;
       case '/bridge/pending':
         // Trae 扩展轮询待发消息；GET 才合理，其余按 405 处理。
@@ -289,6 +304,45 @@ class PetEventServer {
       return;
     }
     _json(request.response, {'ok': reason.isEmpty, 'reason': reason});
+  }
+
+  Future<void> _handleChat(HttpRequest request) async {
+    final handler = onChat;
+    if (handler == null) {
+      _json(request.response, {
+        'ok': false,
+        'reason': '网关未接入会话能力',
+      }, status: 503);
+      return;
+    }
+    final body = await utf8.decoder.bind(request).join();
+    String? text;
+    try {
+      final decoded = jsonDecode(body);
+      text = decoded is Map ? decoded['text'] as String? : null;
+    } on FormatException {
+      text = null;
+    }
+    if (text == null || text.trim().isEmpty) {
+      _json(request.response, {'ok': false, 'reason': '缺少 text'}, status: 400);
+      return;
+    }
+    try {
+      final reply = await handler(text);
+      _json(request.response, {
+        'ok': reply.ok,
+        'reply': reply.reply,
+        'reason': reply.reason,
+        'degraded': reply.degraded,
+      });
+    } on Object catch (error) {
+      _json(request.response, {
+        'ok': false,
+        'reason': '对话异常：$error',
+        'reply': '',
+        'degraded': false,
+      }, status: 500);
+    }
   }
 
   Future<void> _handleBridgeAck(HttpRequest request) async {

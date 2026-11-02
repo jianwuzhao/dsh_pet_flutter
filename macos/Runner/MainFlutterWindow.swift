@@ -1,3 +1,4 @@
+import Carbon.HIToolbox
 import Cocoa
 import FlutterMacOS
 import UserNotifications
@@ -321,6 +322,121 @@ final class PetTray: NSObject, NSMenuDelegate {
   }
 }
 
+/// 全局快捷键：Carbon RegisterEventHotKey 注册，无需辅助功能授权。
+/// 组合串在 Dart 侧已归一（cmd/ctrl/alt/shift + 主键），这里只解析键码并转发。
+final class PetHotkey {
+  /// 'PETH'——注册时的签名常量，回调里靠它确认事件归属。
+  private static let signature: OSType = 0x50455448
+  private static let hotKeyId: UInt32 = 1
+
+  private let channel: FlutterMethodChannel
+  private var hotKeyRef: EventHotKeyRef?
+  private var handlerRef: EventHandlerRef?
+
+  init(messenger: FlutterBinaryMessenger) {
+    self.channel = FlutterMethodChannel(
+      name: "dsh_pet/hotkey", binaryMessenger: messenger)
+  }
+
+  /// 注册（先注销旧的）。解析失败或系统占用时返回 false，原因见控制台日志。
+  @discardableResult
+  func register(combo: String) -> Bool {
+    unregister()
+    guard let (keyCode, modifiers) = PetHotkey.parse(combo) else {
+      NSLog("[pet] 热键组合无法解析：\(combo)")
+      return false
+    }
+    var ref: EventHotKeyRef?
+    let status = RegisterEventHotKey(
+      keyCode, modifiers,
+      EventHotKeyID(signature: PetHotkey.signature, id: PetHotkey.hotKeyId),
+      GetApplicationEventTarget(), 0, &ref)
+    guard status == noErr, let ref else {
+      NSLog("[pet] RegisterEventHotKey 失败 status=\(status) combo=\(combo)")
+      return false
+    }
+    hotKeyRef = ref
+
+    // @convention(c) 回调不能捕获上下文：self 通过 userData 传进去。
+    let userData = Unmanaged<PetHotkey>.passUnretained(self).toOpaque()
+    var eventType = EventTypeSpec(
+      eventClass: OSType(kEventClassKeyboard),
+      eventKind: UInt32(kEventHotKeyPressed))
+    var handler: EventHandlerRef?
+    let installStatus = InstallEventHandler(
+      GetApplicationEventTarget(),
+      { _, event, userData in
+        guard let event, let userData else { return noErr }
+        let hotkey = Unmanaged<PetHotkey>.fromOpaque(userData).takeUnretainedValue()
+        var id = EventHotKeyID()
+        let got = GetEventParameter(
+          event,
+          UInt32(kEventParamDirectObject),
+          UInt32(typeEventHotKeyID),
+          nil,
+          MemoryLayout<EventHotKeyID>.size,
+          nil,
+          &id)
+        guard got == noErr, id.id == PetHotkey.hotKeyId else { return noErr }
+        hotkey.channel.invokeMethod("hotkeyPressed", arguments: nil)
+        return noErr
+      },
+      1, &eventType, userData, &handler)
+    guard installStatus == noErr, let handler else {
+      NSLog("[pet] InstallEventHandler 失败 status=\(installStatus)")
+      UnregisterEventHotKey(ref)
+      hotKeyRef = nil
+      return false
+    }
+    handlerRef = handler
+    NSLog("[pet] 全局快捷键已注册：\(combo)")
+    return true
+  }
+
+  func unregister() {
+    if let handlerRef {
+      RemoveEventHandler(handlerRef)
+      self.handlerRef = nil
+    }
+    if let hotKeyRef {
+      UnregisterEventHotKey(hotKeyRef)
+      self.hotKeyRef = nil
+    }
+  }
+
+  /// 归一组合串 → (键码, Carbon 修饰键掩码)。键码为英文键盘布局的 Carbon 虚拟键。
+  private static func parse(_ combo: String) -> (keyCode: UInt32, modifiers: UInt32)? {
+    var modifiers: UInt32 = 0
+    var keyCode: UInt32?
+    for part in combo.split(separator: "+") {
+      switch part {
+      case "cmd": modifiers |= UInt32(cmdKey)
+      case "ctrl": modifiers |= UInt32(controlKey)
+      case "alt": modifiers |= UInt32(optionKey)
+      case "shift": modifiers |= UInt32(shiftKey)
+      default:
+        guard keyCode == nil, let code = keyCodeTable[String(part)] else { return nil }
+        keyCode = code
+      }
+    }
+    guard let keyCode else { return nil }
+    return (keyCode, modifiers)
+  }
+
+  private static let keyCodeTable: [String: UInt32] = [
+    "a": 0, "s": 1, "d": 2, "f": 3, "h": 4, "g": 5, "z": 6, "x": 7,
+    "c": 8, "v": 9, "b": 11, "q": 12, "w": 13, "e": 14, "r": 15, "y": 16,
+    "t": 17, "1": 18, "2": 19, "3": 20, "4": 21, "6": 22, "5": 23, "9": 25,
+    "7": 26, "8": 28, "0": 29, "o": 31, "u": 32, "i": 34, "p": 35, "l": 37,
+    "j": 38, "k": 40, "n": 45, "m": 46,
+    "return": 36, "tab": 48, "space": 49, "delete": 51, "escape": 53,
+    "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97,
+    "f7": 98, "f8": 100, "f9": 101, "f10": 109, "f11": 103, "f12": 111,
+    "f13": 105, "f14": 107, "f15": 113, "f16": 106, "f17": 64, "f18": 79,
+    "f19": 80,
+  ]
+}
+
 /// macOS 原生能力桥：窗口穿透、全局光标、前台应用、窗口正文读取、按键注入。
 ///
 /// 为什么全部放在一个文件：这些能力共享同一套授权前提（辅助功能）与同一个窗口对象，
@@ -340,6 +456,7 @@ final class PetBridge {
   private var frameWatchTimer: Timer?
   private var lastCursor: NSPoint = NSPoint(x: -1, y: -1)
   private var lastMouseDown = false
+  private var hotkey: PetHotkey?
 
   init(window: NSWindow, messenger: FlutterBinaryMessenger, focusHandler: @escaping (Bool) -> Void) {
     self.window = window
@@ -657,6 +774,22 @@ final class PetBridge {
           return
         }
         result(NSWorkspace.shared.open(url))
+      case "registerHotkey":
+        // 全局快捷键走 Carbon RegisterEventHotKey，不需要任何系统授权。
+        // 同一时间只保留一个热键：换组合前先注销旧的。
+        guard let args = call.arguments as? [String: Any],
+          let combo = args["combo"] as? String
+        else {
+          result(FlutterError(code: "hotkey.bad-args", message: "缺少 combo", details: nil))
+          return
+        }
+        if self.hotkey == nil {
+          self.hotkey = PetHotkey(messenger: self.messenger)
+        }
+        result(self.hotkey?.register(combo: combo) ?? false)
+      case "unregisterHotkey":
+        self.hotkey?.unregister()
+        result(true)
       default:
         result(FlutterMethodNotImplemented)
       }

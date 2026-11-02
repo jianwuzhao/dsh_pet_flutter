@@ -248,6 +248,9 @@ class ProfileStore {
   Result<PrivacySettings> loadPrivacy() =>
       _load('privacy.json', PrivacySettings.fromJson);
 
+  /// privacy.json 是否已存在：权限中心用它判断“首次启动迁移”还是“读取”。
+  bool get hasPrivacy => _file('privacy.json').existsSync();
+
   Result<void> savePersonaDna(PersonaDna value) =>
       _save('persona_dna.json', value.toJson());
 

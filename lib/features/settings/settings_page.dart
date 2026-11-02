@@ -1,42 +1,69 @@
-/// 设置：关联软件的切换/投递参数 + 内置 AI 对话与碎碎念。
+/// 设置：Tab 容器（联动 / 大脑 / 隐私）。
 ///
-/// 只暴露真正影响行为的字段；API Key 不写进 jsonc，保存时进系统安全存储
-/// （Keychain 不可用时回退 0600 文件）。面板可滚动，避免小屏上保存按钮被顶出屏。
+/// 草稿状态集中在这一页的 State 里，三个分区无状态只做展示；
+/// 保存时统一做热键校验、组装 AppConfig + PrivacySettings 并落盘。
+/// API Key 不写进 jsonc，保存时进系统安全存储（不可用时回退 0600 文件）。
 library;
 
 import 'package:flutter/material.dart';
 
+import '../../ai/llm_provider.dart';
+import '../../ai/providers/ollama_provider.dart';
+import '../../ai/providers/openai_provider.dart';
 import '../../core/config/ai_config.dart';
 import '../../core/config/app_config.dart';
 import '../../core/result.dart';
+import '../../gateway/hotkey_source.dart';
+import '../../persona/profile_store.dart';
 import '../ai/secret_store.dart';
+import 'sections/brain_section.dart';
+import 'sections/linkage_section.dart';
+import 'sections/privacy_section.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({
     super.key,
     required this.config,
+    required this.privacy,
     required this.onSave,
+    required this.onCheckAccessibility,
     required this.onClose,
   });
 
   final AppConfig config;
-  final Future<Result<void>> Function(AppConfig config) onSave;
+
+  /// 隐私四开关的当前值（来自隐私权限中心，保存时整体回写）。
+  final PrivacySettings privacy;
+
+  final Future<Result<void>> Function(
+    AppConfig config,
+    PrivacySettings privacy,
+  ) onSave;
+
+  /// 辅助功能授权检测（含触发系统授权弹窗），由装配层接平台实现。
+  final Future<bool> Function() onCheckAccessibility;
+
   final VoidCallback onClose;
 
   @override
   State<SettingsPage> createState() => _SettingsPageState();
 }
 
-class _SettingsPageState extends State<SettingsPage> {
+class _SettingsPageState extends State<SettingsPage>
+    with SingleTickerProviderStateMixin {
+  late final TabController _tabs = TabController(length: 3, vsync: this);
+
   late String _active =
       widget.config.linkage.activeAdapter?.id ??
       widget.config.linkage.adapters.keys.firstOrNull ??
       '';
-  late bool _contentRead = widget.config.linkage.contentRead;
   late final TextEditingController _bundleId;
   late final TextEditingController _uriTemplate;
   late final TextEditingController _endpoint;
   DeliveryMode _delivery = DeliveryMode.clipboard;
+  late final TextEditingController _hotkey = TextEditingController(
+    text: widget.config.gateway.hotkey,
+  );
 
   late String _aiProvider = widget.config.ai.provider;
   late final TextEditingController _aiBase;
@@ -44,6 +71,13 @@ class _SettingsPageState extends State<SettingsPage> {
   late final TextEditingController _aiKey;
   late final TextEditingController _aiInterval;
   bool _aiKeyLoaded = false;
+
+  late PrivacySettings _privacy = widget.privacy;
+  bool _accessChecking = false;
+  String _accessResult = '';
+
+  bool _aiTesting = false;
+  String _aiTestResult = '';
 
   final AiKeyStore _keyStore = AiKeyStore();
   bool _busy = false;
@@ -54,6 +88,7 @@ class _SettingsPageState extends State<SettingsPage> {
   @override
   void initState() {
     super.initState();
+    _tabs.addListener(_onTabChanged);
     _bundleId = TextEditingController();
     _uriTemplate = TextEditingController();
     _endpoint = TextEditingController();
@@ -69,15 +104,21 @@ class _SettingsPageState extends State<SettingsPage> {
 
   @override
   void dispose() {
+    _tabs.removeListener(_onTabChanged);
+    _tabs.dispose();
     _bundleId.dispose();
     _uriTemplate.dispose();
     _endpoint.dispose();
+    _hotkey.dispose();
     _aiBase.dispose();
     _aiModel.dispose();
     _aiKey.dispose();
     _aiInterval.dispose();
     super.dispose();
   }
+
+  /// IndexedStack 跟随 TabController 需要 rebuild，这里补一次 setState。
+  void _onTabChanged() => setState(() {});
 
   Future<void> _loadKey() async {
     final key = await _keyStore.read();
@@ -96,9 +137,24 @@ class _SettingsPageState extends State<SettingsPage> {
     _delivery = adapter?.delivery ?? DeliveryMode.clipboard;
   }
 
+  // ---------------------------------------------------------------------------
+  // 保存：校验热键 → 组装 AppConfig（含 gateway 与旧 contentRead 同步）+ 隐私
+  // ---------------------------------------------------------------------------
+
   Future<void> _save() async {
     final adapter = _adapter;
     if (adapter == null || _busy) return;
+
+    // 热键留空视为回到默认，非法组合直接拦下（注册不会生效，别让它存进配置）。
+    final hotkeyText = _hotkey.text.trim();
+    final combo = hotkeyText.isEmpty
+        ? GatewayConfig.defaultHotkey
+        : switch (HotkeySpec.parse(hotkeyText)) {
+            Success(value: final spec) => spec.combo,
+            Failure(reason: final reason) => _reject('快捷键无效：$reason'),
+          };
+    if (combo == null) return;
+
     setState(() {
       _busy = true;
       _hint = '';
@@ -121,7 +177,8 @@ class _SettingsPageState extends State<SettingsPage> {
         active: _active,
         adapters: adapters,
         port: widget.config.linkage.port,
-        contentRead: _contentRead,
+        // 旧字段跟随隐私开关同步写，外部脚本读 config 仍能看到正文读取授权。
+        contentRead: _privacy.screenAwareness,
       ),
       ai: AiConfig(
         provider: _aiProvider,
@@ -131,13 +188,14 @@ class _SettingsPageState extends State<SettingsPage> {
             .clamp(0, 86400),
         memoryRounds: widget.config.ai.memoryRounds,
       ),
+      gateway: GatewayConfig(hotkey: combo),
     );
 
     // Key 不跟随配置写盘；读取完成前保存不碰 key，避免把已存的 key 清空。
     if (_aiKeyLoaded) {
       await _keyStore.write(_aiKey.text.trim());
     }
-    final result = await widget.onSave(updated);
+    final result = await widget.onSave(updated, _privacy);
     if (!mounted) return;
     setState(() {
       _busy = false;
@@ -147,6 +205,91 @@ class _SettingsPageState extends State<SettingsPage> {
       };
     });
   }
+
+  /// 校验不过：提示原因并保持未保存状态（返回 null 让调用方停下）。
+  String? _reject(String message) {
+    setState(() => _hint = message);
+    return null;
+  }
+
+  // ---------------------------------------------------------------------------
+  // 大脑连通性测试：用草稿值现场建 provider 发一条 ping，测完立即释放
+  // ---------------------------------------------------------------------------
+
+  Future<void> _testAi() async {
+    if (_aiTesting) return;
+    setState(() {
+      _aiTesting = true;
+      _aiTestResult = '测试中…';
+    });
+    final LlmProvider? provider = switch (_aiProvider) {
+      'openai' => OpenAiProvider(
+        baseUrl: _aiBase.text.trim(),
+        model: _aiModel.text.trim(),
+        // 用输入框里的草稿 key，用户可能还没点保存。
+        keyLoader: () async => _aiKey.text.trim(),
+      ),
+      'ollama' => OllamaProvider(
+        baseUrl: _aiBase.text.trim(),
+        model: _aiModel.text.trim(),
+      ),
+      _ => null,
+    };
+    if (provider == null) {
+      setState(() {
+        _aiTesting = false;
+        _aiTestResult = '当前提供者（关闭/转发）不需要测试';
+      });
+      return;
+    }
+    if (!await provider.isReady) {
+      _disposeTestProvider(provider);
+      setState(() {
+        _aiTesting = false;
+        _aiTestResult = '参数不完整：Base URL / 模型 / API Key 都要有值';
+      });
+      return;
+    }
+    final reply = await provider.chat(
+      const LlmRequest(messages: [LlmMessage.user('ping，请只回复 pong')]),
+    );
+    _disposeTestProvider(provider);
+    if (!mounted) return;
+    setState(() {
+      _aiTesting = false;
+      _aiTestResult = switch (reply) {
+        Success(value: final value) =>
+          '连通正常：${value.content.isEmpty ? '(空回复)' : value.content}',
+        Failure(reason: final reason) => reason,
+      };
+    });
+  }
+
+  /// 现场建的 provider 自建了 http client，测完必须显式释放。
+  void _disposeTestProvider(LlmProvider provider) {
+    if (provider is OpenAiProvider) provider.dispose();
+    if (provider is OllamaProvider) provider.dispose();
+  }
+
+  Future<void> _checkAccessibility() async {
+    if (_accessChecking) return;
+    setState(() {
+      _accessChecking = true;
+      _accessResult = '检测中…';
+    });
+    final trusted = await widget.onCheckAccessibility();
+    if (!mounted) return;
+    setState(() {
+      _accessChecking = false;
+      _accessResult = trusted
+          ? '已授权'
+          : '未授权：请在 系统设置 › 隐私与安全性 › 辅助功能 勾选本应用';
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // UI 布局
+  // ---------------------------------------------------------------------------
 
   @override
   Widget build(BuildContext context) {
@@ -170,230 +313,110 @@ class _SettingsPageState extends State<SettingsPage> {
       ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxHeight: 620),
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  const Expanded(
-                    child: Text(
-                      '联动与内置对话',
-                      style: TextStyle(
-                        color: Color(0xF2FFFFFF),
-                        fontSize: 15,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                  IconButton(
-                    onPressed: widget.onClose,
-                    icon: const Icon(
-                      Icons.close,
-                      size: 18,
-                      color: Color(0xB3FFFFFF),
-                    ),
-                    tooltip: '关闭',
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              _label('当前关联'),
-              DropdownButton<String>(
-                value: _active.isEmpty ? null : _active,
-                isExpanded: true,
-                dropdownColor: const Color(0xFF26262C),
-                style: const TextStyle(color: Colors.white, fontSize: 13),
-                items: [
-                  for (final adapter in adapters)
-                    DropdownMenuItem(
-                      value: adapter.id,
-                      child: Text(adapter.displayName),
-                    ),
-                ],
-                onChanged: (value) {
-                  if (value == null) return;
-                  setState(() {
-                    _active = value;
-                    _syncFields();
-                  });
-                },
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                value: _contentRead,
-                onChanged: (value) => setState(() => _contentRead = value),
-                title: const Text(
-                  '读取前台窗口标题/正文（需辅助功能授权）',
-                  style: TextStyle(color: Color(0xCCFFFFFF), fontSize: 12),
-                ),
-              ),
-              _label('Bundle ID'),
-              _field(_bundleId, '例如 cn.trae.app'),
-              _label('唤起深链（{prompt} 会被替换）'),
-              _field(_uriTemplate, '例如 trae-cn://'),
-              _label('投递模式'),
-              DropdownButton<DeliveryMode>(
-                value: _delivery,
-                isExpanded: true,
-                dropdownColor: const Color(0xFF26262C),
-                style: const TextStyle(color: Colors.white, fontSize: 13),
-                items: const [
-                  DropdownMenuItem(
-                    value: DeliveryMode.clipboard,
-                    child: Text('剪贴板 + 激活 + 回车'),
-                  ),
-                  DropdownMenuItem(
-                    value: DeliveryMode.uri,
-                    child: Text('深链唤起'),
-                  ),
-                  DropdownMenuItem(
-                    value: DeliveryMode.http,
-                    child: Text('HTTP 端点'),
-                  ),
-                  DropdownMenuItem(
-                    value: DeliveryMode.ws,
-                    child: Text('WebSocket 端点'),
-                  ),
-                ],
-                onChanged: (value) {
-                  if (value == null) return;
-                  setState(() => _delivery = value);
-                },
-              ),
-              if (_delivery == DeliveryMode.http ||
-                  _delivery == DeliveryMode.ws) ...[
-                _label('端点地址'),
-                _field(_endpoint, '例如 http://127.0.0.1:9000/prompt'),
-              ],
-              const _SectionDivider(title: '内置 AI（对话与碎碎念）'),
-              _label('提供者'),
-              DropdownButton<String>(
-                value: _aiProvider,
-                isExpanded: true,
-                dropdownColor: const Color(0xFF26262C),
-                style: const TextStyle(color: Colors.white, fontSize: 13),
-                items: const [
-                  DropdownMenuItem(value: 'none', child: Text('关闭')),
-                  DropdownMenuItem(value: 'openai', child: Text('OpenAI 兼容接口')),
-                  DropdownMenuItem(value: 'ollama', child: Text('本地 Ollama')),
-                ],
-                onChanged: (value) {
-                  if (value == null) return;
-                  setState(() => _aiProvider = value);
-                },
-              ),
-              _label('Base URL'),
-              _field(_aiBase, '例如 https://api.openai.com/v1'),
-              _label('模型'),
-              _field(_aiModel, '例如 gpt-4o-mini / qwen2.5'),
-              if (_aiProvider == 'openai') ...[
-                _label('API Key（保存在系统安全存储）'),
-                TextField(
-                  controller: _aiKey,
-                  obscureText: true,
-                  style: const TextStyle(color: Colors.white, fontSize: 13),
-                  decoration: InputDecoration(
-                    hintText: _aiKeyLoaded ? '留空表示清除已保存的 key' : '读取中…',
-                    hintStyle: const TextStyle(
-                      color: Color(0x59FFFFFF),
-                      fontSize: 12,
-                    ),
-                    filled: true,
-                    fillColor: const Color(0x1AFFFFFF),
-                    isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 10,
-                    ),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      borderSide: BorderSide.none,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Expanded(
+                  child: Text(
+                    '设置',
+                    style: TextStyle(
+                      color: Color(0xF2FFFFFF),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
                 ),
+                IconButton(
+                  onPressed: widget.onClose,
+                  icon: const Icon(
+                    Icons.close,
+                    size: 18,
+                    color: Color(0xB3FFFFFF),
+                  ),
+                  tooltip: '关闭',
+                ),
               ],
-              _label('自动碎碎念间隔（秒，0 = 只手动）'),
-              _field(_aiInterval, '例如 300'),
-              const SizedBox(height: 6),
-              const Text(
-                '选择“内置对话”后，聊天面板会显示 AI 回复；碎碎念可从右键菜单“让它说句话”立即触发。',
-                style: TextStyle(color: Color(0x66FFFFFF), fontSize: 10.5),
-              ),
-              const SizedBox(height: 14),
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      _hint,
-                      style: const TextStyle(
-                        color: Color(0xB3FFFFFF),
-                        fontSize: 11,
-                      ),
-                    ),
-                  ),
-                  FilledButton(
-                    onPressed: _busy ? null : _save,
-                    child: Text(_busy ? '保存中…' : '保存'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _label(String text) => Padding(
-    padding: const EdgeInsets.only(top: 10, bottom: 4),
-    child: Text(
-      text,
-      style: const TextStyle(color: Color(0x99FFFFFF), fontSize: 11),
-    ),
-  );
-
-  Widget _field(TextEditingController controller, String hint) => TextField(
-    controller: controller,
-    style: const TextStyle(color: Colors.white, fontSize: 13),
-    decoration: InputDecoration(
-      hintText: hint,
-      hintStyle: const TextStyle(color: Color(0x59FFFFFF), fontSize: 12),
-      filled: true,
-      fillColor: const Color(0x1AFFFFFF),
-      isDense: true,
-      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(8),
-        borderSide: BorderSide.none,
-      ),
-    ),
-  );
-}
-
-class _SectionDivider extends StatelessWidget {
-  const _SectionDivider({required this.title});
-
-  final String title;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(top: 16, bottom: 2),
-      child: Row(
-        children: [
-          Text(
-            title,
-            style: const TextStyle(
-              color: Color(0xCCFFFFFF),
-              fontSize: 12,
-              fontWeight: FontWeight.w600,
             ),
-          ),
-          const SizedBox(width: 8),
-          const Expanded(child: Divider(height: 1, color: Color(0x1FFFFFFF))),
-        ],
+            TabBar(
+              controller: _tabs,
+              labelColor: const Color(0xF2FFFFFF),
+              unselectedLabelColor: const Color(0x80FFFFFF),
+              indicatorColor: const Color(0xCCFFFFFF),
+              dividerColor: const Color(0x1FFFFFFF),
+              tabs: const [
+                Tab(text: '联动'),
+                Tab(text: '大脑'),
+                Tab(text: '隐私'),
+              ],
+            ),
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.only(top: 4),
+                child: IndexedStack(
+                  index: _tabs.index,
+                  children: [
+                    LinkageSection(
+                      adapters: adapters,
+                      active: _active,
+                      onActiveChanged: (value) => setState(() {
+                        _active = value;
+                        _syncFields();
+                      }),
+                      bundleId: _bundleId,
+                      uriTemplate: _uriTemplate,
+                      endpoint: _endpoint,
+                      delivery: _delivery,
+                      onDeliveryChanged: (value) =>
+                          setState(() => _delivery = value),
+                      hotkey: _hotkey,
+                    ),
+                    BrainSection(
+                      provider: _aiProvider,
+                      onProviderChanged: (value) =>
+                          setState(() => _aiProvider = value),
+                      baseUrl: _aiBase,
+                      model: _aiModel,
+                      interval: _aiInterval,
+                      apiKey: _aiKey,
+                      apiKeyLoaded: _aiKeyLoaded,
+                      testing: _aiTesting,
+                      testResult: _aiTestResult,
+                      onTest: _testAi,
+                    ),
+                    PrivacySection(
+                      privacy: _privacy,
+                      onChanged: (value) => setState(() => _privacy = value),
+                      accessibilityChecking: _accessChecking,
+                      accessibilityResult: _accessResult,
+                      onCheckAccessibility: _checkAccessibility,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _hint,
+                    style: const TextStyle(
+                      color: Color(0xB3FFFFFF),
+                      fontSize: 11,
+                    ),
+                  ),
+                ),
+                FilledButton(
+                  onPressed: _busy ? null : _save,
+                  child: Text(_busy ? '保存中…' : '保存'),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }

@@ -6,6 +6,7 @@ library;
 
 import 'dart:async';
 
+import '../../../gateway/privacy_center.dart';
 import '../../../platform/pet_platform.dart';
 import '../assistant_adapters.dart';
 import 'assistant_event.dart';
@@ -16,7 +17,7 @@ class AppWatchSource {
     required AdapterRegistry registry,
     required StatusAggregator aggregator,
     required this.activeId,
-    required this.contentRead,
+    required this.privacy,
   }) : _platform = platform,
        _registry = registry,
        _aggregator = aggregator;
@@ -25,7 +26,9 @@ class AppWatchSource {
   final AdapterRegistry _registry;
   final StatusAggregator _aggregator;
   final String activeId;
-  final bool contentRead;
+
+  /// 隐私门禁：appWatch 管整个来源，screenAwareness 管正文读取。
+  final PrivacyCenter privacy;
 
   StreamSubscription<AppActivation>? _subscription;
 
@@ -34,6 +37,12 @@ class AppWatchSource {
   }
 
   Future<void> _onActivation(AppActivation app) async {
+    if (!privacy.allowed('appWatch')) {
+      // 用户关掉应用感知：回收本来源已发布的状态，不再观察。
+      _aggregator.clear(StatusSourceKind.watch);
+      _aggregator.clear(StatusSourceKind.content);
+      return;
+    }
     final adapter = _registry.matchApp(app.bundleId, app.name);
     if (adapter == null || adapter.id != activeId) {
       // 切到无关应用：只回收本来源，不碰用户主动推送的状态。
@@ -52,7 +61,7 @@ class AppWatchSource {
       ),
     );
 
-    if (!contentRead) return;
+    if (!privacy.allowed('screenAwareness')) return;
     final content = await _platform.readFocusedContent();
     if (content == null) return;
     final title = content.title.trim();
