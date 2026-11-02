@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="accessibility_description">用于桌宠联动：感知当前使用的应用，并在你主动发起时读取输入框内容发给关联助手。不会拦截按键，也不会自动操作任何应用。</string>
+    <string name="tray_channel_name">桌宠状态</string>
+    <string name="tray_channel_desc">桌宠常驻通知：从这里打开对话与设置。</string>
+    <string name="tray_title">桌宠在桌面上</string>
+    <string name="tray_text">长按宠物拖动；双击对话。</string>
+    <string name="tray_chat">对话</string>
+    <string name="tray_settings">设置</string>
+    <string name="tray_hide">隐藏</string>
+    <string name="tray_show">显示</string>
+    <string name="tray_quit">退出</string>
+</resources>

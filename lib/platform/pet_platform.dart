@@ -68,8 +68,13 @@ class PetPlatform {
   final MethodChannel _input;
 
   /// macOS 与 Windows 各有一套原生实现（MainFlutterWindow.swift / pet_bridge.cpp），
-  /// 通道协议完全一致；其余平台一律走降级分支。
-  static bool get _native => Platform.isMacOS || Platform.isWindows;
+  /// Android 由 PetOverlayService 承载；三端通道协议完全一致，其余平台走降级分支。
+  static bool get _native =>
+      Platform.isMacOS || Platform.isWindows || Platform.isAndroid;
+
+  /// 触摸平台（Android）：没有 hover 光标，穿透窗下的手势由原生哨兵层
+  /// 转成光标事件流驱动，拖拽/点击不经过 Flutter 手势系统。
+  static bool get isTouch => Platform.isAndroid;
 
   /// 托盘（菜单栏/通知区图标）：原生侧点击后回调到这里。
   static const MethodChannel _tray = MethodChannel('dsh_pet/tray');
@@ -175,6 +180,18 @@ class PetPlatform {
   Future<void> setInteractive(bool interactive) async {
     if (!_native) return;
     await _window.invokeMethod<void>('setInteractive', interactive);
+  }
+
+  /// 触摸平台专用：把宠物命中区同步给原生哨兵层（窗口本地逻辑坐标）。
+  /// 哨兵只盖住宠物身体，默认穿透态下第一下触摸才收得到。
+  Future<void> updateHitRect(Rect rect) async {
+    if (!isTouch) return;
+    await _window.invokeMethod<void>('updateHitRect', {
+      'x': rect.left,
+      'y': rect.top,
+      'width': rect.width,
+      'height': rect.height,
+    });
   }
 
   Future<void> setFocusable(bool focusable) async {

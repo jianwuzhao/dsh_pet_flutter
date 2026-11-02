@@ -233,7 +233,12 @@ class _PetAppState extends State<PetApp> {
       }
       _restartWhisper();
       Timer(const Duration(milliseconds: 900), () {
-        controller.showBubble('右键有菜单；双击就把话发给 $_activeName');
+        // 触摸平台没有右键，菜单手势是长按（见 PetController 触摸状态机）。
+        controller.showBubble(
+          PetPlatform.isTouch
+              ? '长按宠物有菜单；双击就把话发给 $_activeName'
+              : '右键有菜单；双击就把话发给 $_activeName',
+        );
       });
     } on Object catch (error) {
       _fail('启动失败：$error');

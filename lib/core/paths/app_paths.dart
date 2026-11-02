@@ -1,10 +1,13 @@
 /// 用户数据目录。
 ///
 /// 为什么不用 path_provider 的 appSupport：Trae skill / petctl 需要**稳定可预测**的路径来读 token
-/// 与写事件，`~/.dsh_pet_flutter` 与上游 `~/.dsh/pet-bridge` 的约定保持一致。
+/// 与写事件，桌面端 `~/.dsh_pet_flutter` 与上游 `~/.dsh/pet-bridge` 的约定保持一致；
+/// Windows 用 `%APPDATA%`，Android 无 HOME 环境变量，只能借 path_provider 拿应用私有目录。
 library;
 
 import 'dart:io';
+
+import 'package:path_provider/path_provider.dart';
 
 class AppPaths {
   AppPaths._();
@@ -13,6 +16,14 @@ class AppPaths {
 
   /// 测试用：把数据目录指到临时目录。
   static void overrideRoot(Directory dir) => _rootOverride = dir;
+
+  /// Android 引导引擎与悬浮窗引擎都在 main 早期就需要数据目录，
+  /// 而 path_provider 只有异步 API：main() 里先 await 一次再 runApp。
+  static Future<void> initForAndroid() async {
+    if (!Platform.isAndroid || _rootOverride != null) return;
+    final support = await getApplicationSupportDirectory();
+    _rootOverride = support;
+  }
 
   static Directory get root {
     final override = _rootOverride;

@@ -24,7 +24,8 @@ android {
         applicationId = "com.dshpet.dsh_pet_flutter"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // 悬浮窗用 TYPE_APPLICATION_OVERLAY（API 26 起替代废弃的 TYPE_PHONE）。
+        minSdk = 26
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName

@@ -17,6 +17,7 @@ import '../features/menu/pet_menu.dart';
 import '../features/pet/pet_controller.dart';
 import '../features/pet/render/pet_view.dart';
 import '../features/settings/settings_page.dart';
+import '../platform/pet_platform.dart';
 import 'flyout_layout.dart';
 
 class PetStage extends StatefulWidget {
@@ -49,6 +50,28 @@ class PetStage extends StatefulWidget {
 
 class _PetStageState extends State<PetStage> {
   Size? _lastSize;
+  Rect? _lastHitRect;
+
+  @override
+  void initState() {
+    super.initState();
+    // 触摸平台：穿透窗下只有原生哨兵层可触摸，且必须跟着宠物走，
+    // 每帧把宠物矩形同步过去；桌面平台穿透切换走指针命中，无需同步。
+    if (PetPlatform.isTouch) _scheduleHitRectSync();
+  }
+
+  /// 帧回调链：宠物静止时矩形不变，跳过重复的通道调用。
+  void _scheduleHitRectSync() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final rect = widget.controller.petRect;
+      if (rect != _lastHitRect) {
+        _lastHitRect = rect;
+        widget.controller.platform.updateHitRect(rect);
+      }
+      _scheduleHitRectSync();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {

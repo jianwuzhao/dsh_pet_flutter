@@ -134,6 +134,17 @@ class PetController {
   /// 换屏进行中左键先松了：等换屏结果回来再收尾，避免半拖拽态卡死。
   bool _pendingRelease = false;
 
+  /// 触摸拖拽启动阈值：手指轻点必有毫米级微动，阈值太小会把点击/双击
+  /// 误判成拖拽（表现为“一点宠物就被拽走”，灵敏度过高）。24 逻辑像素在
+  /// 高密度屏上约 6~8mm，与系统 touch slop 同量级。桌面鼠标按下几乎无
+  /// 位移，走 Flutter 手势竞技场自己的 slop，不受此影响。
+  static const double _touchDragSlop = 24;
+
+  /// 触摸甩出阈值放大系数：触屏抬手前手指几乎总在滑动（不像鼠标松开前
+  /// 停顿），采样窗口很容易估出超过 [PhysicsParams.throwThreshold] 的
+  /// 速度，轻放也被甩飞。放大后只有真正的快甩才进入抛掷。
+  static const double _touchThrowThresholdScale = 2.0;
+
   static const double _squashDuration = 0.46;
   double _squashElapsed = 1;
   double _squashIntensity = 0;
@@ -147,6 +158,13 @@ class PetController {
 
   /// pan 被系统打断后，是否已改由全局指针流驱动拖动。
   bool _pointerDrivenDrag = false;
+
+  // 触摸平台手势：穿透窗下手势锚定在原生哨兵层，Flutter 手势收不到，
+  // 由指针流自己模拟竞技场（移动超阈值=拖动，按住=菜单，快速抬起=点击/双击）。
+  Offset? _touchDownAt;
+  bool _touchConsumed = false;
+  DateTime? _lastTapAt;
+  Timer? _longPressTimer;
 
   /// 正在请求原生换屏；期间忽略旧的本地坐标事件。
   bool _screenSwitching = false;
@@ -669,7 +687,10 @@ class PetController {
 
     // 快甩：保留“被鼠标拖拽悬空反馈”动画 + 物理抛掷，落地后才恢复基础姿态。
     // 慢放：直接钉在指针最终位置（顶部/任意高度都停得住），立即恢复基础姿态。
-    if (velocity.distance >= physics.throwThreshold) {
+    // 触摸抬手前的末速度天然高于鼠标，阈值同步放大，避免轻放也被判成甩出。
+    final throwThreshold = physics.throwThreshold *
+        (PetPlatform.isTouch ? _touchThrowThresholdScale : 1);
+    if (velocity.distance >= throwThreshold) {
       _body.endDrag(velocity);
       _thrown = true;
       debugPrint('[pet] 甩出 速度=$velocity');
@@ -896,13 +917,17 @@ class PetController {
       debugPrint('[pet] 收到首个光标 $cursor，宠物区=${_body.rect}');
     }
 
-    if (panel.value == null) {
+    if (panel.value == null && !PetPlatform.isTouch) {
       if (_body.dragging) {
         _applyInteractive(true);
       } else {
         _applyInteractive(_hitTest(cursor));
       }
     }
+
+    // 触摸平台：穿透窗下手势锚定在原生哨兵层，拖拽启动与 tap/长按/双击
+    // 全部由指针流判定，不经过 Flutter 手势系统。
+    if (PetPlatform.isTouch) _handleTouchPointer(pointer);
 
     if (!_body.dragging) return;
 
@@ -940,6 +965,12 @@ class PetController {
 
   void _refreshInteractive() {
     if (panel.value != null) return;
+    // 触摸平台没有 hover：不存在“光标停在宠物上”，一律回到穿透，
+    // 第一下触摸由原生哨兵层兜住。
+    if (PetPlatform.isTouch) {
+      _applyInteractive(false);
+      return;
+    }
     if (_body.dragging) {
       _applyInteractive(true);
       return;
@@ -950,6 +981,63 @@ class PetController {
       return;
     }
     _applyInteractive(_hitTest(cursor));
+  }
+
+  /// 触摸手势状态机（哨兵指针流驱动）：
+  /// - 按下宠物 + 移动超阈值 → 拖拽（从按下点起算，抓取偏移不失真）
+  /// - 按下宠物 + 按住 500ms → 菜单（对齐桌面右键）
+  /// - 抬起且未拖未消费 → 单击动画；300ms 内两次 → 对话面板
+  void _handleTouchPointer(PetPointer pointer) {
+    final cursor = pointer.position;
+
+    if (pointer.down) {
+      // 拖拽与面板期间只管跟手（后续的 update/收尾走通用逻辑），不设新按下。
+      if (_body.dragging || panel.value != null) return;
+      final downAt = _touchDownAt;
+      if (downAt != null) {
+        if ((cursor - downAt).distance > _touchDragSlop) {
+          _longPressTimer?.cancel();
+          _longPressTimer = null;
+          _touchDownAt = null;
+          onDragStart(downAt);
+          _pointerDrivenDrag = true;
+        }
+        return;
+      }
+      if (!_hitTest(cursor)) return;
+      _touchConsumed = false;
+      _touchDownAt = cursor;
+      _longPressTimer = Timer(const Duration(milliseconds: 500), () {
+        _longPressTimer = null;
+        final downAt = _touchDownAt;
+        _touchDownAt = null;
+        if (downAt == null || _body.dragging || panel.value != null) return;
+        _touchConsumed = true;
+        openMenu(downAt);
+      });
+      return;
+    }
+
+    // 抬手：拖拽收尾由上方 down=false 分支处理，这里只管 tap/双击。
+    _longPressTimer?.cancel();
+    _longPressTimer = null;
+    final downAt = _touchDownAt;
+    _touchDownAt = null;
+    if (downAt == null ||
+        _touchConsumed ||
+        _body.dragging ||
+        panel.value != null) {
+      return;
+    }
+    final now = DateTime.now();
+    final lastTap = _lastTapAt;
+    if (lastTap != null && now.difference(lastTap) <= const Duration(milliseconds: 300)) {
+      _lastTapAt = null;
+      openPanel(PetPanel.chat);
+      return;
+    }
+    _lastTapAt = now;
+    onTapPet();
   }
 
   void _applyInteractive(bool over) {
@@ -1067,6 +1155,7 @@ class PetController {
     _ticker.dispose();
     _poseTimer?.cancel();
     _bubbleTimer?.cancel();
+    _longPressTimer?.cancel();
     _cursorSubscription?.cancel();
     _cursorSubscription = null;
   }
