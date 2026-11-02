@@ -193,7 +193,7 @@ class MemoryStore {
         ];
       } on Object catch (error) {
         // 辅助数据：损坏留痕并按空库继续，不能挡住对话主链路。
-        debugPrint('[pet] 记忆文件 ${kind.name}.json 损坏，按空库继续：$error');
+        debugPrint('[dafishu] 记忆文件 ${kind.name}.json 损坏，按空库继续：$error');
       }
     }
   }

@@ -19,7 +19,7 @@ Future<void> main() async {
   }
   // 桌宠常驻后台：多开会让状态推送与点击穿透互相干扰，第二个实例直接退出。
   if (!await SingleInstance.acquire()) {
-    await _logBoot('已有桌宠实例在运行，本进程退出');
+    await _logBoot('已有大肥鱼助手实例在运行，本进程退出');
     exit(0);
   }
   await _logBoot('启动 pid=$pid');

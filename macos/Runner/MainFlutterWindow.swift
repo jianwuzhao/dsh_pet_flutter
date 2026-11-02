@@ -224,11 +224,11 @@ final class PetTray: NSObject, NSMenuDelegate {
 
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
     if let button = item.button {
-      button.toolTip = "桌宠 · 右键菜单"
+      button.toolTip = "大肥鱼助手 · 右键菜单"
       // 工程部署目标低于 11.0，SF Symbol 需要可用性守卫；旧系统用文字兜底。
       if #available(macOS 11.0, *) {
         let icon = NSImage(
-          systemSymbolName: "pawprint.fill", accessibilityDescription: "桌宠")
+          systemSymbolName: "pawprint.fill", accessibilityDescription: "大肥鱼助手")
         icon?.isTemplate = true
         button.image = icon
       } else {
@@ -265,7 +265,7 @@ final class PetTray: NSObject, NSMenuDelegate {
     menu.addItem(.separator())
     menu.addItem(
       makeItem(
-        "退出桌宠", #selector(quit), key: "q",
+        "退出大肥鱼助手", #selector(quit), key: "q",
         modifiers: [.command], symbol: "power"))
     return menu
   }
@@ -724,7 +724,7 @@ final class PetBridge {
             return
           }
           let content = UNMutableNotificationContent()
-          content.title = (title?.isEmpty == false ? title! : "桌宠")
+          content.title = (title?.isEmpty == false ? title! : "大肥鱼助手")
           content.body = (body?.isEmpty == false ? body! : "有新的消息")
           content.sound = .default
           let request = UNNotificationRequest(

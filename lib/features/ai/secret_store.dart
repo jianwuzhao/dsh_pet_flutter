@@ -23,7 +23,7 @@ class AiKeyStore {
       final value = await _storage.read(key: _key);
       if (value != null && value.isNotEmpty) return value;
     } on Object catch (error) {
-      debugPrint('[pet] 安全存储读取失败，尝试文件：$error');
+      debugPrint('[dafishu] 安全存储读取失败，尝试文件：$error');
     }
     return _readFile();
   }
@@ -38,7 +38,7 @@ class AiKeyStore {
       await _storage.write(key: _key, value: trimmed);
       _deleteFile();
     } on Object catch (error) {
-      debugPrint('[pet] 安全存储写入失败，回退 0600 文件：$error');
+      debugPrint('[dafishu] 安全存储写入失败，回退 0600 文件：$error');
       _writeFile(trimmed);
     }
   }
@@ -47,7 +47,7 @@ class AiKeyStore {
     try {
       await _storage.delete(key: _key);
     } on Object catch (error) {
-      debugPrint('[pet] 安全存储清除失败：$error');
+      debugPrint('[dafishu] 安全存储清除失败：$error');
     }
     _deleteFile();
   }
@@ -58,7 +58,7 @@ class AiKeyStore {
       if (!file.existsSync()) return '';
       return file.readAsStringSync().trim();
     } on Object catch (error) {
-      debugPrint('[pet] 读取 key 文件失败：$error');
+      debugPrint('[dafishu] 读取 key 文件失败：$error');
       return '';
     }
   }
@@ -72,7 +72,7 @@ class AiKeyStore {
         Process.runSync('chmod', ['600', file.path]);
       }
     } on Object catch (error) {
-      debugPrint('[pet] 写入 key 文件失败：$error');
+      debugPrint('[dafishu] 写入 key 文件失败：$error');
     }
   }
 
@@ -81,7 +81,7 @@ class AiKeyStore {
       final file = AppPaths.aiKeyFile;
       if (file.existsSync()) file.deleteSync();
     } on Object catch (error) {
-      debugPrint('[pet] 删除 key 文件失败：$error');
+      debugPrint('[dafishu] 删除 key 文件失败：$error');
     }
   }
 }

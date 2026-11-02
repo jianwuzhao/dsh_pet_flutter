@@ -14,6 +14,10 @@
 	<string>6.0</string>
 	<key>CFBundleName</key>
 	<string>$(PRODUCT_NAME)</string>
+	<!-- 对外显示名；PRODUCT_NAME / 可执行名保持 dsh_pet_flutter，
+	     避免构建产物路径与既有脚本失效。 -->
+	<key>CFBundleDisplayName</key>
+	<string>大肥鱼助手</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

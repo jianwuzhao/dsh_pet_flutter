@@ -44,7 +44,7 @@ class EmotionSection extends StatelessWidget {
           onChanged: (value) =>
               onChanged(profile.copyWith(emotionEnabled: value)),
           title: '情绪引擎',
-          subtitle: '关闭后纯联动桌宠：不感知、不表达',
+          subtitle: '关闭后只做联动，不感知、不表达',
         ),
         const SettingsDivider('主动关心'),
         SettingsSwitch(

@@ -13,7 +13,7 @@ class AndroidLauncherApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '桌宠',
+      title: '大肥鱼助手',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(useMaterial3: true),
       home: const LauncherPage(),
@@ -87,7 +87,7 @@ class _LauncherPageState extends State<LauncherPage> with WidgetsBindingObserver
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('桌宠')),
+      appBar: AppBar(title: const Text('大肥鱼助手')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -116,12 +116,12 @@ class _LauncherPageState extends State<LauncherPage> with WidgetsBindingObserver
             done: _petStarted,
             action: FilledButton(
               onPressed: _hasOverlayPermission ? (_petStarted ? _stopPet : _startPet) : null,
-              child: Text(_petStarted ? '收起宠物' : '启动桌宠'),
+              child: Text(_petStarted ? '收起宠物' : '启动大肥鱼助手'),
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            _hasOverlayPermission ? '' : '提示：授权页里找到「桌宠」并打开开关，返回本页即可。',
+            _hasOverlayPermission ? '' : '提示：授权页里找到「大肥鱼助手」并打开开关，返回本页即可。',
             style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant, fontSize: 13),
           ),
         ],

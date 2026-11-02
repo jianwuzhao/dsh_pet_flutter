@@ -284,10 +284,10 @@ class PetController {
   void start() {
     _cursorSubscription = platform.cursor.listen(
       _onPointer,
-      onError: (Object error) => debugPrint('[pet] cursor 通道错误：$error'),
-      onDone: () => debugPrint('[pet] cursor 通道结束'),
+      onError: (Object error) => debugPrint('[dafishu] cursor 通道错误：$error'),
+      onDone: () => debugPrint('[dafishu] cursor 通道结束'),
     );
-    debugPrint('[pet] 已订阅光标通道');
+    debugPrint('[dafishu] 已订阅光标通道');
     _ticker.start();
   }
 
@@ -623,7 +623,7 @@ class PetController {
     _sampler.clear();
     _sampler.add(Duration.zero, pointer);
     dragging.value = true;
-    debugPrint('[pet] 拖拽开始 指针=$pointer 抓取偏移=$_grabOffset');
+    debugPrint('[dafishu] 拖拽开始 指针=$pointer 抓取偏移=$_grabOffset');
     // 拖动期间窗口必须持续可交互：指针一定先离开宠物身体再拖动，
     // 如果这时按命中区翻回穿透，macOS 会直接丢掉 mouseDragged，宠物卡住。
     _applyInteractive(true);
@@ -706,7 +706,7 @@ class PetController {
     if (velocity.distance >= throwThreshold) {
       _body.endDrag(velocity);
       _thrown = true;
-      debugPrint('[pet] 甩出 速度=$velocity');
+      debugPrint('[dafishu] 甩出 速度=$velocity');
       position.value = _body.position;
       _refreshInteractive();
       return;
@@ -717,7 +717,7 @@ class PetController {
     _body.position = _clampPlacement(_body.dragTarget, domain);
     _body.pin();
     position.value = _body.position;
-    debugPrint('[pet] 拖拽结束并钉住 位置=$_body.position');
+    debugPrint('[dafishu] 拖拽结束并钉住 位置=$_body.position');
     _dragDomain = null;
     _mode = _Mode.pose;
     _restoreBase();
@@ -758,14 +758,14 @@ class PetController {
   /// 单屏窗口是“不显示”问题的修复：跨屏用换窗口实现，而不是跨屏铺一个大窗。
   Future<void> _switchToScreen(int index) async {
     if (_screenSwitching || index == _activeScreenIndex) return;
-    debugPrint('[pet] 请求换屏 -> $index');
+    debugPrint('[dafishu] 请求换屏 -> $index');
     _screenSwitching = true;
     try {
       final move = await platform
           .moveToScreen(index)
           .timeout(const Duration(seconds: 2), onTimeout: () => null);
       if (move == null) {
-        debugPrint('[pet] 换屏失败：无返回');
+        debugPrint('[dafishu] 换屏失败：无返回');
         return;
       }
       debugPrint(
@@ -790,7 +790,7 @@ class PetController {
         _dragDomain = null;
       }
     } on Object catch (error) {
-      debugPrint('[pet] 换屏失败：$error');
+      debugPrint('[dafishu] 换屏失败：$error');
     } finally {
       _screenSwitching = false;
       if (_pendingRelease) {
@@ -916,13 +916,13 @@ class PetController {
     try {
       await platform.showWindow();
     } on Object catch (error) {
-      debugPrint('[pet] 显示窗口失败：$error');
+      debugPrint('[dafishu] 显示窗口失败：$error');
     }
     _applyInteractive(true);
     try {
       await platform.setFocusable(true);
     } on Object catch (error) {
-      debugPrint('[pet] 聚焦窗口失败：$error');
+      debugPrint('[dafishu] 聚焦窗口失败：$error');
     }
   }
 
@@ -939,7 +939,7 @@ class PetController {
     // 只打印一次首个事件，但每个事件都要做命中判定：穿透翻转依赖持续刷新。
     if (!_cursorLogged) {
       _cursorLogged = true;
-      debugPrint('[pet] 收到首个光标 $cursor，宠物区=${_body.rect}');
+      debugPrint('[dafishu] 收到首个光标 $cursor，宠物区=${_body.rect}');
     }
 
     if (panel.value == null && !PetPlatform.isTouch) {
@@ -1068,10 +1068,10 @@ class PetController {
   void _applyInteractive(bool over) {
     if (over == _interactive) return;
     _interactive = over;
-    debugPrint('[pet] interactive=$over 光标=$_lastCursor');
+    debugPrint('[dafishu] interactive=$over 光标=$_lastCursor');
     unawaited(
       platform.setInteractive(over).catchError((Object error) {
-        debugPrint('[pet] setInteractive 调用失败：$error');
+        debugPrint('[dafishu] setInteractive 调用失败：$error');
       }),
     );
   }

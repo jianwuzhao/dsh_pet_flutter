@@ -60,7 +60,7 @@ class ChatMemory {
         Process.runSync('chmod', ['600', _file.path]);
       }
     } on Object catch (error) {
-      debugPrint('[pet] 保存对话记忆失败：$error');
+      debugPrint('[dafishu] 保存对话记忆失败：$error');
     }
   }
 
@@ -78,7 +78,7 @@ class ChatMemory {
         }
       }
     } on Object catch (error) {
-      debugPrint('[pet] 读取对话记忆失败，按空记忆继续：$error');
+      debugPrint('[dafishu] 读取对话记忆失败，按空记忆继续：$error');
       _messages.clear();
     }
   }

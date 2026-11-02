@@ -369,7 +369,7 @@ class PolicyStore {
       ]);
     } on Object catch (error) {
       // 策略文件损坏：回默认参数继续运行，不阻塞对话。
-      debugPrint('[pet] 策略文件损坏，使用默认参数：$error');
+      debugPrint('[dafishu] 策略文件损坏，使用默认参数：$error');
     }
   }
 }

@@ -60,7 +60,7 @@ void main() {
     expect(find.text('回到初始位置'), findsOneWidget);
     expect(find.text('重载配置'), findsOneWidget);
     expect(find.text('设置'), findsOneWidget);
-    expect(find.text('退出桌宠'), findsOneWidget);
+    expect(find.text('退出大肥鱼助手'), findsOneWidget);
     expect(find.text('动作'), findsOneWidget);
 
     // 二级：点「动作」展开分类。
@@ -108,7 +108,7 @@ void main() {
     await tester.tap(find.text('回到初始位置'));
     await tester.tap(find.text('重载配置'));
     await tester.tap(find.text('设置'));
-    await tester.tap(find.text('退出桌宠'));
+    await tester.tap(find.text('退出大肥鱼助手'));
     expect(calls, ['whisper', 'chat', 'reset', 'reload', 'settings', 'quit']);
   });
 }

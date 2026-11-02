@@ -1,5 +1,5 @@
-// 桌宠默认配置（用户配置写到 ~/.dsh_pet_flutter/config.jsonc，整段覆盖对应字段）
-// 结构与上游 dsh-pet 的 config.jsonc 保持同一套语义：display = web/desktop/both/none。
+// 大肥鱼助手默认配置（用户配置写到 ~/.dsh_pet_flutter/config.jsonc，整段覆盖对应字段）
+// 目录名沿用旧值以保证老用户数据可读；结构与上游 dsh-pet 的 config.jsonc 保持同一套语义：display = web/desktop/both/none。
 {
   "pets": [
     {

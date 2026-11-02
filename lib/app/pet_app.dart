@@ -110,7 +110,7 @@ class _PetAppState extends State<PetApp> {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '桌宠',
+      title: '大肥鱼助手',
       debugShowCheckedModeBanner: false,
       theme: ThemeData.dark(useMaterial3: true),
       home: _buildHome(),
@@ -181,7 +181,7 @@ class _PetAppState extends State<PetApp> {
           // 窗口先搬到上次所在屏，出生点才落在同一套本地坐标里。
           await _platform.moveToScreen(savedPosition.screen);
         } on Object catch (error) {
-          debugPrint('[pet] 恢复屏幕失败，留在主屏：$error');
+          debugPrint('[dafishu] 恢复屏幕失败，留在主屏：$error');
         }
       }
       final controller = PetController(
@@ -290,12 +290,12 @@ class _PetAppState extends State<PetApp> {
 
       if (serverError != null) {
         // 服务起不来时宠物多半在屏上不可见处，气泡没人看见；日志必须留痕。
-        debugPrint('[pet] $serverError');
+        debugPrint('[dafishu] $serverError');
         controller.showBubble(serverError);
       }
       if (privacyLoad is Failure<void>) {
         // 隐私档案读不出来：继续用内存默认值，但不能让用户以为授权被记住了。
-        debugPrint('[pet] ${privacyLoad.reason}');
+        debugPrint('[dafishu] ${privacyLoad.reason}');
         controller.showBubble('隐私授权档案读取失败：${privacyLoad.reason}');
       }
       _restartWhisper();
@@ -325,7 +325,7 @@ class _PetAppState extends State<PetApp> {
       final screen = (json['screen'] as num?)?.toInt() ?? 0;
       return (offset: Offset(x, y), screen: screen);
     } on Object catch (error) {
-      debugPrint('[pet] 位置文件损坏，使用默认出生点：$error');
+      debugPrint('[dafishu] 位置文件损坏，使用默认出生点：$error');
       return null;
     }
   }
@@ -345,7 +345,7 @@ class _PetAppState extends State<PetApp> {
         flush: true,
       );
     } on Object catch (error) {
-      debugPrint('[pet] 保存位置失败：$error');
+      debugPrint('[dafishu] 保存位置失败：$error');
     }
   }
 
@@ -512,7 +512,7 @@ class _PetAppState extends State<PetApp> {
     if (privacy == null) return;
     final result = privacy.update(update);
     if (result is Failure<void>) {
-      debugPrint('[pet] 隐私授权保存失败：${result.reason}');
+      debugPrint('[dafishu] 隐私授权保存失败：${result.reason}');
       _controller?.showBubble('隐私授权保存失败：${result.reason}');
       return;
     }
@@ -566,7 +566,7 @@ class _PetAppState extends State<PetApp> {
     unawaited(
       hotkey.register(config.gateway.hotkey).then((result) {
         if (result is Failure<bool>) {
-          debugPrint('[pet] 热键注册失败（${config.gateway.hotkey}）：${result.reason}');
+          debugPrint('[dafishu] 热键注册失败（${config.gateway.hotkey}）：${result.reason}');
         }
       }),
     );
@@ -597,7 +597,7 @@ class _PetAppState extends State<PetApp> {
   String _personaFor(PetConfig pet) {
     final custom = pet.whisperPrompt.trim();
     if (custom.isNotEmpty) return custom;
-    return '你是「${pet.name}」，一只住在桌面上的小桌宠。'
+    return '你是「${pet.name}」，大肥鱼助手在桌面上的化身。'
         '用简短、自然、有点可爱的中文说话；不假装能执行做不到的操作，'
         '不主动索取隐私，也不制造依赖。';
   }
@@ -650,7 +650,7 @@ class _PetAppState extends State<PetApp> {
           controller.showBubble(text, meme: meme, source: 'whisper');
         case Failure(reason: final reason):
           if (manual) controller.showBubble(reason);
-          debugPrint('[pet] 碎碎念失败：$reason');
+          debugPrint('[dafishu] 碎碎念失败：$reason');
       }
     } finally {
       _whisperBusy = false;
@@ -696,10 +696,12 @@ class _PetAppState extends State<PetApp> {
       unawaited(
         _platform
             .notify(
-              title: event.source.isEmpty ? '桌宠' : '桌宠 · ${event.source}',
+              title: event.source.isEmpty
+                  ? '大肥鱼助手'
+                  : '大肥鱼助手 · ${event.source}',
               body: text.isEmpty ? '有新的消息' : text,
             )
-            .catchError((Object error) => debugPrint('[pet] 系统通知失败：$error')),
+            .catchError((Object error) => debugPrint('[dafishu] 系统通知失败：$error')),
       );
       return;
     }
@@ -809,7 +811,7 @@ class _ErrorView extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                '桌宠启动失败',
+                '大肥鱼助手启动失败',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 16,

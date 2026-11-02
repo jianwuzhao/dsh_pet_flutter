@@ -113,7 +113,7 @@ class _PetMenuState extends State<PetMenu> {
       if (widget.onReloadConfig != null)
         PetMenuItem.leaf('重载配置', widget.onReloadConfig!),
       PetMenuItem.leaf('设置', widget.onSettings),
-      PetMenuItem.leaf('退出桌宠', widget.onQuit),
+      PetMenuItem.leaf('退出大肥鱼助手', widget.onQuit),
     ];
     final actions = _actionGroups();
     if (actions.isNotEmpty) {

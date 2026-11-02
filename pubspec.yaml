@@ -1,5 +1,5 @@
 name: dsh_pet_flutter
-description: "dsh-pet 的 Flutter 跨平台桌宠：透明置顶窗口 + 动画 + Trae CN / ChatGPT / WorkBuddy 联动。"
+description: "大肥鱼助手（原 dsh-pet Flutter 桌宠）：透明置顶窗口 + 动画 + Trae CN / ChatGPT / WorkBuddy 联动。"
 publish_to: 'none'
 version: 0.1.0+1
 
