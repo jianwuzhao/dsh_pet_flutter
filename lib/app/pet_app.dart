@@ -31,8 +31,10 @@ import '../features/pet/pet_controller.dart';
 import '../gateway/hotkey_source.dart';
 import '../gateway/interaction_gateway.dart';
 import '../gateway/privacy_center.dart';
+import '../persona/expression/expression_layer.dart';
 import '../persona/profile_store.dart';
 import '../platform/pet_platform.dart';
+import 'assistant_kernel.dart';
 import 'pet_stage.dart';
 
 class PetApp extends StatefulWidget {
@@ -55,11 +57,12 @@ class _PetAppState extends State<PetApp> {
   String? _error;
   Timer? _positionSaveTimer;
 
-  /// 四层核心：隐私门禁、LLM 选路、统一输入网关、全局热键。
+  /// 四层核心：隐私门禁、LLM 选路、统一输入网关、全局热键、内核。
   PrivacyCenter? _privacy;
   LlmRouter? _router;
   InteractionGateway? _gateway;
   HotkeySource? _hotkey;
+  AssistantKernel? _kernel;
 
   /// Trae 扩展桥：事件服务与适配器注册表共用同一个实例。
   final BridgeHub _bridgeHub = BridgeHub();
@@ -94,6 +97,8 @@ class _PetAppState extends State<PetApp> {
     final router = _router;
     if (router != null) _disposeRouter(router);
     unawaited(_hotkey?.unregister());
+    _kernel?.dispose();
+    _kernel = null;
     _statusSubscription?.cancel();
     _watch?.dispose();
     unawaited(_server?.stop());
@@ -129,8 +134,10 @@ class _PetAppState extends State<PetApp> {
       activeName: _activeName,
       config: config,
       privacy: _privacy?.settings ?? const PrivacySettings(),
+      emotion: _kernel?.emotionProfile ?? const EmotionProfile(),
       onSend: _dispatch,
       onSaveConfig: _saveConfig,
+      onSaveEmotion: _saveEmotionProfile,
       onCheckAccessibility: _platform.requestAccessibility,
       onQuit: _platform.quit,
       onOpenApp: config.linkage.active == 'builtin'
@@ -203,6 +210,15 @@ class _PetAppState extends State<PetApp> {
         legacyContentRead: config.linkage.contentRead,
       );
       final privacyLoad = privacy.load();
+      // 内核接管情绪闭环：输入与终态信号在这里折算成情绪表达。
+      // gateway 实例在配置热替换时只换 dispatcher/router 属性，引用长期有效。
+      final kernel = AssistantKernel(
+        gateway: gateway,
+        store: ProfileStore(),
+        host: _PetExpressionHost(controller),
+        privacy: privacy,
+      );
+      kernel.start();
       final aggregator = StatusAggregator();
       final server = PetEventServer(
         port: config.linkage.port,
@@ -211,11 +227,12 @@ class _PetAppState extends State<PetApp> {
         hub: _bridgeHub,
         platform: _platform,
         petState: controller.state,
-        onChat: gateway.chat,
+        onChat: kernel.chat,
       );
-      final statusSubscription = aggregator.changes.listen(
-        controller.applyStatus,
-      );
+      final statusSubscription = aggregator.changes.listen((snapshot) {
+        controller.applyStatus(snapshot);
+        kernel.onStatusSnapshot(snapshot);
+      });
       final serverError = await server.start();
       final watch = AppWatchSource(
         platform: _platform,
@@ -226,6 +243,8 @@ class _PetAppState extends State<PetApp> {
       )..start();
       final hotkey = _syncHotkey(config);
       hotkey.listen(() => _onHotkeyPressed());
+      // 点击（面板关闭时）/拖拽开始折算成互动信号喂情绪引擎。
+      controller.onInteraction = kernel.notifyInteraction;
       controller.start();
       _platform.listenTray(_onTrayAction);
       _positionSaveTimer?.cancel();
@@ -240,6 +259,7 @@ class _PetAppState extends State<PetApp> {
         unawaited(server.stop());
         controller.dispose();
         aggregator.dispose();
+        kernel.dispose();
         _disposeRouter(router);
         return;
       }
@@ -255,6 +275,7 @@ class _PetAppState extends State<PetApp> {
         _router = router;
         _gateway = gateway;
         _hotkey = hotkey;
+        _kernel = kernel;
       });
 
       if (serverError != null) {
@@ -364,6 +385,8 @@ class _PetAppState extends State<PetApp> {
     unawaited(_hotkey?.unregister());
     _hotkey = null;
     _privacy = null;
+    _kernel?.dispose();
+    _kernel = null;
     await _statusSubscription?.cancel();
     _statusSubscription = null;
     _watch?.dispose();
@@ -690,16 +713,16 @@ class _PetAppState extends State<PetApp> {
     if (event.isTerminal) _thinkingBuffer = '';
   }
 
-  /// 面板与本地事件服务共用的投递入口：统一走交互网关。
+  /// 面板与本地事件服务共用的投递入口：统一走内核（情绪感知）→交互网关。
   Future<Result<DispatchOutcome>> _dispatch(
     String prompt, [
     InputSource source = InputSource.panel,
   ]) async {
-    final gateway = _gateway;
-    if (gateway == null) {
+    final kernel = _kernel;
+    if (kernel == null) {
       return const Failure('dispatch.not-ready', '联动通道还没准备好');
     }
-    final result = await gateway.submit(prompt, source);
+    final result = await kernel.submit(prompt, source);
     final controller = _controller;
     if (!mounted || !identical(_controller, controller)) return result;
     switch (result) {
@@ -725,6 +748,31 @@ class _PetAppState extends State<PetApp> {
       Failure(reason: final reason) => reason,
     };
   }
+
+  /// 设置页保存情绪档案：经内核落盘并即时生效（换基线/开关/预算字段）。
+  Result<void> _saveEmotionProfile(EmotionProfile value) {
+    final kernel = _kernel;
+    if (kernel == null) {
+      return const Failure('kernel.not-ready', '内核还没准备好，稍后再试');
+    }
+    return kernel.saveEmotionProfile(value);
+  }
+}
+
+/// 表达层宿主适配：把表达决策落到宠物控制器。
+/// 动画走点播入口（不关面板、不打断拖拽），气泡自带 7s 自动隐藏。
+class _PetExpressionHost extends ExpressionHost {
+  _PetExpressionHost(this._controller);
+
+  final PetController _controller;
+
+  @override
+  void playAnimation(String name) =>
+      _controller.playExpressionAnimation(name);
+
+  @override
+  void showBubble(String text, {String? meme}) =>
+      _controller.showBubble(text, meme: meme);
 }
 
 class _ErrorView extends StatelessWidget {

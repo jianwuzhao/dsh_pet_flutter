@@ -54,6 +54,7 @@ class UserProfile {
 /// （打扰计数按日落盘，日期翻转清零由预算模块负责）。
 class EmotionProfile {
   const EmotionProfile({
+    this.emotionEnabled = true,
     this.comfortPhrases = defaultComfortPhrases,
     this.avoidedTopics = const [],
     this.quietStart = '22:00',
@@ -65,12 +66,16 @@ class EmotionProfile {
     this.careDate = '',
     this.careCount = 0,
     this.lastCareAtMs = 0,
+    this.lastCareState = '',
   });
 
   static const List<String> defaultComfortPhrases = [
     '辛苦了，要不要先休息一下？',
     '我在呢，慢慢来。',
   ];
+
+  /// 情绪引擎总开关：关闭=纯联动桌宠，不感知不表达（设置页可切）。
+  final bool emotionEnabled;
 
   final List<String> comfortPhrases;
   final List<String> avoidedTopics;
@@ -92,6 +97,9 @@ class EmotionProfile {
   final int careCount;
   final int lastCareAtMs;
 
+  /// 上次主动关心时的情绪态名：同状态 1 小时限流用。
+  final String lastCareState;
+
   factory EmotionProfile.fromJson(Map<String, dynamic> json) {
     int readInt(String key, int fallback) {
       final value = json[key];
@@ -104,6 +112,9 @@ class EmotionProfile {
     }
 
     return EmotionProfile(
+      emotionEnabled: json['emotionEnabled'] is bool
+          ? json['emotionEnabled'] as bool
+          : true,
       comfortPhrases: _lines(json['comfortPhrases']),
       avoidedTopics: _lines(json['avoidedTopics']),
       quietStart: json['quietStart'] is String
@@ -121,10 +132,14 @@ class EmotionProfile {
       careDate: json['careDate'] is String ? json['careDate'] as String : '',
       careCount: readInt('careCount', 0),
       lastCareAtMs: readInt('lastCareAtMs', 0),
+      lastCareState: json['lastCareState'] is String
+          ? json['lastCareState'] as String
+          : '',
     );
   }
 
   Map<String, dynamic> toJson() => {
+    'emotionEnabled': emotionEnabled,
     'comfortPhrases': comfortPhrases,
     'avoidedTopics': avoidedTopics,
     'quietStart': quietStart,
@@ -136,9 +151,11 @@ class EmotionProfile {
     'careDate': careDate,
     'careCount': careCount,
     'lastCareAtMs': lastCareAtMs,
+    'lastCareState': lastCareState,
   };
 
   EmotionProfile copyWith({
+    bool? emotionEnabled,
     List<String>? comfortPhrases,
     List<String>? avoidedTopics,
     String? quietStart,
@@ -150,7 +167,9 @@ class EmotionProfile {
     String? careDate,
     int? careCount,
     int? lastCareAtMs,
+    String? lastCareState,
   }) => EmotionProfile(
+    emotionEnabled: emotionEnabled ?? this.emotionEnabled,
     comfortPhrases: comfortPhrases ?? this.comfortPhrases,
     avoidedTopics: avoidedTopics ?? this.avoidedTopics,
     quietStart: quietStart ?? this.quietStart,
@@ -162,6 +181,7 @@ class EmotionProfile {
     careDate: careDate ?? this.careDate,
     careCount: careCount ?? this.careCount,
     lastCareAtMs: lastCareAtMs ?? this.lastCareAtMs,
+    lastCareState: lastCareState ?? this.lastCareState,
   );
 }
 

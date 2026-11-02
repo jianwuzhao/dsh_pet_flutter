@@ -25,6 +25,7 @@ class GatewayChatReply {
     this.reply = '',
     this.reason = '',
     this.degraded = false,
+    this.sentiment,
   });
 
   final bool ok;
@@ -35,6 +36,10 @@ class GatewayChatReply {
 
   /// true = 想要的提供者不可用，回复来自降级链上的其他提供者。
   final bool degraded;
+
+  /// 对话情绪标签（positive/negative/tired/excited/neutral），可空；
+  /// 内核用它喂情绪引擎（计划 4.2 对话情绪感知）。
+  final String? sentiment;
 }
 
 class InteractionGateway {
@@ -113,6 +118,7 @@ class InteractionGateway {
           reply: reply.content,
           degraded: resolution.degraded,
           reason: resolution.notice ?? '',
+          sentiment: reply.sentiment,
         );
       case Failure(:final code, :final reason):
         return GatewayChatReply(ok: false, reason: '[$code] $reason');

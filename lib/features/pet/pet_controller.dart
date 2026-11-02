@@ -79,6 +79,9 @@ class PetController {
   /// 是否正在按住拖动：UI 用它切换抓手光标，命中逻辑用它在拖动期间保持可交互。
   final ValueNotifier<bool> dragging = ValueNotifier<bool>(false);
 
+  /// 互动信号回调：点击（面板关闭时）/拖拽开始时触发，情绪引擎感知互动用。
+  VoidCallback? onInteraction;
+
   /// Q 弹挤压比例（x 横向、y 纵向），以脚底为锚点缩放。
   /// 上游点击/落地都有“压扁 55% → easeOutBack 回弹”，这是桌宠手感的一半。
   final ValueNotifier<Offset> squash = ValueNotifier<Offset>(
@@ -578,6 +581,8 @@ class PetController {
 
   void onTapPet() {
     if (panel.value != null) return;
+    // 面板开着不算逗宠物（用户在操作界面），只有直接点击才喂互动信号。
+    onInteraction?.call();
     _triggerSquash(0.85);
     // 甩出途中点一下：放弃“落地恢复拖拽动画”的等待，交给点击动画/物理继续。
     if (_thrown) {
@@ -596,6 +601,7 @@ class PetController {
   }
 
   void onDragStart(Offset pointer) {
+    onInteraction?.call();
     _poseTimer?.cancel();
     _movePlan = null;
     _mode = _Mode.drag;
@@ -842,6 +848,18 @@ class PetController {
 
     _play(name, loop: false, restart: true);
     closePanel();
+  }
+
+  /// 表达层专用点播：与右键点播的差异是不关面板、不打断拖拽
+  /// （情绪表达不该打断用户正在进行的操作）；缺名静默跳过，
+  /// 播完自然回到随机链；联动状态动画（applyStatus）下次更新会夺回。
+  void playExpressionAnimation(String name) {
+    if (!manifest.names.contains(name)) return;
+    if (_mode == _Mode.drag) return;
+    _poseTimer?.cancel();
+    _movePlan = null;
+    _mode = _Mode.pose;
+    _play(name, loop: false, restart: true);
   }
 
   /// 右键“回到初始位置”：回到当前屏幕右下角，并清掉甩出/拖拽残留状态。

@@ -1,7 +1,7 @@
-/// 设置：Tab 容器（联动 / 大脑 / 隐私）。
+/// 设置：Tab 容器（联动 / 大脑 / 隐私 / 情绪）。
 ///
-/// 草稿状态集中在这一页的 State 里，三个分区无状态只做展示；
-/// 保存时统一做热键校验、组装 AppConfig + PrivacySettings 并落盘。
+/// 草稿状态集中在这一页的 State 里，四个分区无状态只做展示；
+/// 保存时统一做热键校验、组装 AppConfig + PrivacySettings + EmotionProfile 并落盘。
 /// API Key 不写进 jsonc，保存时进系统安全存储（不可用时回退 0600 文件）。
 library;
 
@@ -17,6 +17,7 @@ import '../../gateway/hotkey_source.dart';
 import '../../persona/profile_store.dart';
 import '../ai/secret_store.dart';
 import 'sections/brain_section.dart';
+import 'sections/emotion_section.dart';
 import 'sections/linkage_section.dart';
 import 'sections/privacy_section.dart';
 
@@ -25,7 +26,9 @@ class SettingsPage extends StatefulWidget {
     super.key,
     required this.config,
     required this.privacy,
+    required this.emotion,
     required this.onSave,
+    required this.onSaveEmotion,
     required this.onCheckAccessibility,
     required this.onClose,
   });
@@ -35,10 +38,16 @@ class SettingsPage extends StatefulWidget {
   /// 隐私四开关的当前值（来自隐私权限中心，保存时整体回写）。
   final PrivacySettings privacy;
 
+  /// 情绪档案当前值（来自内核，保存时经内核回写并即时生效）。
+  final EmotionProfile emotion;
+
   final Future<Result<void>> Function(
     AppConfig config,
     PrivacySettings privacy,
   ) onSave;
+
+  /// 情绪档案独立落盘（emotion_profile.json）；与主配置分开保存。
+  final Result<void> Function(EmotionProfile emotion) onSaveEmotion;
 
   /// 辅助功能授权检测（含触发系统授权弹窗），由装配层接平台实现。
   final Future<bool> Function() onCheckAccessibility;
@@ -51,7 +60,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 3, vsync: this);
+  late final TabController _tabs = TabController(length: 4, vsync: this);
 
   late String _active =
       widget.config.linkage.activeAdapter?.id ??
@@ -76,6 +85,13 @@ class _SettingsPageState extends State<SettingsPage>
   bool _accessChecking = false;
   String _accessResult = '';
 
+  late EmotionProfile _emotion = widget.emotion;
+  late final TextEditingController _quietStart;
+  late final TextEditingController _quietEnd;
+  late final TextEditingController _dailyCareLimit;
+  late final TextEditingController _comfortPhrases;
+  late final TextEditingController _avoidedTopics;
+
   bool _aiTesting = false;
   String _aiTestResult = '';
 
@@ -98,6 +114,17 @@ class _SettingsPageState extends State<SettingsPage>
     _aiInterval = TextEditingController(
       text: '${widget.config.ai.whisperIntervalSec}',
     );
+    _quietStart = TextEditingController(text: widget.emotion.quietStart);
+    _quietEnd = TextEditingController(text: widget.emotion.quietEnd);
+    _dailyCareLimit = TextEditingController(
+      text: '${widget.emotion.dailyCareLimit}',
+    );
+    _comfortPhrases = TextEditingController(
+      text: widget.emotion.comfortPhrases.join('\n'),
+    );
+    _avoidedTopics = TextEditingController(
+      text: widget.emotion.avoidedTopics.join('\n'),
+    );
     _syncFields();
     _loadKey();
   }
@@ -114,6 +141,11 @@ class _SettingsPageState extends State<SettingsPage>
     _aiModel.dispose();
     _aiKey.dispose();
     _aiInterval.dispose();
+    _quietStart.dispose();
+    _quietEnd.dispose();
+    _dailyCareLimit.dispose();
+    _comfortPhrases.dispose();
+    _avoidedTopics.dispose();
     super.dispose();
   }
 
@@ -197,14 +229,40 @@ class _SettingsPageState extends State<SettingsPage>
     }
     final result = await widget.onSave(updated, _privacy);
     if (!mounted) return;
+    // 情绪档案独立落盘：失败不回滚主配置，但提示要说清哪份没存上。
+    // 预算计数（careDate/careCount/…）不在设置页编辑，原样带回；
+    // 面板开着期间内核恰好消耗额度的极端情况会丢一次计数，后果可接受。
+    final emotionResult = widget.onSaveEmotion(_assembleEmotion());
     setState(() {
       _busy = false;
       _hint = switch (result) {
-        Success() => '已保存并生效',
+        Success() => switch (emotionResult) {
+          Success() => '已保存并生效',
+          Failure(reason: final reason) => reason,
+        },
         Failure(reason: final reason) => reason,
       };
     });
   }
+
+  /// 组装情绪档案草稿：开关来自 _emotion，文本字段来自输入框，
+  /// 计数字段与亲密度基线拷贝打开面板时的快照（无编辑入口）。
+  EmotionProfile _assembleEmotion() {
+    final limit = int.tryParse(_dailyCareLimit.text.trim());
+    return _emotion.copyWith(
+      quietStart: _quietStart.text.trim(),
+      quietEnd: _quietEnd.text.trim(),
+      dailyCareLimit: (limit ?? _emotion.dailyCareLimit).clamp(0, 50),
+      comfortPhrases: _linesOf(_comfortPhrases.text),
+      avoidedTopics: _linesOf(_avoidedTopics.text),
+    );
+  }
+
+  /// 多行文本 → 去空白行后的列表（话术池/话题列表的统一口径）。
+  static List<String> _linesOf(String raw) => [
+    for (final line in raw.split('\n'))
+      if (line.trim().isNotEmpty) line.trim(),
+  ];
 
   /// 校验不过：提示原因并保持未保存状态（返回 null 让调用方停下）。
   String? _reject(String message) {
@@ -350,6 +408,7 @@ class _SettingsPageState extends State<SettingsPage>
                 Tab(text: '联动'),
                 Tab(text: '大脑'),
                 Tab(text: '隐私'),
+                Tab(text: '情绪'),
               ],
             ),
             Flexible(
@@ -392,6 +451,15 @@ class _SettingsPageState extends State<SettingsPage>
                       accessibilityChecking: _accessChecking,
                       accessibilityResult: _accessResult,
                       onCheckAccessibility: _checkAccessibility,
+                    ),
+                    EmotionSection(
+                      profile: _emotion,
+                      onChanged: (value) => setState(() => _emotion = value),
+                      quietStart: _quietStart,
+                      quietEnd: _quietEnd,
+                      dailyCareLimit: _dailyCareLimit,
+                      comfortPhrases: _comfortPhrases,
+                      avoidedTopics: _avoidedTopics,
                     ),
                   ],
                 ),

@@ -28,8 +28,10 @@ class PetStage extends StatefulWidget {
     required this.activeName,
     required this.config,
     required this.privacy,
+    required this.emotion,
     required this.onSend,
     required this.onSaveConfig,
+    required this.onSaveEmotion,
     required this.onCheckAccessibility,
     required this.onQuit,
     this.onOpenApp,
@@ -44,11 +46,17 @@ class PetStage extends StatefulWidget {
   /// 隐私四开关当前值：传给设置页当草稿初值。
   final PrivacySettings privacy;
 
+  /// 情绪档案当前值：传给设置页当草稿初值。
+  final EmotionProfile emotion;
+
   final Future<Result<DispatchOutcome>> Function(String prompt) onSend;
 
   /// 保存时一并回写隐私四开关（配置与隐私档案分开落盘）。
   final Future<Result<void>> Function(AppConfig config, PrivacySettings privacy)
   onSaveConfig;
+
+  /// 保存时回写情绪档案（经内核即时生效）。
+  final Result<void> Function(EmotionProfile emotion) onSaveEmotion;
 
   /// 辅助功能授权检测（含触发系统授权弹窗）。
   final Future<bool> Function() onCheckAccessibility;
@@ -235,7 +243,9 @@ class _PetStageState extends State<PetStage> {
           PetPanel.settings => SettingsPage(
             config: widget.config,
             privacy: widget.privacy,
+            emotion: widget.emotion,
             onSave: widget.onSaveConfig,
+            onSaveEmotion: widget.onSaveEmotion,
             onCheckAccessibility: widget.onCheckAccessibility,
             onClose: controller.closePanel,
           ),
