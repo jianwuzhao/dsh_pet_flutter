@@ -33,10 +33,6 @@ App Sandbox is disabled in `DebugProfile.entitlements` / `Release.entitlements`;
 
 > Native click-through / tray / input injection are not implemented yet. Installation instructions will be added here.
 
-### Web (Not yet supported)
-
-> Platform degradation verification is pending. Installation instructions will be added here.
-
 ### Android (Not yet supported)
 
 > Platform degradation verification is pending. Installation instructions will be added here.
@@ -84,7 +80,6 @@ docs/           # Doc resources (sponsor QR codes, etc.)
 | Feature | Status | Updated | Contributor |
 |---|---|---|---|
 | Windows platform (click-through / tray / input injection) | Not supported yet | 2026-10-30 | zhaodaye2022 |
-| Web platform degradation verification | Not supported yet | 2026-10-30 | zhaodaye2022 |
 | Android platform degradation verification | Not supported yet | 2026-10-30 | zhaodaye2022 |
 | M1 Infrastructure & config extension (local profile store) | Not started | 2026-10-30 | zhaodaye2022 |
 | M2 AI layer (three LLM providers & fallback chain) | Not started | 2026-10-30 | zhaodaye2022 |
