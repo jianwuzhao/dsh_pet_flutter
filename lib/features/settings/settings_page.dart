@@ -392,10 +392,7 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
   /// 现场建的 provider 自建了 http client，测完必须显式释放。
-  void _disposeTestProvider(LlmProvider provider) {
-    if (provider is OpenAiProvider) provider.dispose();
-    if (provider is OllamaProvider) provider.dispose();
-  }
+  void _disposeTestProvider(LlmProvider provider) => provider.dispose();
 
   Future<void> _checkAccessibility() async {
     if (_accessChecking) return;

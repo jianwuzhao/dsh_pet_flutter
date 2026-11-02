@@ -59,9 +59,15 @@ class OllamaProvider extends LlmProvider {
           'Ollama 返回 HTTP ${response.statusCode}：${_snippet(response.body)}',
         );
       }
-      final decoded = jsonDecode(response.body);
-      if (decoded is! Map<String, dynamic>) {
-        return const Failure('ai.empty', 'Ollama 返回了无法解析的回复');
+      Map<String, dynamic> decoded;
+      try {
+        final raw = jsonDecode(response.body);
+        if (raw is! Map<String, dynamic>) {
+          return const Failure('ai.malformed', 'Ollama 返回了无法解析的回复');
+        }
+        decoded = raw;
+      } on FormatException catch (error) {
+        return Failure('ai.malformed', 'Ollama 返回了无法解析的响应：${error.message}');
       }
       final message = decoded['message'];
       final content = message is Map ? message['content'] : null;
@@ -89,6 +95,7 @@ class OllamaProvider extends LlmProvider {
     return trimmed.length <= 200 ? trimmed : '${trimmed.substring(0, 200)}…';
   }
 
+  @override
   void dispose() {
     if (_ownsClient) _client.close();
   }

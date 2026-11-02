@@ -72,7 +72,13 @@ class OpenAiProvider extends LlmProvider {
           'AI 服务返回 HTTP ${response.statusCode}：${_snippet(response.body)}',
         );
       }
-      final content = _content(_decode(response.body));
+      Map<String, dynamic> decoded;
+      try {
+        decoded = _decode(response.body);
+      } on FormatException catch (error) {
+        return Failure('ai.malformed', 'AI 服务返回了无法解析的响应：${error.message}');
+      }
+      final content = _content(decoded);
       if (content.trim().isEmpty) {
         return const Failure('ai.empty', 'AI 返回了空回复');
       }
@@ -122,6 +128,7 @@ class OpenAiProvider extends LlmProvider {
     return trimmed.length <= 200 ? trimmed : '${trimmed.substring(0, 200)}…';
   }
 
+  @override
   void dispose() {
     if (_ownsClient) _client.close();
   }

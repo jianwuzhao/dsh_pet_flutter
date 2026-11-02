@@ -549,9 +549,9 @@ class _PetAppState extends State<PetApp> {
 
   /// 路由整体替换后，旧 provider 里自建的 http client 必须显式关掉。
   void _disposeRouter(LlmRouter router) {
+    // dispose 已提升到 LlmProvider 接口，不再按具体类型分支。
     for (final provider in router.providers) {
-      if (provider is OpenAiProvider) provider.dispose();
-      if (provider is OllamaProvider) provider.dispose();
+      provider.dispose();
     }
   }
 

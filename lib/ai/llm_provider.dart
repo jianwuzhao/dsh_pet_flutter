@@ -75,4 +75,9 @@ abstract class LlmProvider {
   Future<bool> get isReady;
 
   Future<Result<LlmReply>> chat(LlmRequest request);
+
+  /// 释放提供者持有的资源（自建的 http.Client 等）。
+  /// 默认无资源可释放；持有自建客户端的实现必须覆写，
+  /// 否则经抽象类型持有的一方无法正确关闭连接池。
+  void dispose() {}
 }
