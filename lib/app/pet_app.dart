@@ -36,6 +36,7 @@ import '../interop/adapters/chatgpt_adapter.dart';
 import '../interop/adapters/trae_cn_adapter.dart';
 import '../interop/capability_registry.dart';
 import '../interop/run_event.dart';
+import '../persona/appearance/appearance_state.dart';
 import '../persona/expression/expression_layer.dart';
 import '../persona/profile_store.dart';
 import '../platform/pet_platform.dart';
@@ -144,6 +145,11 @@ class _PetAppState extends State<PetApp> {
       config: config,
       privacy: _privacy?.settings ?? const PrivacySettings(),
       emotion: _kernel?.emotionProfile ?? const EmotionProfile(),
+      appearance: _kernel?.appearanceState ?? const AppearanceState(),
+      appearanceReason: _kernel?.appearanceReason ?? '',
+      onEvolveAppearance: _kernel?.evolveAppearance,
+      onRollbackAppearance: _kernel?.rollbackAppearance,
+      onFreezeAppearance: _kernel?.setAppearanceFrozen,
       memory: _kernel?.memory,
       learning: _kernel?.learning,
       onSend: _dispatch,

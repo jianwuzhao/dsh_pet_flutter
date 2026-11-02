@@ -7,6 +7,8 @@
 /// M5 接管会话服务：人格+记忆+情绪上下文组装挂到网关对话路径，
 /// 记忆候选走 pending 队列等用户接受/拒绝，不做无确认写入。
 /// M6 接管学习治理：接受/拒绝语义的反馈闭环、策略提案与版本回滚。
+/// 形象推演：由情绪三维 + 人格主动性 + 24h 接受/拒绝反馈驱动，
+/// 每次最多一步、有冷却与冻结，所有变更可回滚。
 /// pet_app 回归纯装配。
 library;
 
@@ -25,6 +27,9 @@ import '../learning/eval_gate.dart';
 import '../learning/feedback_collector.dart';
 import '../learning/learning_loop.dart';
 import '../learning/policy_store.dart';
+import '../persona/appearance/appearance_evolution.dart';
+import '../persona/appearance/appearance_state.dart';
+import '../persona/appearance/appearance_store.dart';
 import '../persona/emotion/emotion_machine.dart';
 import '../persona/emotion/emotion_signal.dart';
 import '../persona/emotion/emotion_state.dart';
@@ -45,6 +50,8 @@ class AssistantKernel {
     int conversationRounds = 8,
     MemoryStore? memory,
     LearningLoop? learning,
+    AppearanceStore? appearanceStore,
+    AppearanceEvolution appearanceEvolution = const AppearanceEvolution(),
     DateTime Function()? clock,
   }) : _gateway = gateway,
        _store = store,
@@ -56,6 +63,8 @@ class AssistantKernel {
        // 状态机的节流窗基准必须与注入时钟同源，否则测试时钟永远走不满 90s。
        _machine = EmotionMachine(now: clock == null ? null : clock()),
        _memory = memory ?? MemoryStore(),
+       _appearanceStore = appearanceStore ?? AppearanceStore(),
+       _appearanceEvolution = appearanceEvolution,
        _learning =
            learning ??
            LearningLoop(
@@ -93,6 +102,8 @@ class AssistantKernel {
   final ExpressionLayer _expression;
   final MemoryStore _memory;
   final LearningLoop _learning;
+  final AppearanceStore _appearanceStore;
+  final AppearanceEvolution _appearanceEvolution;
   late final ConversationService _conversation;
 
   EmotionState _emotion = EmotionState();
@@ -103,6 +114,14 @@ class AssistantKernel {
 
   /// UI 可监听的情绪快照（三维数值，供画像/调试展示用）。
   final ValueNotifier<EmotionView> emotion;
+
+  /// 当前形象（设置页预览与后续渲染层共用一份事实来源）。
+  final ValueNotifier<AppearanceState> appearance = ValueNotifier(
+    const AppearanceState(),
+  );
+
+  /// 最近一次推演/回滚的可读理由（设置页原样展示「为什么变了」）。
+  String _appearanceReason = '';
 
   Timer? _decayTimer;
   Timer? _careTimer;
@@ -115,6 +134,12 @@ class AssistantKernel {
 
   /// 学习治理：设置页的策略版本/提案/回滚与记忆提案的反馈采集入口。
   LearningLoop get learning => _learning;
+
+  /// 形象当前值（渲染与设置页都以它为准）。
+  AppearanceState get appearanceState => appearance.value;
+
+  /// 最近一次推演的可读理由。
+  String get appearanceReason => _appearanceReason;
 
   /// 回复被采纳：用户把建议落地了（记正样本，参与自动回滚监控）。
   void acceptReply() => _learning.acceptReply();
@@ -143,6 +168,13 @@ class AssistantKernel {
         _emotion = EmotionState(intimacyBaseline: profile.intimacyBaseline);
       case Failure(:final reason):
         _host.showBubble('情绪档案读取失败：$reason');
+    }
+    switch (_appearanceStore.load()) {
+      case Success(value: final state):
+        appearance.value = state;
+      case Failure(:final reason):
+        // 形象直接影响渲染：读不出来就先用默认值，并明确告知不是「宠物变异了」。
+        _host.showBubble('形象档案读取失败，先用默认形象：$reason');
     }
     if (!_profile.emotionEnabled) _machine.reset(now: _clock());
     _lastActivityAt = _clock();
@@ -261,10 +293,83 @@ class AssistantKernel {
     return const Success(null);
   }
 
+  /// 推演一次形象：情绪三维 + 人格主动性 + 24h 反馈计数 → 纯函数决策。
+  ///
+  /// 四道护栏都在 [AppearanceEvolution] 内：冻结优先、12h 冷却、
+  /// 单次只改一维、信号不足不动。这里只负责汇总信号与落盘。
+  EvolutionOutcome evolveAppearance() {
+    final now = _clock();
+    final outcome = _appearanceEvolution.evolve(
+      appearance.value,
+      AppearanceSignals(
+        valence: _emotion.valence,
+        arousal: _emotion.arousal,
+        intimacy: _emotion.intimacy,
+        proactiveness: _dna.proactiveness,
+        acceptedCount: _feedbackCount(FeedbackVerdict.accepted, now),
+        rejectedCount: _feedbackCount(FeedbackVerdict.rejected, now),
+        correctedCount: _feedbackCount(FeedbackVerdict.corrected, now),
+        now: now,
+      ),
+    );
+    _appearanceReason = outcome.reason;
+    if (!outcome.changed) return outcome;
+    if (_appearanceStore.history().isEmpty) {
+      // 首次演化：先把「演化前」的形象留档，回滚才有上一版可回。
+      _appearanceStore.save(appearance.value);
+    }
+    final saved = _appearanceStore.save(outcome.state);
+    if (saved is Failure<void>) {
+      // 没写进盘就不改内存：避免界面显示一个重启后不存在的形象。
+      _host.showBubble('形象保存失败，这次推演没有生效：${saved.reason}');
+      _appearanceReason = saved.reason;
+      return EvolutionOutcome(
+        state: appearance.value,
+        changed: false,
+        reason: saved.reason,
+      );
+    }
+    appearance.value = outcome.state;
+    return outcome;
+  }
+
+  /// 回滚到上一版形象（回滚本身也留痕，修订号继续递增）。
+  Result<AppearanceState> rollbackAppearance() {
+    final result = _appearanceStore.rollback();
+    switch (result) {
+      case Success(value: final state):
+        appearance.value = state;
+        _appearanceReason = '已回滚到上一版（修订 ${state.revision}）';
+      case Failure(:final reason):
+        _appearanceReason = reason;
+    }
+    return result;
+  }
+
+  /// 冻结/解冻自动演化；冻结后手动回滚仍然可用。
+  Result<void> setAppearanceFrozen(bool frozen) {
+    final next = appearance.value.copyWith(frozen: frozen);
+    // 冻结不是一次外观变化：不写历史、不动修订号，避免污染回滚链。
+    final result = _appearanceStore.save(next, recordHistory: false);
+    if (result is Success<void>) appearance.value = next;
+    _appearanceReason = frozen ? '已冻结：自动演化暂停' : '已解冻：下次推演恢复';
+    return result;
+  }
+
+  /// 24h 内的某类反馈条数：只读学习流水，不产生新样本。
+  int _feedbackCount(FeedbackVerdict verdict, DateTime now) {
+    final since = now.subtract(const Duration(hours: 24));
+    return _learning.collector
+        .load()
+        .where((event) => event.verdict == verdict && event.at.isAfter(since))
+        .length;
+  }
+
   void dispose() {
     _decayTimer?.cancel();
     _careTimer?.cancel();
     emotion.dispose();
+    appearance.dispose();
   }
 
   /// 状态机同步 + 换态时的被动表达（纯动画，不说话、不耗预算）。

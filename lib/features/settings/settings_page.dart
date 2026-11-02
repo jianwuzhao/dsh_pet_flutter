@@ -1,4 +1,4 @@
-/// 设置：Tab 容器（联动 / 大脑 / 隐私 / 情绪 / 记忆 / 学习）。
+/// 设置：Tab 容器（联动 / 大脑 / 隐私 / 情绪 / 形象 / 记忆 / 学习）。
 ///
 /// 草稿状态集中在这一页的 State 里，各分区无状态只做展示；
 /// 保存时统一做热键校验、组装 AppConfig + PrivacySettings + EmotionProfile 并落盘。
@@ -17,10 +17,13 @@ import '../../core/result.dart';
 import '../../gateway/hotkey_source.dart';
 import '../../interop/capability_registry.dart';
 import '../../learning/learning_loop.dart';
+import '../../persona/appearance/appearance_evolution.dart';
+import '../../persona/appearance/appearance_state.dart';
 import '../../persona/memory/memory_entry.dart';
 import '../../persona/memory/memory_store.dart';
 import '../../persona/profile_store.dart';
 import '../ai/secret_store.dart';
+import 'sections/appearance_section.dart';
 import 'sections/brain_section.dart';
 import 'sections/emotion_section.dart';
 import 'sections/learning_section.dart';
@@ -34,10 +37,15 @@ class SettingsPage extends StatefulWidget {
     required this.config,
     required this.privacy,
     required this.emotion,
+    required this.appearance,
+    required this.appearanceReason,
     required this.memory,
     required this.learning,
     required this.onSave,
     required this.onSaveEmotion,
+    this.onEvolveAppearance,
+    this.onRollbackAppearance,
+    this.onFreezeAppearance,
     required this.onCheckAccessibility,
     required this.onClose,
     this.capabilities,
@@ -51,6 +59,19 @@ class SettingsPage extends StatefulWidget {
 
   /// 情绪档案当前值（来自内核，保存时经内核回写并即时生效）。
   final EmotionProfile emotion;
+
+  /// 形象当前值（来自内核，推演/回滚/冻结后由页面同步更新预览）。
+  final AppearanceState appearance;
+  final String appearanceReason;
+
+  /// 推演一次（返回带理由的结果；冻结/冷却/信号不足时 changed=false）。
+  final EvolutionOutcome Function()? onEvolveAppearance;
+
+  /// 回滚到上一版形象。
+  final Result<AppearanceState> Function()? onRollbackAppearance;
+
+  /// 冻结/解冻自动演化。
+  final Result<void> Function(bool frozen)? onFreezeAppearance;
 
   /// 记忆库（内核实例）：查看/纠正/遗忘/导出直接操作，即时生效。
   final MemoryStore? memory;
@@ -83,7 +104,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 6, vsync: this);
+  late final TabController _tabs = TabController(length: 7, vsync: this);
 
   late String _active =
       widget.config.linkage.activeAdapter?.id ??
@@ -109,6 +130,11 @@ class _SettingsPageState extends State<SettingsPage>
   String _accessResult = '';
 
   late EmotionProfile _emotion = widget.emotion;
+
+  // ---- 形象：页面内快照，操作后以内核返回值同步（预览立即可见） ----
+  late AppearanceState _appearance = widget.appearance;
+  late String _appearanceReason = widget.appearanceReason;
+  String _appearanceHint = '';
   late final TextEditingController _quietStart;
   late final TextEditingController _quietEnd;
   late final TextEditingController _dailyCareLimit;
@@ -459,6 +485,53 @@ class _SettingsPageState extends State<SettingsPage>
   );
 
   // ---------------------------------------------------------------------------
+  // 形象：推演 / 回滚 / 冻结（护栏都在内核与纯函数里，这里只同步展示）
+  // ---------------------------------------------------------------------------
+
+  void _evolveAppearance() {
+    final evolve = widget.onEvolveAppearance;
+    if (evolve == null) return;
+    final outcome = evolve();
+    setState(() {
+      _appearance = outcome.state;
+      _appearanceReason = outcome.reason;
+      _appearanceHint = outcome.changed ? '已应用这次推演' : '';
+    });
+  }
+
+  void _rollbackAppearance() {
+    final rollback = widget.onRollbackAppearance;
+    if (rollback == null) return;
+    final result = rollback();
+    setState(() {
+      switch (result) {
+        case Success(value: final state):
+          _appearance = state;
+          _appearanceHint = '已回滚到修订 v${state.revision}';
+        case Failure(:final reason):
+          _appearanceHint = reason;
+      }
+      _appearanceReason = widget.appearanceReason;
+    });
+  }
+
+  void _toggleAppearanceFrozen(bool frozen) {
+    final freeze = widget.onFreezeAppearance;
+    if (freeze == null) return;
+    final result = freeze(frozen);
+    setState(() {
+      switch (result) {
+        case Success():
+          _appearance = _appearance.copyWith(frozen: frozen);
+          _appearanceHint = frozen ? '已冻结自动演化' : '已解冻自动演化';
+        case Failure(:final reason):
+          _appearanceHint = reason;
+      }
+      _appearanceReason = widget.appearanceReason;
+    });
+  }
+
+  // ---------------------------------------------------------------------------
   // 大脑连通性测试：用草稿值现场建 provider 发一条 ping，测完立即释放
   // ---------------------------------------------------------------------------
 
@@ -602,6 +675,7 @@ class _SettingsPageState extends State<SettingsPage>
                 Tab(text: '大脑'),
                 Tab(text: '隐私'),
                 Tab(text: '情绪'),
+                Tab(text: '形象'),
                 Tab(text: '记忆'),
                 Tab(text: '学习'),
               ],
@@ -657,6 +731,20 @@ class _SettingsPageState extends State<SettingsPage>
                       dailyCareLimit: _dailyCareLimit,
                       comfortPhrases: _comfortPhrases,
                       avoidedTopics: _avoidedTopics,
+                    ),
+                    AppearanceSection(
+                      state: _appearance,
+                      reason: _appearanceReason,
+                      hint: _appearanceHint,
+                      onEvolve: widget.onEvolveAppearance == null
+                          ? null
+                          : _evolveAppearance,
+                      onRollback: widget.onRollbackAppearance == null
+                          ? null
+                          : _rollbackAppearance,
+                      onFreeze: widget.onFreezeAppearance == null
+                          ? null
+                          : _toggleAppearanceFrozen,
                     ),
                     if (widget.memory == null)
                       const Padding(

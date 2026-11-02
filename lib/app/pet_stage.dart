@@ -19,6 +19,8 @@ import '../features/pet/render/pet_view.dart';
 import '../features/settings/settings_page.dart';
 import '../interop/capability_registry.dart';
 import '../learning/learning_loop.dart';
+import '../persona/appearance/appearance_evolution.dart';
+import '../persona/appearance/appearance_state.dart';
 import '../persona/memory/memory_store.dart';
 import '../persona/profile_store.dart';
 import '../platform/pet_platform.dart';
@@ -32,6 +34,8 @@ class PetStage extends StatefulWidget {
     required this.config,
     required this.privacy,
     required this.emotion,
+    required this.appearance,
+    required this.appearanceReason,
     required this.memory,
     required this.learning,
     required this.onSend,
@@ -39,6 +43,9 @@ class PetStage extends StatefulWidget {
     required this.onSaveEmotion,
     required this.onCheckAccessibility,
     required this.onQuit,
+    this.onEvolveAppearance,
+    this.onRollbackAppearance,
+    this.onFreezeAppearance,
     this.onOpenApp,
     this.onReloadConfig,
     this.onWhisper,
@@ -58,6 +65,15 @@ class PetStage extends StatefulWidget {
 
   /// 情绪档案当前值：传给设置页当草稿初值。
   final EmotionProfile emotion;
+
+  /// 形象当前值与最近一次推演理由：传给设置页做参数化预览。
+  final AppearanceState appearance;
+  final String appearanceReason;
+
+  /// 推演 / 回滚 / 冻结入口（由内核提供，页面只同步展示结果）。
+  final EvolutionOutcome Function()? onEvolveAppearance;
+  final Result<AppearanceState> Function()? onRollbackAppearance;
+  final Result<void> Function(bool frozen)? onFreezeAppearance;
 
   /// 记忆库（内核同一实例）：设置页的查看/纠正/遗忘/导出即时生效。
   final MemoryStore? memory;
@@ -287,10 +303,15 @@ class _PetStageState extends State<PetStage> {
             config: widget.config,
             privacy: widget.privacy,
             emotion: widget.emotion,
+            appearance: widget.appearance,
+            appearanceReason: widget.appearanceReason,
             memory: widget.memory,
             learning: widget.learning,
             onSave: widget.onSaveConfig,
             onSaveEmotion: widget.onSaveEmotion,
+            onEvolveAppearance: widget.onEvolveAppearance,
+            onRollbackAppearance: widget.onRollbackAppearance,
+            onFreezeAppearance: widget.onFreezeAppearance,
             onCheckAccessibility: widget.onCheckAccessibility,
             onClose: controller.closePanel,
             capabilities: widget.capabilities,

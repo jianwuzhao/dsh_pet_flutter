@@ -17,6 +17,8 @@ import 'package:dsh_pet_flutter/gateway/privacy_center.dart';
 import 'package:dsh_pet_flutter/learning/feedback_collector.dart';
 import 'package:dsh_pet_flutter/learning/learning_loop.dart';
 import 'package:dsh_pet_flutter/learning/policy_store.dart';
+import 'package:dsh_pet_flutter/persona/appearance/appearance_state.dart';
+import 'package:dsh_pet_flutter/persona/appearance/appearance_store.dart';
 import 'package:dsh_pet_flutter/persona/emotion/emotion_machine.dart';
 import 'package:dsh_pet_flutter/persona/emotion/emotion_signal.dart';
 import 'package:dsh_pet_flutter/persona/expression/expression_layer.dart';
@@ -68,6 +70,10 @@ void main() {
         ),
         host: host,
         clock: () => now,
+      ),
+      // 形象档案同理：默认 AppearanceStore 会读真实用户目录。
+      appearanceStore: AppearanceStore(
+        directory: Directory('${tmpDir.path}/profile'),
       ),
       clock: () => now,
     );
@@ -265,6 +271,67 @@ void main() {
         File('${tmpDir.path}/feedback.jsonl').readAsStringSync(),
         contains('accepted'),
       );
+    });
+  });
+
+  group('形象推演接线', () {
+    test('启动读取形象档案；缺失时用默认值', () {
+      final kernel = buildKernel()..start();
+      expect(kernel.appearanceState.signature, const AppearanceState().signature);
+      expect(host.bubbles, isEmpty);
+    });
+
+    test('反馈足够时推演一步并落盘，冷却期内不再变', () {
+      final kernel = buildKernel()..start();
+      kernel.acceptReply();
+      kernel.acceptReply();
+
+      final outcome = kernel.evolveAppearance();
+      expect(outcome.changed, isTrue);
+      expect(outcome.reason, contains('→'));
+      expect(kernel.appearanceState.expressionSet, AppearanceExpressionSet.bright);
+      expect(kernel.appearanceState.revision, 1);
+      expect(File('${tmpDir.path}/profile/appearance.json').existsSync(), isTrue);
+
+      final again = kernel.evolveAppearance();
+      expect(again.changed, isFalse);
+      expect(again.reason, contains('不足'));
+    });
+
+    test('回滚恢复上一版并让修订号继续递增', () {
+      final kernel = buildKernel()..start();
+      kernel.acceptReply();
+      kernel.acceptReply();
+      kernel.evolveAppearance();
+
+      final rolled = kernel.rollbackAppearance();
+      expect(rolled, isA<Success<AppearanceState>>());
+      expect(rolled.valueOrNull!.expressionSet, AppearanceExpressionSet.soft);
+      expect(rolled.valueOrNull!.revision, 2);
+      expect(kernel.appearanceState.signature, rolled.valueOrNull!.signature);
+    });
+
+    test('冻结后推演不动，解冻后恢复', () {
+      final kernel = buildKernel()..start();
+      kernel.acceptReply();
+      kernel.acceptReply();
+      expect(kernel.setAppearanceFrozen(true), isA<Success<void>>());
+
+      final frozen = kernel.evolveAppearance();
+      expect(frozen.changed, isFalse);
+      expect(frozen.reason, contains('冻结'));
+
+      kernel.setAppearanceFrozen(false);
+      expect(kernel.evolveAppearance().changed, isTrue);
+    });
+
+    test('形象档案损坏时明确报错并保持默认，不静默替换', () {
+      Directory('${tmpDir.path}/profile').createSync(recursive: true);
+      File('${tmpDir.path}/profile/appearance.json').writeAsStringSync('{ broken');
+      final kernel = buildKernel()..start();
+
+      expect(kernel.appearanceState.signature, const AppearanceState().signature);
+      expect(host.bubbles.single, contains('形象档案读取失败'));
     });
   });
 }
