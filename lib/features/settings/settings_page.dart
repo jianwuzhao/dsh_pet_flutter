@@ -14,11 +14,14 @@ import '../../core/config/ai_config.dart';
 import '../../core/config/app_config.dart';
 import '../../core/result.dart';
 import '../../gateway/hotkey_source.dart';
+import '../../persona/memory/memory_entry.dart';
+import '../../persona/memory/memory_store.dart';
 import '../../persona/profile_store.dart';
 import '../ai/secret_store.dart';
 import 'sections/brain_section.dart';
 import 'sections/emotion_section.dart';
 import 'sections/linkage_section.dart';
+import 'sections/memory_section.dart';
 import 'sections/privacy_section.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -27,6 +30,7 @@ class SettingsPage extends StatefulWidget {
     required this.config,
     required this.privacy,
     required this.emotion,
+    required this.memory,
     required this.onSave,
     required this.onSaveEmotion,
     required this.onCheckAccessibility,
@@ -40,6 +44,9 @@ class SettingsPage extends StatefulWidget {
 
   /// 情绪档案当前值（来自内核，保存时经内核回写并即时生效）。
   final EmotionProfile emotion;
+
+  /// 记忆库（内核实例）：查看/纠正/遗忘/导出直接操作，即时生效。
+  final MemoryStore? memory;
 
   final Future<Result<void>> Function(
     AppConfig config,
@@ -60,7 +67,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 4, vsync: this);
+  late final TabController _tabs = TabController(length: 5, vsync: this);
 
   late String _active =
       widget.config.linkage.activeAdapter?.id ??
@@ -91,6 +98,12 @@ class _SettingsPageState extends State<SettingsPage>
   late final TextEditingController _dailyCareLimit;
   late final TextEditingController _comfortPhrases;
   late final TextEditingController _avoidedTopics;
+
+  // ---- 记忆库：数据快照 + 筛选 + 操作提示（分区无状态，只做展示） ----
+  MemoryKind? _memoryFilter;
+  String _memoryHint = '';
+  List<MemoryEntry> _memoryPending = const [];
+  List<MemoryEntry> _memoryActive = const [];
 
   bool _aiTesting = false;
   String _aiTestResult = '';
@@ -125,6 +138,7 @@ class _SettingsPageState extends State<SettingsPage>
     _avoidedTopics = TextEditingController(
       text: widget.emotion.avoidedTopics.join('\n'),
     );
+    _refreshMemories();
     _syncFields();
     _loadKey();
   }
@@ -271,6 +285,60 @@ class _SettingsPageState extends State<SettingsPage>
   }
 
   // ---------------------------------------------------------------------------
+  // 记忆库操作：直接写内核的 MemoryStore，即时生效；提示走 _memoryHint
+  // ---------------------------------------------------------------------------
+
+  void _refreshMemories() {
+    final store = widget.memory;
+    if (store == null) return;
+    final filter = _memoryFilter;
+    _memoryPending = store.pending;
+    _memoryActive = [
+      for (final entry in store.entries(
+        kind: filter,
+        status: MemoryStatus.active,
+      ))
+        entry,
+    ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+  }
+
+  void _runMemory(Result<void> result, String successHint) {
+    setState(() {
+      _memoryHint = switch (result) {
+        Success() => successHint,
+        Failure(:final reason) => reason,
+      };
+      _refreshMemories();
+    });
+  }
+
+  void _confirmMemory(String id) =>
+      _runMemory(widget.memory?.confirm(id) ?? const Failure('memory.offline', '记忆库还没准备好'), '已记住这条提案');
+
+  void _rejectMemory(String id) =>
+      _runMemory(widget.memory?.reject(id) ?? const Failure('memory.offline', '记忆库还没准备好'), '已拒绝，这条提案丢弃了');
+
+  void _editMemory(MemoryEntry entry) =>
+      _runMemory(widget.memory?.update(entry) ?? const Failure('memory.offline', '记忆库还没准备好'), '已纠正');
+
+  void _forgetMemory(String id) =>
+      _runMemory(widget.memory?.remove(id) ?? const Failure('memory.offline', '记忆库还没准备好'), '已遗忘');
+
+  void _clearMemoryKind(MemoryKind kind) =>
+      _runMemory(widget.memory?.clearKind(kind) ?? const Failure('memory.offline', '记忆库还没准备好'), '这一类记忆已清空');
+
+  void _exportMemories() {
+    final store = widget.memory;
+    if (store == null) return;
+    switch (store.export()) {
+      case Success(value: final file):
+        setState(() => _memoryHint = '已导出到 ${file.path}');
+      case Failure(:final reason):
+        setState(() => _memoryHint = reason);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // 大脑连通性测试：用草稿值现场建 provider 发一条 ping，测完立即释放
   // ---------------------------------------------------------------------------
 
@@ -409,6 +477,7 @@ class _SettingsPageState extends State<SettingsPage>
                 Tab(text: '大脑'),
                 Tab(text: '隐私'),
                 Tab(text: '情绪'),
+                Tab(text: '记忆'),
               ],
             ),
             Flexible(
@@ -461,6 +530,31 @@ class _SettingsPageState extends State<SettingsPage>
                       comfortPhrases: _comfortPhrases,
                       avoidedTopics: _avoidedTopics,
                     ),
+                    if (widget.memory == null)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 16),
+                        child: Text(
+                          '记忆库还没准备好，稍后再打开设置试试',
+                          style: TextStyle(color: Color(0x66FFFFFF), fontSize: 12),
+                        ),
+                      )
+                    else
+                      MemorySection(
+                        pending: _memoryPending,
+                        memories: _memoryActive,
+                        filter: _memoryFilter,
+                        onFilterChanged: (value) => setState(() {
+                          _memoryFilter = value;
+                          _refreshMemories();
+                        }),
+                        onConfirm: _confirmMemory,
+                        onReject: _rejectMemory,
+                        onEdit: _editMemory,
+                        onForget: _forgetMemory,
+                        onClearKind: _clearMemoryKind,
+                        onExport: _exportMemories,
+                        hint: _memoryHint,
+                      ),
                   ],
                 ),
               ),

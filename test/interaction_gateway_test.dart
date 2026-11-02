@@ -78,12 +78,15 @@ void main() {
       expect((result as Success<DispatchOutcome>).value.ok, isTrue);
     });
 
-    test('接入会话服务后输入走对话路径并带回回复', () async {
+    test('接入会话服务且 provider 能回复时走对话路径并带回回复', () async {
       final gateway = InteractionGateway(
         dispatcher: dispatcherWith(
           FakeAdapter('trae-cn', (prompt) async => const DispatchOutcome(ok: true)),
         ),
-        router: LlmRouter(providers: [], activeId: 'none'),
+        router: LlmRouter(
+          providers: [FakeProvider('openai', replyCapable: true)],
+          activeId: 'openai',
+        ),
         conversation: (prompt) async =>
             Success(LlmReply(content: '收到：$prompt', sentiment: 'positive')),
       );
@@ -93,6 +96,28 @@ void main() {
       final outcome = (result as Success<DispatchOutcome>).value;
       expect(outcome.ok, isTrue);
       expect(outcome.reply, '收到：在吗');
+    });
+
+    test('会话服务挂了但 provider 只剩转发能力时维持原转发行为', () async {
+      final bridge = FakeProvider('trae-bridge', replyCapable: false);
+      var forwarded = false;
+      final gateway = InteractionGateway(
+        dispatcher: dispatcherWith(
+          FakeAdapter('trae-cn', (prompt) async {
+            forwarded = true;
+            return const DispatchOutcome(ok: true);
+          }),
+        ),
+        router: LlmRouter(providers: [bridge], activeId: 'trae-bridge'),
+        // 会话服务虽然挂了，但 bridge 不支持 reply，submit 仍走转发。
+        conversation: (prompt) async =>
+            Success(LlmReply(content: '收到：$prompt')),
+      );
+
+      final result = await gateway.submit('帮我看看', InputSource.panel);
+
+      expect((result as Success<DispatchOutcome>).value.ok, isTrue);
+      expect(forwarded, isTrue);
     });
 
     test('空文本不外发，直接结构化失败', () async {

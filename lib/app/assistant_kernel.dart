@@ -4,14 +4,18 @@
 /// - 输入侧：submit/chat 在转发网关之外喂情绪信号；
 /// - 信号侧：任务终态（success/error）与点击/拖拽互动折算成情绪信号；
 /// - 表达侧：换态被动表达动画 + worried 持续关心（过隐私门禁与预算）。
-/// 会话与记忆是 M5 的占位、学习治理是 M6 的占位；pet_app 回归纯装配。
+/// M5 接管会话服务：人格+记忆+情绪上下文组装挂到网关对话路径，
+/// 记忆候选走 pending 队列等用户接受/拒绝，不做无确认写入。
+/// 学习治理是 M6 的占位；pet_app 回归纯装配。
 library;
 
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import '../ai/conversation.dart';
 import '../core/result.dart';
+import '../features/ai/chat_memory.dart';
 import '../features/linkage/assistant_adapters.dart';
 import '../features/linkage/status/assistant_event.dart';
 import '../gateway/interaction_gateway.dart';
@@ -22,6 +26,7 @@ import '../persona/emotion/emotion_state.dart';
 import '../persona/emotion/interruption_budget.dart';
 import '../persona/emotion/response_strategy.dart';
 import '../persona/expression/expression_layer.dart';
+import '../persona/memory/memory_store.dart';
 import '../persona/persona_dna.dart';
 import '../persona/profile_store.dart';
 
@@ -31,6 +36,9 @@ class AssistantKernel {
     required ProfileStore store,
     required ExpressionHost host,
     required PrivacyCenter privacy,
+    ChatMemory? conversationHistory,
+    int conversationRounds = 8,
+    MemoryStore? memory,
     DateTime Function()? clock,
   }) : _gateway = gateway,
        _store = store,
@@ -41,9 +49,22 @@ class AssistantKernel {
        _expression = ExpressionLayer(host: host),
        // 状态机的节流窗基准必须与注入时钟同源，否则测试时钟永远走不满 90s。
        _machine = EmotionMachine(now: clock == null ? null : clock()),
+       _memory = memory ?? MemoryStore(),
        emotion = ValueNotifier(
          const EmotionView(valence: 0, arousal: 0.3, intimacy: 0.3),
-       );
+       ) {
+    _conversation = ConversationService(
+      // 取值函数而不是值：配置热替换换掉 gateway.router 后仍能拿到最新。
+      routerLoader: () => gateway.router,
+      memory: _memory,
+      privacy: privacy,
+      history: conversationHistory,
+      dnaLoader: () => _dna,
+      emotionLoader: () => _emotion.view,
+      clock: _clock,
+      rounds: conversationRounds,
+    );
+  }
 
   final InteractionGateway _gateway;
   final ProfileStore _store;
@@ -53,6 +74,8 @@ class AssistantKernel {
   final InterruptionBudget _budget;
   final ResponseStrategy _strategy = ResponseStrategy();
   final ExpressionLayer _expression;
+  final MemoryStore _memory;
+  late final ConversationService _conversation;
 
   EmotionState _emotion = EmotionState();
   final EmotionMachine _machine;
@@ -69,9 +92,14 @@ class AssistantKernel {
   EmotionPhase get phase => _machine.phase;
   EmotionProfile get emotionProfile => _profile;
 
+  /// 记忆库：设置页的查看/纠正/遗忘/导出直接操作这里。
+  MemoryStore get memory => _memory;
+
   /// 启动：读人格 DNA 与情绪档案（失败气泡报错、保持默认值不写盘），
-  /// 再挂上衰减（60s/拍）与主动关心巡检（30s/拍）两个周期任务。
+  /// 再挂上衰减（60s/拍）与主动关心巡检（30s/拍）两个周期任务，
+  /// 最后把会话服务挂到网关对话路径。
   void start() {
+    _gateway.conversation = _conversation.handle;
     switch (_store.loadPersonaDna()) {
       case Success(value: final dna):
         _dna = dna;

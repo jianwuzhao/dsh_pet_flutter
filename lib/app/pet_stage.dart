@@ -17,6 +17,7 @@ import '../features/menu/pet_menu.dart';
 import '../features/pet/pet_controller.dart';
 import '../features/pet/render/pet_view.dart';
 import '../features/settings/settings_page.dart';
+import '../persona/memory/memory_store.dart';
 import '../persona/profile_store.dart';
 import '../platform/pet_platform.dart';
 import 'flyout_layout.dart';
@@ -29,6 +30,7 @@ class PetStage extends StatefulWidget {
     required this.config,
     required this.privacy,
     required this.emotion,
+    required this.memory,
     required this.onSend,
     required this.onSaveConfig,
     required this.onSaveEmotion,
@@ -48,6 +50,9 @@ class PetStage extends StatefulWidget {
 
   /// 情绪档案当前值：传给设置页当草稿初值。
   final EmotionProfile emotion;
+
+  /// 记忆库（内核同一实例）：设置页的查看/纠正/遗忘/导出即时生效。
+  final MemoryStore? memory;
 
   final Future<Result<DispatchOutcome>> Function(String prompt) onSend;
 
@@ -244,6 +249,7 @@ class _PetStageState extends State<PetStage> {
             config: widget.config,
             privacy: widget.privacy,
             emotion: widget.emotion,
+            memory: widget.memory,
             onSave: widget.onSaveConfig,
             onSaveEmotion: widget.onSaveEmotion,
             onCheckAccessibility: widget.onCheckAccessibility,

@@ -61,16 +61,24 @@ class InteractionGateway {
   set conversation(ConversationHandler? handler) => _conversation = handler;
 
   /// 唯一输入入口。空文本不外发，与 Dispatcher 的既有约定一致。
+  /// 激活提供者支持直接回复时走对话服务（人格+记忆+情绪上下文），
+  /// 否则维持转发到关联软件（计划 4.6）。
   Future<Result<DispatchOutcome>> submit(String text, InputSource source) async {
     final prompt = text.trim();
     if (prompt.isEmpty) {
       return const Failure('dispatch.empty', '内容为空，没有发送');
     }
     final handler = _conversation;
-    if (handler != null) {
+    if (handler != null && await _shouldConverse()) {
       return _submitConversation(handler, prompt);
     }
     return dispatcher.send(prompt);
+  }
+
+  /// 对话服务是否接管：激活提供者存在且支持直接回复。
+  Future<bool> _shouldConverse() async {
+    final resolution = await router.resolve();
+    return resolution?.provider.supportsReply ?? false;
   }
 
   Future<Result<DispatchOutcome>> _submitConversation(
@@ -108,6 +116,22 @@ class InteractionGateway {
         ok: false,
         reason: '当前提供者「${provider.displayName}」只支持转发到关联软件，不能直接回复',
       );
+    }
+    // 有对话服务时 `/v2/chat` 同样走人格+记忆+情绪上下文，与面板一致。
+    final handler = _conversation;
+    if (handler != null) {
+      switch (await handler(prompt)) {
+        case Success(value: final reply):
+          return GatewayChatReply(
+            ok: true,
+            reply: reply.content,
+            degraded: resolution.degraded,
+            reason: resolution.notice ?? '',
+            sentiment: reply.sentiment,
+          );
+        case Failure(:final code, :final reason):
+          return GatewayChatReply(ok: false, reason: '[$code] $reason');
+      }
     }
     switch (await provider.chat(
       LlmRequest(messages: [LlmMessage.user(prompt)]),

@@ -135,6 +135,7 @@ class _PetAppState extends State<PetApp> {
       config: config,
       privacy: _privacy?.settings ?? const PrivacySettings(),
       emotion: _kernel?.emotionProfile ?? const EmotionProfile(),
+      memory: _kernel?.memory,
       onSend: _dispatch,
       onSaveConfig: _saveConfig,
       onSaveEmotion: _saveEmotionProfile,
@@ -210,13 +211,17 @@ class _PetAppState extends State<PetApp> {
         legacyContentRead: config.linkage.contentRead,
       );
       final privacyLoad = privacy.load();
-      // 内核接管情绪闭环：输入与终态信号在这里折算成情绪表达。
+      // 内核接管情绪闭环与会话服务：输入与终态信号在这里折算成情绪表达，
+      // supportsReply 的对话走人格+记忆+情绪上下文组装。
       // gateway 实例在配置热替换时只换 dispatcher/router 属性，引用长期有效。
       final kernel = AssistantKernel(
         gateway: gateway,
         store: ProfileStore(),
         host: _PetExpressionHost(controller),
         privacy: privacy,
+        // 会话历史与 builtin 联动共用一份轮次记录（config.ai.memoryRounds 截断）。
+        conversationHistory: _memory,
+        conversationRounds: config.ai.memoryRounds,
       );
       kernel.start();
       final aggregator = StatusAggregator();
