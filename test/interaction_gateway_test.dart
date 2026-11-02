@@ -177,13 +177,16 @@ void main() {
         dispatcher: dispatcherWith(
           FakeAdapter('trae-cn', (prompt) async => const DispatchOutcome(ok: true)),
         ),
-        router: LlmRouter(providers: [bridge], activeId: 'trae-bridge'),
+        // 配置想要 openai（不可用），实际落到转发桥 → 属于降级。
+        router: LlmRouter(providers: [bridge], activeId: 'openai'),
       );
 
       final reply = await gateway.chat('你好');
 
       expect(reply.ok, isFalse);
       expect(reply.reason, contains('转发'));
+      // 从别的提供者降级过来要标明，调用方可据此提示用户。
+      expect(reply.degraded, isTrue);
     });
 
     test('没有任何可用提供者时提示去设置', () async {

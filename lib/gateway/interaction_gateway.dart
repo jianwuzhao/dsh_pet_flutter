@@ -114,6 +114,8 @@ class InteractionGateway {
     if (!provider.supportsReply) {
       return GatewayChatReply(
         ok: false,
+        // 明确告知「已降级到只转发」，别让调用方以为是原提供者坏了。
+        degraded: resolution.degraded,
         reason: '当前提供者「${provider.displayName}」只支持转发到关联软件，不能直接回复',
       );
     }
