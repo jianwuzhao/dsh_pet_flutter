@@ -482,7 +482,10 @@ class _SettingsPageState extends State<SettingsPage>
       _disposeTestProvider(provider);
       setState(() {
         _aiTesting = false;
-        _aiTestResult = '参数不完整：Base URL / 模型 / API Key 都要有值';
+        _aiTestResult = _aiProvider == 'ollama'
+            // Ollama 的 isReady 会探活，失败可能是服务没起而不只是参数缺。
+            ? '连不上本地 Ollama：确认服务已启动，且 Base URL / 模型填写正确'
+            : '参数不完整：Base URL / 模型 / API Key 都要有值';
       });
       return;
     }

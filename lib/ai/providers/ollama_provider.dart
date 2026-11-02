@@ -1,4 +1,10 @@
 /// 本地 Ollama 提供者：POST {baseUrl}/api/chat，无需 key。
+///
+/// isReady 不是纯配置检查：会探测 `{baseUrl}/api/tags`（Ollama 的标准
+/// 元信息端点，很轻），避免把「配置填了但服务没跑」的后端选进降级链——
+/// 否则对话会白等满 60 秒才超时。
+/// 探活结果按 [probeTtl] 缓存，避免每次输入都打一次请求；
+/// 配置只在装配时传入、之后不可变，所以缓存键就是实例本身。
 library;
 
 import 'dart:async';
@@ -15,15 +21,29 @@ class OllamaProvider extends LlmProvider {
     required String baseUrl,
     required String model,
     http.Client? client,
+    this.probeTimeout = const Duration(milliseconds: 1200),
+    this.probeTtl = const Duration(seconds: 30),
+    DateTime Function()? clock,
   }) : _baseUrl = baseUrl.trim(),
        _model = model.trim(),
        _client = client ?? http.Client(),
-       _ownsClient = client == null;
+       _ownsClient = client == null,
+       _clock = clock ?? DateTime.now;
 
   final String _baseUrl;
   final String _model;
   final http.Client _client;
   final bool _ownsClient;
+  final DateTime Function() _clock;
+
+  /// 探活超时：只判断「端口通不通」，不该拖慢任何一次输入。
+  final Duration probeTimeout;
+
+  /// 探活结果缓存时长：Ollama 起停是低频事件，30s 足够且不会频繁请求。
+  final Duration probeTtl;
+
+  bool? _readyCache;
+  DateTime? _readyCheckedAt;
 
   @override
   String get id => 'ollama';
@@ -35,7 +55,38 @@ class OllamaProvider extends LlmProvider {
   bool get supportsReply => true;
 
   @override
-  Future<bool> get isReady async => _baseUrl.isNotEmpty && _model.isNotEmpty;
+  Future<bool> get isReady async {
+    // 参数不全直接否，连探活都省掉。
+    if (_baseUrl.isEmpty || _model.isEmpty) return false;
+    final cached = _readyCache;
+    final checkedAt = _readyCheckedAt;
+    if (cached != null &&
+        checkedAt != null &&
+        _clock().difference(checkedAt) < probeTtl) {
+      return cached;
+    }
+    final ready = await _probe();
+    _readyCache = ready;
+    _readyCheckedAt = _clock();
+    return ready;
+  }
+
+  /// 轻量探活：GET /api/tags，2xx 才算服务在线。
+  /// 网络错误/超时一律视为不可用——降级链据此跳过本提供者。
+  Future<bool> _probe() async {
+    try {
+      final response = await _client
+          .get(Uri.parse('$_normalizedBase/api/tags'))
+          .timeout(probeTimeout);
+      return response.statusCode >= 200 && response.statusCode < 300;
+    } on TimeoutException {
+      return false;
+    } on SocketException {
+      return false;
+    } on Object {
+      return false;
+    }
+  }
 
   @override
   Future<Result<LlmReply>> chat(LlmRequest request) async {

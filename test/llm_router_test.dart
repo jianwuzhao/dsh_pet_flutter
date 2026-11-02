@@ -1,10 +1,14 @@
 import 'package:dsh_pet_flutter/ai/llm_provider.dart';
 import 'package:dsh_pet_flutter/ai/llm_router.dart';
+import 'package:dsh_pet_flutter/ai/providers/ollama_provider.dart';
+import 'package:dsh_pet_flutter/ai/providers/openai_provider.dart';
 import 'package:dsh_pet_flutter/ai/providers/trae_bridge_provider.dart';
 import 'package:dsh_pet_flutter/ai/tool_registry.dart';
 import 'package:dsh_pet_flutter/core/result.dart';
 import 'package:dsh_pet_flutter/features/linkage/assistant_adapters.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 /// 可控就绪状态的假提供者。
 class FakeProvider extends LlmProvider {
@@ -82,6 +86,34 @@ void main() {
       final resolution = await router.resolve();
       expect(resolution!.provider.id, 'trae-bridge');
       expect(resolution.degraded, isTrue);
+    });
+
+    test('provider=none 且 Ollama 不可达：快速落到转发桥，不在不可达后端上白等', () async {
+      final stopwatch = Stopwatch()..start();
+      final router = LlmRouter(
+        providers: [
+          OpenAiProvider(
+            baseUrl: 'https://api.openai.com/v1',
+            model: 'gpt-4o-mini',
+            keyLoader: () async => '', // 没有 key → 不可用
+            client: MockClient((_) async => http.Response('{}', 200)),
+          ),
+          OllamaProvider(
+            // 典型事故：OpenAI 的地址被当成 Ollama 打。
+            baseUrl: 'https://api.openai.com/v1',
+            model: 'gpt-4o-mini',
+            probeTimeout: const Duration(milliseconds: 80),
+            client: MockClient((_) async => http.Response('not found', 404)),
+          ),
+          bridge(),
+        ],
+        activeId: 'none',
+      );
+
+      final resolution = await router.resolve();
+      expect(resolution!.provider.id, 'trae-bridge');
+      expect(resolution.provider.supportsReply, isFalse);
+      expect(stopwatch.elapsedMilliseconds, lessThan(1000));
     });
   });
 

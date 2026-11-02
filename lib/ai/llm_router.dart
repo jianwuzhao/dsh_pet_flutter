@@ -1,7 +1,11 @@
 /// 路由：按配置选 active 提供者，不可用时逐级降级。
 ///
-/// 降级链固定 openai → ollama → trae-bridge；trae 桥永远可用，
-/// 所以“全部不可用”只可能是装配漏了桥，属于接线错误而非运行时状态。
+/// 降级优先级（固定）：
+/// 1. `config.ai.provider` 指定的 active（`none` 视为未指定，不参与）；
+/// 2. `openai` —— 要有 baseUrl + model + key；
+/// 3. `ollama` —— 要有 baseUrl + model，且 `/api/tags` 探活在 probeTimeout 内成功；
+/// 4. `trae-bridge` —— 恒可用，但 supportsReply=false，对话会落成“只转发”。
+/// 任何一级不可用都立即跳到下一级，不做重试；真正使用时不会再等一次 60s 超时。
 library;
 
 import 'llm_provider.dart';

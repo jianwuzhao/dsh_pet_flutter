@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io' show SocketException;
 
 import 'package:dsh_pet_flutter/ai/llm_provider.dart';
 import 'package:dsh_pet_flutter/ai/providers/ollama_provider.dart';
@@ -143,6 +144,97 @@ void main() {
   });
 
   group('OllamaProvider', () {
+    test('isReady 探活 /api/tags：2xx 才算在线，不再只看配置非空', () async {
+      late http.Request probe;
+      final provider = OllamaProvider(
+        baseUrl: 'http://127.0.0.1:11434',
+        model: 'qwen-test',
+        client: MockClient((request) async {
+          probe = request;
+          return http.Response('{"models":[]}', 200);
+        }),
+      );
+
+      expect(await provider.isReady, isTrue);
+      expect(probe.url.toString(), 'http://127.0.0.1:11434/api/tags');
+      expect(probe.method, 'GET');
+    });
+
+    test('探活非 2xx（例如把 OpenAI 地址当 Ollama）判定为不可用', () async {
+      final provider = OllamaProvider(
+        baseUrl: 'https://api.openai.com/v1',
+        model: 'gpt-4o-mini',
+        client: MockClient((_) async => http.Response('not found', 404)),
+      );
+
+      expect(await provider.isReady, isFalse);
+    });
+
+    test('探活超时判定为不可用，且不超过 probeTimeout', () async {
+      final stopwatch = Stopwatch()..start();
+      final provider = OllamaProvider(
+        baseUrl: 'http://127.0.0.1:11434',
+        model: 'qwen-test',
+        probeTimeout: const Duration(milliseconds: 60),
+        client: MockClient((_) async {
+          await Future<void>.delayed(const Duration(milliseconds: 300));
+          return http.Response('{}', 200);
+        }),
+      );
+
+      expect(await provider.isReady, isFalse);
+      expect(stopwatch.elapsedMilliseconds, lessThan(250));
+    });
+
+    test('网络异常判定为不可用，不抛出', () async {
+      final provider = OllamaProvider(
+        baseUrl: 'http://127.0.0.1:11434',
+        model: 'qwen-test',
+        client: MockClient(
+          (_) async => throw const SocketException('connection refused'),
+        ),
+      );
+
+      expect(await provider.isReady, isFalse);
+    });
+
+    test('探活结果按 TTL 缓存：重复 isReady 不打重复请求', () async {
+      var probes = 0;
+      var now = DateTime(2026, 1, 1, 12);
+      final provider = OllamaProvider(
+        baseUrl: 'http://127.0.0.1:11434',
+        model: 'qwen-test',
+        probeTtl: const Duration(seconds: 30),
+        clock: () => now,
+        client: MockClient((_) async {
+          probes++;
+          return http.Response('{"models":[]}', 200);
+        }),
+      );
+
+      await provider.isReady;
+      await provider.isReady;
+      expect(probes, 1);
+
+      now = now.add(const Duration(seconds: 31));
+      await provider.isReady;
+      expect(probes, 2);
+    });
+
+    test('配置为空时直接不可用，连探活都不发', () async {
+      var probes = 0;
+      final provider = OllamaProvider(
+        baseUrl: '',
+        model: '',
+        client: MockClient((_) async {
+          probes++;
+          return http.Response('{}', 200);
+        }),
+      );
+      expect(await provider.isReady, isFalse);
+      expect(probes, 0);
+    });
+
     test('请求打到 /api/chat 且 stream=false，解析 message.content', () async {
       late http.Request captured;
       final provider = OllamaProvider(
