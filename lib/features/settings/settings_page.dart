@@ -14,6 +14,7 @@ import '../../core/config/ai_config.dart';
 import '../../core/config/app_config.dart';
 import '../../core/result.dart';
 import '../../gateway/hotkey_source.dart';
+import '../../interop/capability_registry.dart';
 import '../../learning/learning_loop.dart';
 import '../../persona/memory/memory_entry.dart';
 import '../../persona/memory/memory_store.dart';
@@ -38,6 +39,8 @@ class SettingsPage extends StatefulWidget {
     required this.onSaveEmotion,
     required this.onCheckAccessibility,
     required this.onClose,
+    this.capabilities,
+    this.onProbeCapabilities,
   });
 
   final AppConfig config;
@@ -53,6 +56,12 @@ class SettingsPage extends StatefulWidget {
 
   /// 学习治理（内核实例）：策略版本、提案、回滚与反馈采集。
   final LearningLoop? learning;
+
+  /// 能力注册表（只读）：联动分区底部展示各外部软件的探测结果。
+  final CapabilityRegistry? capabilities;
+
+  /// 重新探测（忽略缓存）。
+  final VoidCallback? onProbeCapabilities;
 
   final Future<Result<void>> Function(
     AppConfig config,
@@ -611,6 +620,8 @@ class _SettingsPageState extends State<SettingsPage>
                       onDeliveryChanged: (value) =>
                           setState(() => _delivery = value),
                       hotkey: _hotkey,
+                      capabilities: widget.capabilities,
+                      onProbeCapabilities: widget.onProbeCapabilities,
                     ),
                     BrainSection(
                       provider: _aiProvider,

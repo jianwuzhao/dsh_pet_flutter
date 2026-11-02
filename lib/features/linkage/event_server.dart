@@ -13,6 +13,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../../core/paths/app_paths.dart';
 import '../../../gateway/interaction_gateway.dart';
+import '../../../interop/run_event.dart';
 import '../../../platform/pet_platform.dart';
 import 'bridge_hub.dart';
 import 'status/assistant_event.dart';
@@ -26,6 +27,7 @@ class PetEventServer {
     required this.platform,
     this.petState,
     this.onChat,
+    this.onRunProgress,
   });
 
   final int port;
@@ -34,6 +36,10 @@ class PetEventServer {
 
   /// `/v2/chat`：走网关 router 直连能回复的提供者，拿结构化回复。
   final Future<GatewayChatReply> Function(String text)? onChat;
+
+  /// `/event` 的 `type=run.progress` 分流：返回 false 表示被节流丢弃。
+  /// 未接线时一律返回 accepted=false，避免外部脚本误以为事件已被消费。
+  final bool Function(RunEvent event)? onRunProgress;
 
   /// Trae 扩展桥：轮询取消息 + 回执。
   final BridgeHub hub;
@@ -264,14 +270,37 @@ class PetEventServer {
 
   Future<void> _handleEvent(HttpRequest request) async {
     final body = await utf8.decoder.bind(request).join();
-    final event = _parse(body);
-    if (event == null) {
+    Map<String, dynamic>? decoded;
+    try {
+      final raw = jsonDecode(body);
+      if (raw is Map<String, dynamic>) decoded = raw;
+    } on FormatException {
+      decoded = null;
+    }
+    if (decoded == null) {
       _json(request.response, {
         'ok': false,
         'reason': '事件 JSON 非法',
       }, status: 400);
       return;
     }
+
+    // 运行进度事件走独立分流：字段更多，且需要节流回执。
+    if (decoded['type'] == 'run.progress') {
+      final runEvent = RunEvent.fromJson(decoded);
+      if (runEvent == null) {
+        _json(request.response, {
+          'ok': false,
+          'reason': 'run.progress 需要非空 runId 与合法 phase',
+        }, status: 400);
+        return;
+      }
+      final accepted = onRunProgress?.call(runEvent) ?? false;
+      _json(request.response, {'ok': true, 'accepted': accepted});
+      return;
+    }
+
+    final event = AssistantEvent.fromJson(decoded);
     onEvent(event);
     _json(request.response, {'ok': true});
   }

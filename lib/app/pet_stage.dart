@@ -17,6 +17,7 @@ import '../features/menu/pet_menu.dart';
 import '../features/pet/pet_controller.dart';
 import '../features/pet/render/pet_view.dart';
 import '../features/settings/settings_page.dart';
+import '../interop/capability_registry.dart';
 import '../learning/learning_loop.dart';
 import '../persona/memory/memory_store.dart';
 import '../persona/profile_store.dart';
@@ -44,6 +45,8 @@ class PetStage extends StatefulWidget {
     this.onAcceptReply,
     this.onRejectReply,
     this.onDismissCare,
+    this.capabilities,
+    this.onProbeCapabilities,
   });
 
   final PetController controller;
@@ -85,6 +88,10 @@ class PetStage extends StatefulWidget {
 
   /// 主动关心气泡被提前关闭：记一条拒绝样本（自动过期仍是中性）。
   final VoidCallback? onDismissCare;
+
+  /// 能力注册表（只读）：设置页展示各外部软件的探测结果。
+  final CapabilityRegistry? capabilities;
+  final VoidCallback? onProbeCapabilities;
 
   @override
   State<PetStage> createState() => _PetStageState();
@@ -286,6 +293,8 @@ class _PetStageState extends State<PetStage> {
             onSaveEmotion: widget.onSaveEmotion,
             onCheckAccessibility: widget.onCheckAccessibility,
             onClose: controller.closePanel,
+            capabilities: widget.capabilities,
+            onProbeCapabilities: widget.onProbeCapabilities,
           ),
           PetPanel.menu => const SizedBox.shrink(),
         };

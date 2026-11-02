@@ -31,6 +31,11 @@ import '../features/pet/pet_controller.dart';
 import '../gateway/hotkey_source.dart';
 import '../gateway/interaction_gateway.dart';
 import '../gateway/privacy_center.dart';
+import '../interop/adapters/chatgpt_adapter.dart';
+import '../interop/adapters/trae_cn_adapter.dart';
+import '../interop/adapters/workbuddy_adapter.dart';
+import '../interop/capability_registry.dart';
+import '../interop/run_event.dart';
 import '../persona/expression/expression_layer.dart';
 import '../persona/profile_store.dart';
 import '../platform/pet_platform.dart';
@@ -63,6 +68,10 @@ class _PetAppState extends State<PetApp> {
   InteractionGateway? _gateway;
   HotkeySource? _hotkey;
   AssistantKernel? _kernel;
+
+  /// 互操作能力层（M1）：只做探测与进度事件接收，不发起真实任务。
+  CapabilityRegistry? _capabilities;
+  final RunEventThrottle _runThrottle = RunEventThrottle();
 
   /// Trae 扩展桥：事件服务与适配器注册表共用同一个实例。
   final BridgeHub _bridgeHub = BridgeHub();
@@ -151,6 +160,8 @@ class _PetAppState extends State<PetApp> {
       onRejectReply: (correction) =>
           _kernel?.rejectReply(correction: correction),
       onDismissCare: _kernel?.dismissCare,
+      capabilities: _capabilities,
+      onProbeCapabilities: () => unawaited(_probeCapabilities()),
     );
   }
 
@@ -229,6 +240,20 @@ class _PetAppState extends State<PetApp> {
         conversationRounds: config.ai.memoryRounds,
       );
       kernel.start();
+      // 互操作能力层：注册三个只读探测适配器，启动后异步探测一次。
+      // invoke 等写操作在 M1 一律返回“未开放”，不会向外部软件发任务。
+      final capabilities = CapabilityRegistry(
+        adapters: [
+          TraeCnCapability(),
+          ChatGptCapability(
+            keyLoader: _keyStore.read,
+            baseUrl: config.ai.baseUrl,
+            model: config.ai.model,
+          ),
+          WorkBuddyCapability(),
+        ],
+      );
+      unawaited(capabilities.probeAll());
       final aggregator = StatusAggregator();
       final server = PetEventServer(
         port: config.linkage.port,
@@ -238,6 +263,8 @@ class _PetAppState extends State<PetApp> {
         platform: _platform,
         petState: controller.state,
         onChat: kernel.chat,
+        // run.progress：按 5s/同 phase 节流 + 单次 40 条上限接收。
+        onRunProgress: _acceptRunProgress,
       );
       final statusSubscription = aggregator.changes.listen((snapshot) {
         controller.applyStatus(snapshot);
@@ -286,6 +313,7 @@ class _PetAppState extends State<PetApp> {
         _gateway = gateway;
         _hotkey = hotkey;
         _kernel = kernel;
+        _capabilities = capabilities;
       });
 
       if (serverError != null) {
@@ -397,6 +425,7 @@ class _PetAppState extends State<PetApp> {
     _privacy = null;
     _kernel?.dispose();
     _kernel = null;
+    _capabilities = null;
     await _statusSubscription?.cancel();
     _statusSubscription = null;
     _watch?.dispose();
@@ -768,6 +797,28 @@ class _PetAppState extends State<PetApp> {
       return const Failure('kernel.not-ready', '内核还没准备好，稍后再试');
     }
     return kernel.saveEmotionProfile(value);
+  }
+
+  /// 设置页“重新探测”：忽略缓存并重建（探测结果是异步的，回来后再刷新 UI）。
+  Future<void> _probeCapabilities() async {
+    final capabilities = _capabilities;
+    if (capabilities == null) return;
+    await capabilities.probeAll(force: true);
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  /// `/event` 的 run.progress 分流：节流命中才回执 accepted=true。
+  bool _acceptRunProgress(RunEvent event) {
+    final accepted = _runThrottle.accept(event);
+    if (!accepted) return false;
+    debugPrint(
+      '[dafishu] run ${event.runId} ${runPhaseName(event.phase)}'
+      '${event.step == null ? '' : ' ${event.step}/${event.totalSteps ?? '?'}'}'
+      '：${event.summary}',
+    );
+    if (isRunTerminal(event.phase)) _runThrottle.forget(event.runId);
+    return true;
   }
 }
 
