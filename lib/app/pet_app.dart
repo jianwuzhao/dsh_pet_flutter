@@ -428,7 +428,7 @@ class _PetAppState extends State<PetApp> {
   String _personaFor(PetConfig pet) {
     final custom = pet.whisperPrompt.trim();
     if (custom.isNotEmpty) return custom;
-    return '你是「${pet.name}」，一只住在 macOS 桌面上的小桌宠。'
+    return '你是「${pet.name}」，一只住在桌面上的小桌宠。'
         '用简短、自然、有点可爱的中文说话；不假装能执行做不到的操作，'
         '不主动索取隐私，也不制造依赖。';
   }

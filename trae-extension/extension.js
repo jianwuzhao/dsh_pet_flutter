@@ -22,7 +22,11 @@ function activate(context) {
   context.subscriptions.push(output);
   const log = (line) => output.appendLine(`[dsh-pet-bridge] ${line}`);
 
-  const home = process.env.DSH_PET_HOME || path.join(os.homedir(), '.dsh_pet_flutter');
+  // 数据目录与 Dart 侧 AppPaths 保持一致：Windows 用 %APPDATA%，其余用 ~/.dsh_pet_flutter。
+  const defaultHome = process.platform === 'win32'
+    ? path.join(process.env.APPDATA || os.homedir(), 'dsh_pet_flutter')
+    : path.join(os.homedir(), '.dsh_pet_flutter');
+  const home = process.env.DSH_PET_HOME || defaultHome;
   const tokenPath = path.join(home, 'token');
   const port = Number(process.env.DSH_PET_PORT || 7341);
   const adapterId = 'trae-cn';

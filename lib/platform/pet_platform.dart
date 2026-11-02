@@ -67,12 +67,16 @@ class PetPlatform {
   final MethodChannel _content;
   final MethodChannel _input;
 
-  /// 托盘（菜单栏图标）：原生侧点击后回调到这里。
+  /// macOS 与 Windows 各有一套原生实现（MainFlutterWindow.swift / pet_bridge.cpp），
+  /// 通道协议完全一致；其余平台一律走降级分支。
+  static bool get _native => Platform.isMacOS || Platform.isWindows;
+
+  /// 托盘（菜单栏/通知区图标）：原生侧点击后回调到这里。
   static const MethodChannel _tray = MethodChannel('dsh_pet/tray');
 
   /// 托盘动作（openPanel: chat / settings）。桌面端没有托盘时什么都不发生。
   void listenTray(void Function(String action) handler) {
-    if (!Platform.isMacOS) return;
+    if (!_native) return;
     _tray.setMethodCallHandler((call) async {
       if (call.method == 'openPanel') {
         handler(call.arguments as String? ?? 'chat');
@@ -83,13 +87,13 @@ class PetPlatform {
 
   static bool get isDesktop => Platform.isMacOS || Platform.isWindows;
 
-  /// 是否能收到系统级光标流（目前只有 macOS 实现）。
-  /// 非 macOS 上跨屏换窗没有全局指针兜底，拖动取消只能按普通取消处理。
-  static bool get hasGlobalCursor => Platform.isMacOS;
+  /// 是否能收到系统级光标流（macOS / Windows 原生轮询实现）。
+  /// 其他平台跨屏换窗没有全局指针兜底，拖动取消只能按普通取消处理。
+  static bool get hasGlobalCursor => _native;
 
-  /// 全局光标（窗口内坐标）+ 左键状态。非 macOS 返回空流。
+  /// 全局光标（窗口内坐标）+ 左键状态。无原生实现的平台返回空流。
   Stream<PetPointer> get cursor {
-    if (!Platform.isMacOS) return const Stream.empty();
+    if (!_native) return const Stream.empty();
     return const EventChannel('dsh_pet/cursor').receiveBroadcastStream().map((
       event,
     ) {
@@ -106,7 +110,7 @@ class PetPlatform {
 
   /// 前台应用切换事件。
   Stream<AppActivation> get appActivations {
-    if (!Platform.isMacOS) return const Stream.empty();
+    if (!_native) return const Stream.empty();
     return const EventChannel('dsh_pet/app').receiveBroadcastStream().map((
       event,
     ) {
@@ -121,7 +125,7 @@ class PetPlatform {
 
   /// 全部真实屏幕的可见区（窗口本地坐标，主屏排最前）。
   Future<List<Rect>> getScreens() async {
-    if (!Platform.isMacOS) return const [];
+    if (!_native) return const [];
     final raw = await _window.invokeMethod<List<Object?>>('getScreens');
     if (raw == null) return const [];
     return [
@@ -138,7 +142,7 @@ class PetPlatform {
 
   /// 屏幕热插拔 / 分辨率变化时原生侧推送，回调里重取 getScreens。
   void onScreensChanged(void Function() callback) {
-    if (!Platform.isMacOS) return;
+    if (!_native) return;
     _window.setMethodCallHandler((call) async {
       if (call.method == 'screensChanged') callback();
       return null;
@@ -148,7 +152,7 @@ class PetPlatform {
   /// 把单屏窗口搬到另一块显示器。返回新窗口尺寸与指针的本地坐标，
   /// 调用方据此把宠物重新摆到指针下方。
   Future<ScreenMove?> moveToScreen(int index) async {
-    if (!Platform.isMacOS) return null;
+    if (!_native) return null;
     final raw = await _window.invokeMapMethod<String, Object?>('moveToScreen', {
       'index': index,
     });
@@ -169,17 +173,17 @@ class PetPlatform {
   }
 
   Future<void> setInteractive(bool interactive) async {
-    if (!Platform.isMacOS && !Platform.isWindows) return;
+    if (!_native) return;
     await _window.invokeMethod<void>('setInteractive', interactive);
   }
 
   Future<void> setFocusable(bool focusable) async {
-    if (!Platform.isMacOS && !Platform.isWindows) return;
+    if (!_native) return;
     await _window.invokeMethod<void>('setFocusable', focusable);
   }
 
   Future<void> setAlwaysOnTop(bool onTop) async {
-    if (!Platform.isMacOS && !Platform.isWindows) return;
+    if (!_native) return;
     await _window.invokeMethod<void>('setAlwaysOnTop', onTop);
   }
 
@@ -189,35 +193,35 @@ class PetPlatform {
   // ---------------------------------------------------------------------------
 
   Future<bool> isWindowVisible() async {
-    if (!Platform.isMacOS) return true;
+    if (!_native) return true;
     return await _window.invokeMethod<bool>('isVisible') ?? true;
   }
 
   /// 进程视角的窗口/屏幕全量状态（frame、并集、屏幕列表）——多屏错位时对账用。
   Future<Map<String, Object?>?> windowDiagnostics() async {
-    if (!Platform.isMacOS) return null;
+    if (!_native) return null;
     return await _window.invokeMapMethod<String, Object?>('windowState');
   }
 
   Future<void> showWindow() async {
-    if (!Platform.isMacOS) return;
+    if (!_native) return;
     await _window.invokeMethod<void>('showWindow');
   }
 
   Future<void> hideWindow() async {
-    if (!Platform.isMacOS) return;
+    if (!_native) return;
     await _window.invokeMethod<void>('hideWindow');
   }
 
   Future<void> quit() async {
-    if (!Platform.isMacOS && !Platform.isWindows) {
+    if (!_native) {
       exit(0);
     }
     await _window.invokeMethod<void>('quit');
   }
 
   Future<FocusedContent?> readFocusedContent() async {
-    if (!Platform.isMacOS) return null;
+    if (!_native) return null;
     final raw = await _content.invokeMapMethod<String, Object?>(
       'readFocusedText',
     );
@@ -230,23 +234,25 @@ class PetPlatform {
   }
 
   Future<bool> isAccessibilityTrusted() async {
-    if (!Platform.isMacOS) return false;
+    if (!_native) return false;
+    // Windows 读取 UIA 无需授权，原生侧恒返回 true。
     return await _content.invokeMethod<bool>('isTrusted') ?? false;
   }
 
   /// 系统通知：显式 notify 事件/自动化脚本用；未授权或原生不可用时抛 PlatformException。
   Future<void> notify({required String title, required String body}) async {
-    if (!Platform.isMacOS) return;
+    if (!_native) return;
     await _content.invokeMethod<void>('notify', {'title': title, 'body': body});
   }
 
   Future<bool> requestAccessibility() async {
-    if (!Platform.isMacOS) return false;
+    if (!_native) return false;
     return await _content.invokeMethod<bool>('requestTrust') ?? false;
   }
 
   Future<bool> activateApp(String bundleId) async {
-    if (!Platform.isMacOS) return false;
+    if (!_native) return false;
+    // Windows 侧 bundleId 约定为 exe 名（如 Trae.exe），原生桥按进程可执行文件匹配。
     return await _input.invokeMethod<bool>('activateApp', {
           'bundleId': bundleId,
         }) ??
@@ -254,12 +260,12 @@ class PetPlatform {
   }
 
   Future<bool> pasteAndSubmit() async {
-    if (!Platform.isMacOS) return false;
+    if (!_native) return false;
     return await _input.invokeMethod<bool>('pasteAndSubmit') ?? false;
   }
 
   Future<bool> openUrl(String url) async {
-    if (!Platform.isMacOS) return false;
+    if (!_native) return false;
     return await _input.invokeMethod<bool>('openUrl', {'url': url}) ?? false;
   }
 }

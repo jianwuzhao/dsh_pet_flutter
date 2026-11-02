@@ -6,9 +6,11 @@
 
 #include <memory>
 
+#include "pet_bridge.h"
 #include "win32_window.h"
 
-// A window that does nothing but host a Flutter view.
+// A window that hosts a Flutter view plus the pet-specific native bridge
+// (transparent always-on-top frame, tray, input injection, ...).
 class FlutterWindow : public Win32Window {
  public:
   // Creates a new FlutterWindow hosting a Flutter view running |project|.
@@ -28,6 +30,9 @@ class FlutterWindow : public Win32Window {
 
   // The Flutter instance hosted by this window.
   std::unique_ptr<flutter::FlutterViewController> flutter_controller_;
+
+  // Native bridge for pet abilities (installed once the view exists).
+  std::unique_ptr<PetBridge> pet_bridge_;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_
