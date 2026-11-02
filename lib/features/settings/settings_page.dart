@@ -1,6 +1,6 @@
-/// 设置：Tab 容器（联动 / 大脑 / 隐私 / 情绪）。
+/// 设置：Tab 容器（联动 / 大脑 / 隐私 / 情绪 / 记忆 / 学习）。
 ///
-/// 草稿状态集中在这一页的 State 里，四个分区无状态只做展示；
+/// 草稿状态集中在这一页的 State 里，各分区无状态只做展示；
 /// 保存时统一做热键校验、组装 AppConfig + PrivacySettings + EmotionProfile 并落盘。
 /// API Key 不写进 jsonc，保存时进系统安全存储（不可用时回退 0600 文件）。
 library;
@@ -14,12 +14,14 @@ import '../../core/config/ai_config.dart';
 import '../../core/config/app_config.dart';
 import '../../core/result.dart';
 import '../../gateway/hotkey_source.dart';
+import '../../learning/learning_loop.dart';
 import '../../persona/memory/memory_entry.dart';
 import '../../persona/memory/memory_store.dart';
 import '../../persona/profile_store.dart';
 import '../ai/secret_store.dart';
 import 'sections/brain_section.dart';
 import 'sections/emotion_section.dart';
+import 'sections/learning_section.dart';
 import 'sections/linkage_section.dart';
 import 'sections/memory_section.dart';
 import 'sections/privacy_section.dart';
@@ -31,6 +33,7 @@ class SettingsPage extends StatefulWidget {
     required this.privacy,
     required this.emotion,
     required this.memory,
+    required this.learning,
     required this.onSave,
     required this.onSaveEmotion,
     required this.onCheckAccessibility,
@@ -47,6 +50,9 @@ class SettingsPage extends StatefulWidget {
 
   /// 记忆库（内核实例）：查看/纠正/遗忘/导出直接操作，即时生效。
   final MemoryStore? memory;
+
+  /// 学习治理（内核实例）：策略版本、提案、回滚与反馈采集。
+  final LearningLoop? learning;
 
   final Future<Result<void>> Function(
     AppConfig config,
@@ -67,7 +73,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 5, vsync: this);
+  late final TabController _tabs = TabController(length: 6, vsync: this);
 
   late String _active =
       widget.config.linkage.activeAdapter?.id ??
@@ -104,6 +110,9 @@ class _SettingsPageState extends State<SettingsPage>
   String _memoryHint = '';
   List<MemoryEntry> _memoryPending = const [];
   List<MemoryEntry> _memoryActive = const [];
+
+  // ---- 学习治理：操作结果提示（版本与提案数据直接从 learning 读） ----
+  String _learningHint = '';
 
   bool _aiTesting = false;
   String _aiTestResult = '';
@@ -312,11 +321,69 @@ class _SettingsPageState extends State<SettingsPage>
     });
   }
 
-  void _confirmMemory(String id) =>
-      _runMemory(widget.memory?.confirm(id) ?? const Failure('memory.offline', '记忆库还没准备好'), '已记住这条提案');
+  /// 接受记忆提案：有学习闭环时统一走它（生效 + 记正样本）。
+  void _confirmMemory(String id) {
+    final learning = widget.learning;
+    final memory = widget.memory;
+    _runMemory(
+      learning != null && memory != null
+          ? learning.acceptMemoryProposal(memory, id)
+          : (memory?.confirm(id) ?? const Failure('memory.offline', '记忆库还没准备好')),
+      '已记住这条提案',
+    );
+  }
 
-  void _rejectMemory(String id) =>
-      _runMemory(widget.memory?.reject(id) ?? const Failure('memory.offline', '记忆库还没准备好'), '已拒绝，这条提案丢弃了');
+  /// 拒绝记忆提案：可附一句纠正；纠正能被规则解析时生成策略候选。
+  Future<void> _rejectMemory(String id) async {
+    final correction = await _askCorrection();
+    if (correction == null || !mounted) return;
+    final learning = widget.learning;
+    final memory = widget.memory;
+    _runMemory(
+      learning != null && memory != null
+          ? learning.rejectMemoryProposal(memory, id, correction: correction)
+          : (memory?.reject(id) ?? const Failure('memory.offline', '记忆库还没准备好')),
+      correction.isEmpty ? '已拒绝，这条提案丢弃了' : '已拒绝，并记下你的纠正',
+    );
+    if (correction.isNotEmpty) _refreshLearning();
+  }
+
+  /// 纠正输入：取消返回 null；确认返回文本（可为空 = 单纯拒绝）。
+  Future<String?> _askCorrection() async {
+    final controller = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF26262C),
+        title: const Text(
+          '为什么不要这条？（可选）',
+          style: TextStyle(color: Colors.white, fontSize: 15),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '例如「太长了」「以后叫我老板」',
+            hintStyle: TextStyle(color: Color(0x59FFFFFF), fontSize: 12),
+          ),
+          style: const TextStyle(color: Colors.white, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, null),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('拒绝'),
+          ),
+        ],
+      ),
+    );
+    final text = controller.text.trim();
+    controller.dispose();
+    return confirmed == true ? text : null;
+  }
 
   void _editMemory(MemoryEntry entry) =>
       _runMemory(widget.memory?.update(entry) ?? const Failure('memory.offline', '记忆库还没准备好'), '已纠正');
@@ -337,6 +404,49 @@ class _SettingsPageState extends State<SettingsPage>
         setState(() => _memoryHint = reason);
     }
   }
+
+  // ---------------------------------------------------------------------------
+  // 学习治理：策略提案的接受/拒绝、版本回滚（反馈只有接受/拒绝，无评分）
+  // ---------------------------------------------------------------------------
+
+  /// 策略数据由 learning 持有，操作后只需重建（提案可能新增/消失）。
+  void _refreshLearning() {
+    if (!mounted) return;
+    setState(() {});
+  }
+
+  void _runLearning(Result<void> result, String successHint) {
+    setState(() {
+      _learningHint = switch (result) {
+        Success() => successHint,
+        Failure(:final reason) => reason,
+      };
+    });
+    _refreshMemories();
+  }
+
+  void _acceptPolicyProposal(String id) => _runLearning(
+    widget.learning?.acceptPolicyProposal(id) ??
+        const Failure('learning.offline', '学习治理还没准备好'),
+    '已应用这条策略调整',
+  );
+
+  void _rejectPolicyProposal(String id) => _runLearning(
+    widget.learning?.rejectPolicyProposal(id) ??
+        const Failure('learning.offline', '学习治理还没准备好'),
+    '已拒绝这条策略调整',
+  );
+
+  void _rollbackPolicy() => _runLearning(
+    widget.learning?.rollback() ?? const Failure('learning.offline', '学习治理还没准备好'),
+    '已回滚到上一版',
+  );
+
+  void _rollbackPolicyTo(int version) => _runLearning(
+    widget.learning?.rollbackTo(version) ??
+        const Failure('learning.offline', '学习治理还没准备好'),
+    '已回滚到 v$version',
+  );
 
   // ---------------------------------------------------------------------------
   // 大脑连通性测试：用草稿值现场建 provider 发一条 ping，测完立即释放
@@ -475,6 +585,7 @@ class _SettingsPageState extends State<SettingsPage>
                 Tab(text: '隐私'),
                 Tab(text: '情绪'),
                 Tab(text: '记忆'),
+                Tab(text: '学习'),
               ],
             ),
             Flexible(
@@ -552,6 +663,14 @@ class _SettingsPageState extends State<SettingsPage>
                         onExport: _exportMemories,
                         hint: _memoryHint,
                       ),
+                    LearningSection(
+                      policy: widget.learning?.policy,
+                      onAcceptProposal: _acceptPolicyProposal,
+                      onRejectProposal: _rejectPolicyProposal,
+                      onRollback: _rollbackPolicy,
+                      onRollbackTo: _rollbackPolicyTo,
+                      hint: _learningHint,
+                    ),
                   ],
                 ),
               ),

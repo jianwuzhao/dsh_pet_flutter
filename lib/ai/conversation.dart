@@ -28,6 +28,7 @@ class ConversationService {
     ChatMemory? history,
     PersonaDna Function()? dnaLoader,
     EmotionView Function()? emotionLoader,
+    String Function()? policyHintLoader,
     DateTime Function()? clock,
     this.rounds = 8,
   }) : _routerLoader = routerLoader,
@@ -36,6 +37,7 @@ class ConversationService {
        _history = history,
        _dnaLoader = dnaLoader,
        _emotionLoader = emotionLoader,
+       _policyHintLoader = policyHintLoader,
        _clock = clock ?? DateTime.now;
 
   /// 配置热替换时 gateway.router 整体会被换掉，注入取值函数保证拿到最新。
@@ -45,6 +47,7 @@ class ConversationService {
   final ChatMemory? _history;
   final PersonaDna Function()? _dnaLoader;
   final EmotionView Function()? _emotionLoader;
+  final String Function()? _policyHintLoader;
   final DateTime Function() _clock;
 
   /// 会话历史注入轮数（config.ai.memoryRounds）。
@@ -75,6 +78,7 @@ class ConversationService {
           _emotionLoader?.call() ??
           const EmotionView(valence: 0, arousal: 0.3, intimacy: 0.3),
       memories: _memory.contextFor(now: _clock()),
+      policyHint: _policyHintLoader?.call(),
     );
     final messages = [
       for (final message in _history?.context(rounds) ?? const <AiMessage>[])

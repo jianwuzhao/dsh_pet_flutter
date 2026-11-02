@@ -14,9 +14,13 @@ import 'package:dsh_pet_flutter/features/linkage/dispatcher.dart';
 import 'package:dsh_pet_flutter/features/linkage/status/assistant_event.dart';
 import 'package:dsh_pet_flutter/gateway/interaction_gateway.dart';
 import 'package:dsh_pet_flutter/gateway/privacy_center.dart';
+import 'package:dsh_pet_flutter/learning/feedback_collector.dart';
+import 'package:dsh_pet_flutter/learning/learning_loop.dart';
+import 'package:dsh_pet_flutter/learning/policy_store.dart';
 import 'package:dsh_pet_flutter/persona/emotion/emotion_machine.dart';
 import 'package:dsh_pet_flutter/persona/emotion/emotion_signal.dart';
 import 'package:dsh_pet_flutter/persona/expression/expression_layer.dart';
+import 'package:dsh_pet_flutter/persona/memory/memory_entry.dart';
 import 'package:dsh_pet_flutter/persona/profile_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -48,6 +52,19 @@ void main() {
       store: ProfileStore(directory: tmpDir),
       host: host,
       privacy: PrivacyCenter(directory: tmpDir),
+      // 学习层必须指到临时目录：默认 LearningLoop 会写真实用户目录。
+      learning: LearningLoop(
+        collector: FeedbackCollector(
+          file: File('${tmpDir.path}/feedback.jsonl'),
+          clock: () => now,
+        ),
+        policy: PolicyStore(
+          directory: Directory('${tmpDir.path}/learning'),
+          clock: () => now,
+        ),
+        host: host,
+        clock: () => now,
+      ),
       clock: () => now,
     );
   }
@@ -196,6 +213,44 @@ void main() {
       expect(kernel.phase, EmotionPhase.calm);
       kernel.applySignal(EmotionSignal.excited);
       expect(kernel.emotion.value.valence, frozen);
+    });
+  });
+
+  group('学习治理接线', () {
+    test('回复的接受/拒绝都落到本地反馈流水（无评分语义）', () {
+      final kernel = buildKernel()..start();
+
+      kernel.acceptReply();
+      kernel.rejectReply(correction: '太长了');
+
+      final file = File('${tmpDir.path}/feedback.jsonl');
+      expect(file.existsSync(), isTrue);
+      final lines = file.readAsLinesSync();
+      expect(lines.length, 2);
+      expect(lines.first, contains('accepted'));
+      expect(lines.last, contains('corrected'));
+      expect(lines.last, contains('太长了'));
+    });
+
+    test('记忆提案经学习闭环接受：生效并留正样本', () {
+      final kernel = buildKernel()..start();
+      kernel.memory.add(
+        MemoryEntry(
+          id: 'm1',
+          kind: MemoryKind.preference,
+          content: '称呼偏好：老板',
+          createdAt: now,
+          status: MemoryStatus.pending,
+        ),
+      );
+
+      final result = kernel.learning.acceptMemoryProposal(kernel.memory, 'm1');
+      expect(result, isA<Success<void>>());
+      expect(kernel.memory.pending, isEmpty);
+      expect(
+        File('${tmpDir.path}/feedback.jsonl').readAsStringSync(),
+        contains('accepted'),
+      );
     });
   });
 }

@@ -17,6 +17,7 @@ import '../features/menu/pet_menu.dart';
 import '../features/pet/pet_controller.dart';
 import '../features/pet/render/pet_view.dart';
 import '../features/settings/settings_page.dart';
+import '../learning/learning_loop.dart';
 import '../persona/memory/memory_store.dart';
 import '../persona/profile_store.dart';
 import '../platform/pet_platform.dart';
@@ -31,6 +32,7 @@ class PetStage extends StatefulWidget {
     required this.privacy,
     required this.emotion,
     required this.memory,
+    required this.learning,
     required this.onSend,
     required this.onSaveConfig,
     required this.onSaveEmotion,
@@ -39,6 +41,8 @@ class PetStage extends StatefulWidget {
     this.onOpenApp,
     this.onReloadConfig,
     this.onWhisper,
+    this.onAcceptReply,
+    this.onRejectReply,
   });
 
   final PetController controller;
@@ -53,6 +57,9 @@ class PetStage extends StatefulWidget {
 
   /// 记忆库（内核同一实例）：设置页的查看/纠正/遗忘/导出即时生效。
   final MemoryStore? memory;
+
+  /// 学习治理（内核同一实例）：策略版本、提案、回滚。
+  final LearningLoop? learning;
 
   final Future<Result<DispatchOutcome>> Function(String prompt) onSend;
 
@@ -70,6 +77,10 @@ class PetStage extends StatefulWidget {
   final VoidCallback? onOpenApp;
   final VoidCallback? onReloadConfig;
   final VoidCallback? onWhisper;
+
+  /// 聊天回复被采纳 / 被拒绝（重说，可附纠正）的反馈入口。
+  final VoidCallback? onAcceptReply;
+  final void Function(String correction)? onRejectReply;
 
   @override
   State<PetStage> createState() => _PetStageState();
@@ -244,12 +255,15 @@ class _PetStageState extends State<PetStage> {
             activeName: widget.activeName,
             onSend: widget.onSend,
             onClose: controller.closePanel,
+            onAcceptReply: widget.onAcceptReply,
+            onRejectReply: widget.onRejectReply,
           ),
           PetPanel.settings => SettingsPage(
             config: widget.config,
             privacy: widget.privacy,
             emotion: widget.emotion,
             memory: widget.memory,
+            learning: widget.learning,
             onSave: widget.onSaveConfig,
             onSaveEmotion: widget.onSaveEmotion,
             onCheckAccessibility: widget.onCheckAccessibility,

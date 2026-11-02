@@ -6,7 +6,8 @@
 /// - 表达侧：换态被动表达动画 + worried 持续关心（过隐私门禁与预算）。
 /// M5 接管会话服务：人格+记忆+情绪上下文组装挂到网关对话路径，
 /// 记忆候选走 pending 队列等用户接受/拒绝，不做无确认写入。
-/// 学习治理是 M6 的占位；pet_app 回归纯装配。
+/// M6 接管学习治理：接受/拒绝语义的反馈闭环、策略提案与版本回滚。
+/// pet_app 回归纯装配。
 library;
 
 import 'dart:async';
@@ -20,6 +21,10 @@ import '../features/linkage/assistant_adapters.dart';
 import '../features/linkage/status/assistant_event.dart';
 import '../gateway/interaction_gateway.dart';
 import '../gateway/privacy_center.dart';
+import '../learning/eval_gate.dart';
+import '../learning/feedback_collector.dart';
+import '../learning/learning_loop.dart';
+import '../learning/policy_store.dart';
 import '../persona/emotion/emotion_machine.dart';
 import '../persona/emotion/emotion_signal.dart';
 import '../persona/emotion/emotion_state.dart';
@@ -39,6 +44,7 @@ class AssistantKernel {
     ChatMemory? conversationHistory,
     int conversationRounds = 8,
     MemoryStore? memory,
+    LearningLoop? learning,
     DateTime Function()? clock,
   }) : _gateway = gateway,
        _store = store,
@@ -50,6 +56,15 @@ class AssistantKernel {
        // 状态机的节流窗基准必须与注入时钟同源，否则测试时钟永远走不满 90s。
        _machine = EmotionMachine(now: clock == null ? null : clock()),
        _memory = memory ?? MemoryStore(),
+       _learning =
+           learning ??
+           LearningLoop(
+             collector: FeedbackCollector(clock: clock),
+             policy: PolicyStore(clock: clock),
+             host: host,
+             gate: const EvalGate(),
+             clock: clock,
+           ),
        emotion = ValueNotifier(
          const EmotionView(valence: 0, arousal: 0.3, intimacy: 0.3),
        ) {
@@ -61,6 +76,8 @@ class AssistantKernel {
       history: conversationHistory,
       dnaLoader: () => _dna,
       emotionLoader: () => _emotion.view,
+      // 策略参数只影响表达偏好，不碰身份/隐私/打扰上限等安全边界。
+      policyHintLoader: () => _learning.policy.params.promptHint,
       clock: _clock,
       rounds: conversationRounds,
     );
@@ -75,6 +92,7 @@ class AssistantKernel {
   final ResponseStrategy _strategy = ResponseStrategy();
   final ExpressionLayer _expression;
   final MemoryStore _memory;
+  final LearningLoop _learning;
   late final ConversationService _conversation;
 
   EmotionState _emotion = EmotionState();
@@ -94,6 +112,19 @@ class AssistantKernel {
 
   /// 记忆库：设置页的查看/纠正/遗忘/导出直接操作这里。
   MemoryStore get memory => _memory;
+
+  /// 学习治理：设置页的策略版本/提案/回滚与记忆提案的反馈采集入口。
+  LearningLoop get learning => _learning;
+
+  /// 回复被采纳：用户把建议落地了（记正样本，参与自动回滚监控）。
+  void acceptReply() => _learning.acceptReply();
+
+  /// 回复被拒绝（重说）；可附一句纠正，规则解析后可能生成策略提案。
+  void rejectReply({String correction = ''}) =>
+      _learning.rejectReply(correction: correction);
+
+  /// 主动关心气泡被提前关闭：拒绝样本；自然过期不记。
+  void dismissCare() => _learning.dismissCare();
 
   /// 启动：读人格 DNA 与情绪档案（失败气泡报错、保持默认值不写盘），
   /// 再挂上衰减（60s/拍）与主动关心巡检（30s/拍）两个周期任务，

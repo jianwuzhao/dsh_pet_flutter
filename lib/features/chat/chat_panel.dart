@@ -16,11 +16,19 @@ class ChatPanel extends StatefulWidget {
     required this.activeName,
     required this.onSend,
     required this.onClose,
+    this.onAcceptReply,
+    this.onRejectReply,
   });
 
   final String activeName;
   final Future<Result<DispatchOutcome>> Function(String prompt) onSend;
   final VoidCallback onClose;
+
+  /// 回复被采纳：用户对这条回复点了“采纳”（记正样本）。
+  final void Function()? onAcceptReply;
+
+  /// 回复被拒绝（重说）：可附一句纠正，驱动策略学习。
+  final void Function(String correction)? onRejectReply;
 
   @override
   State<ChatPanel> createState() => _ChatPanelState();
@@ -84,6 +92,68 @@ class _ChatPanelState extends State<ChatPanel> {
     });
   }
 
+  /// 最后一条 AI 回复的下标；没有回复时返回 -1。
+  /// 采纳/重说只挂在这条上——历史回复不再重复采集。
+  int get _lastAiIndex {
+    for (var i = _messages.length - 1; i >= 0; i--) {
+      if (!_messages[i].user) return i;
+    }
+    return -1;
+  }
+
+  void _acceptReply() {
+    widget.onAcceptReply?.call();
+    setState(() => _hint = '已采纳，记得真用上它');
+  }
+
+  /// 重说：先记拒绝样本（可附纠正），再把输入区交还给用户重新表述。
+  Future<void> _rejectReply() async {
+    final correction = await _askCorrection();
+    if (correction == null || !mounted) return;
+    widget.onRejectReply?.call(correction);
+    setState(() {
+      _hint = correction.isEmpty ? '已记下这条不合适，重新说一次试试' : '已记下你的纠正';
+      _input.clear();
+    });
+  }
+
+  /// 纠正输入：取消返回 null；确认返回文本（可为空 = 单纯重说）。
+  Future<String?> _askCorrection() async {
+    final controller = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: const Color(0xFF26262C),
+        title: const Text(
+          '哪里不合适？（可选）',
+          style: TextStyle(color: Colors.white, fontSize: 15),
+        ),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(
+            hintText: '例如「太长了」「别用表格」',
+            hintStyle: TextStyle(color: Color(0x59FFFFFF), fontSize: 12),
+          ),
+          style: const TextStyle(color: Colors.white, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, null),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('重说'),
+          ),
+        ],
+      ),
+    );
+    final text = controller.text.trim();
+    controller.dispose();
+    return confirmed == true ? text : null;
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -137,8 +207,26 @@ class _ChatPanelState extends State<ChatPanel> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    for (final message in _messages)
-                      _MessageBubble(user: message.user, text: message.text),
+                    for (var i = 0; i < _messages.length; i++)
+                      if (_messages[i].user || i != _lastAiIndex)
+                        _MessageBubble(
+                          user: _messages[i].user,
+                          text: _messages[i].text,
+                        )
+                      else
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            _MessageBubble(
+                              user: false,
+                              text: _messages[i].text,
+                            ),
+                            _ReplyActions(
+                              onAccept: _acceptReply,
+                              onReject: _rejectReply,
+                            ),
+                          ],
+                        ),
                   ],
                 ),
               ),
@@ -193,6 +281,45 @@ class _ChatPanelState extends State<ChatPanel> {
       ),
     );
   }
+}
+
+class _ReplyActions extends StatelessWidget {
+  const _ReplyActions({required this.onAccept, required this.onReject});
+
+  final VoidCallback onAccept;
+  final VoidCallback onReject;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(left: 4, bottom: 2),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        TextButton(
+          onPressed: onAccept,
+          style: TextButton.styleFrom(
+            minimumSize: const Size(0, 28),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+          ),
+          child: const Text(
+            '采纳',
+            style: TextStyle(color: Color(0xFF69F0AE), fontSize: 11.5),
+          ),
+        ),
+        TextButton(
+          onPressed: onReject,
+          style: TextButton.styleFrom(
+            minimumSize: const Size(0, 28),
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+          ),
+          child: const Text(
+            '重说',
+            style: TextStyle(color: Color(0xFFFF8A80), fontSize: 11.5),
+          ),
+        ),
+      ],
+    ),
+  );
 }
 
 class _MessageBubble extends StatelessWidget {

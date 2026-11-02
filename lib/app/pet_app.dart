@@ -136,6 +136,7 @@ class _PetAppState extends State<PetApp> {
       privacy: _privacy?.settings ?? const PrivacySettings(),
       emotion: _kernel?.emotionProfile ?? const EmotionProfile(),
       memory: _kernel?.memory,
+      learning: _kernel?.learning,
       onSend: _dispatch,
       onSaveConfig: _saveConfig,
       onSaveEmotion: _saveEmotionProfile,
@@ -146,6 +147,9 @@ class _PetAppState extends State<PetApp> {
           : () => unawaited(_openActiveApp()),
       onReloadConfig: () => unawaited(_reloadConfig()),
       onWhisper: () => unawaited(_whisperNow(manual: true)),
+      onAcceptReply: _kernel?.acceptReply,
+      onRejectReply: (correction) =>
+          _kernel?.rejectReply(correction: correction),
     );
   }
 

@@ -63,19 +63,21 @@ void main() {
     tmpDir.deleteSync(recursive: true);
   });
 
-  ConversationService buildService({int rounds = 8}) => ConversationService(
-    routerLoader: () => LlmRouter(providers: [provider], activeId: 'fake'),
-    memory: memory,
-    privacy: privacy,
-    history: history,
-    dnaLoader: () => const PersonaDna(name: '小蓝', address: '老板'),
-    emotionLoader: () => const EmotionView(
-      valence: 0.5,
-      arousal: 0.5,
-      intimacy: 0.8,
-    ),
-    rounds: rounds,
-  );
+  ConversationService buildService({int rounds = 8, String? policyHint}) =>
+      ConversationService(
+        routerLoader: () => LlmRouter(providers: [provider], activeId: 'fake'),
+        memory: memory,
+        privacy: privacy,
+        history: history,
+        dnaLoader: () => const PersonaDna(name: '小蓝', address: '老板'),
+        emotionLoader: () => const EmotionView(
+          valence: 0.5,
+          arousal: 0.5,
+          intimacy: 0.8,
+        ),
+        policyHintLoader: policyHint == null ? null : () => policyHint,
+        rounds: rounds,
+      );
 
   test('上下文组装：DNA/情绪/记忆/底线/协议都进 system', () async {
     memory.add(MemoryEntry(
@@ -113,6 +115,19 @@ void main() {
     expect(pending.length, 1);
     expect(pending.single.content, '在写 Flutter 项目');
     expect(pending.single.status, MemoryStatus.pending);
+  });
+
+  test('策略参数作为表达偏好注入 system；安全边界仍以人格底线为准', () async {
+    provider.script = '[[sentiment:neutral]]\n好。';
+    final service = buildService(policyHint: '回复尽量短（一到两句）；不使用表情符号。');
+    await service.handle('在吗');
+
+    final system = provider.requests.single.system;
+    expect(system, contains('表达偏好（用户反馈习得）'));
+    expect(system, contains('回复尽量短'));
+    // 策略只能调整表达偏好，硬性底线段落始终存在。
+    expect(system, contains('硬性底线（任何时候不可违背）'));
+    expect(system, contains('不操纵用户'));
   });
 
   test('用户文本的规则模式直写 active（“以后叫我老板”）', () async {
