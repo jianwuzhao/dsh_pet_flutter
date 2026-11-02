@@ -57,7 +57,43 @@ class AppPaths {
   static File get logFile =>
       File('${root.path}${Platform.pathSeparator}pet.log');
 
+  // ---- 四层核心的本地数据布局（全部在 root 下的子目录，原子写由各自仓库负责） ----
+
+  /// 个性化层档案：人格DNA / 用户画像 / 情绪档案 / 隐私授权。
+  static Directory get profileDir =>
+      Directory('${root.path}${Platform.pathSeparator}profile');
+  static File get personaDnaFile =>
+      File('${profileDir.path}${Platform.pathSeparator}persona_dna.json');
+  static File get userProfileFile =>
+      File('${profileDir.path}${Platform.pathSeparator}user_profile.json');
+  static File get emotionProfileFile =>
+      File('${profileDir.path}${Platform.pathSeparator}emotion_profile.json');
+  static File get privacyFile =>
+      File('${profileDir.path}${Platform.pathSeparator}privacy.json');
+
+  /// 记忆库：四类记忆各一个文件（fact/episode/preference/task）。
+  static Directory get memoryDir =>
+      Directory('${root.path}${Platform.pathSeparator}memory');
+  static File memoryFileFor(String kind) =>
+      File('${memoryDir.path}${Platform.pathSeparator}$kind.json');
+  static File get memoryExportFile =>
+      File('${root.path}${Platform.pathSeparator}memory_export.json');
+
+  /// 学习治理层：反馈流水（append-only）与策略版本。
+  static Directory get learningDir =>
+      Directory('${root.path}${Platform.pathSeparator}learning');
+  static File get feedbackFile =>
+      File('${learningDir.path}${Platform.pathSeparator}feedback.jsonl');
+  static File get policyFile =>
+      File('${learningDir.path}${Platform.pathSeparator}policy.json');
+  static Directory get policySnapshotsDir =>
+      Directory('${learningDir.path}${Platform.pathSeparator}snapshots');
+
   static void ensure() {
     if (!root.existsSync()) root.createSync(recursive: true);
+    // 四层数据子目录一并建好：各仓库只管写文件，不再各自 ensure。
+    for (final dir in [profileDir, memoryDir, learningDir]) {
+      if (!dir.existsSync()) dir.createSync(recursive: true);
+    }
   }
 }

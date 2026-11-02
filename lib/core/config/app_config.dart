@@ -168,18 +168,40 @@ class LinkageConfig {
   AdapterConfig? get activeAdapter => adapters[active];
 }
 
+/// 交互网关层配置：全局快捷键唤起输入面板。
+class GatewayConfig {
+  const GatewayConfig({this.hotkey = defaultHotkey});
+
+  static const String defaultHotkey = 'cmd+shift+p';
+
+  /// 形如 `cmd+shift+p` 的小写组合串；具体解析在热键源（hotkey_source）。
+  final String hotkey;
+
+  factory GatewayConfig.fromJson(Map<String, dynamic>? json) {
+    final raw = json?['hotkey'];
+    if (raw is String && raw.trim().isNotEmpty) {
+      return GatewayConfig(hotkey: raw.trim().toLowerCase());
+    }
+    return const GatewayConfig();
+  }
+
+  Map<String, dynamic> toJson() => {'hotkey': hotkey};
+}
+
 class AppConfig {
   const AppConfig({
     required this.pets,
     required this.physics,
     required this.linkage,
     this.ai = const AiConfig(),
+    this.gateway = const GatewayConfig(),
   });
 
   final List<PetConfig> pets;
   final PhysicsParams physics;
   final LinkageConfig linkage;
   final AiConfig ai;
+  final GatewayConfig gateway;
 
   /// 首只“在桌面显示”的宠物；没有则不显示（与上游 display 语义一致）。
   PetConfig? get desktopPet => pets.where((p) => p.showsOnDesktop).firstOrNull;
@@ -250,6 +272,9 @@ class AppConfig {
       physics: physics,
       linkage: linkage,
       ai: AiConfig.fromJson(json['ai'] as Map<String, dynamic>?, fallback.ai),
+      gateway: json['gateway'] is Map<String, dynamic>
+          ? GatewayConfig.fromJson(json['gateway'] as Map<String, dynamic>)
+          : fallback.gateway,
     );
   }
 }
@@ -325,6 +350,7 @@ class ConfigRepository {
         contentRead: false,
       ),
       ai: const AiConfig(),
+      gateway: const GatewayConfig(),
     );
     return AppConfig.fromJson(json, bootstrap);
   }
@@ -358,6 +384,8 @@ class ConfigRepository {
     ],
     // AI 段也要写回：用户文件整段覆盖，漏写会把配置好的 provider/model 清掉。
     'ai': config.ai.toJson(),
+    // 网关段同理：快捷键配置不能在保存其它设置时被清掉。
+    'gateway': config.gateway.toJson(),
     // 物理参数也要写回：用户文件是“整段替换”，漏写会让自定义手感丢失。
     'physics': {
       'gravity': config.physics.gravity,

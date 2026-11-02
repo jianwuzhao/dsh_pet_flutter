@@ -22,6 +22,11 @@
     "memoryRounds": 8
   },
 
+  // 交互网关层：全局快捷键唤起输入面板（macOS 用 Carbon 注册，无需辅助功能授权）
+  "gateway": {
+    "hotkey": "cmd+shift+p"
+  },
+
   // 物理参数：与上游 shared/physics.ts 的默认值一致，改这里即可调手感
   "physics": {
     "gravity": 1400,
