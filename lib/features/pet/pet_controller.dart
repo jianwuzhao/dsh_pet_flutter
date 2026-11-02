@@ -30,6 +30,7 @@ class BubbleState {
     this.thinking = false,
     this.source = '',
     this.meme,
+    this.dismissible = false,
   });
 
   final String text;
@@ -38,6 +39,10 @@ class BubbleState {
 
   /// 可选表情包资源（assets/memes/xxx.png）；碎碎念时随机配一张。
   final String? meme;
+
+  /// true = 气泡带“知道了”关闭入口（仅主动关心使用）。
+  /// 其余气泡保持纯展示：桌面穿透行为完全不变。
+  final bool dismissible;
 }
 
 enum _Mode { pose, drag, status }
@@ -556,6 +561,7 @@ class PetController {
     bool thinking = false,
     String source = '',
     String? meme,
+    bool dismissible = false,
   }) {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
@@ -564,6 +570,7 @@ class PetController {
       thinking: thinking,
       source: source,
       meme: meme,
+      dismissible: dismissible,
     );
     _bubbleTimer?.cancel();
     _bubbleTimer = Timer(const Duration(seconds: 7), hideBubble);

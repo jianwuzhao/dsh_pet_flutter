@@ -150,6 +150,7 @@ class _PetAppState extends State<PetApp> {
       onAcceptReply: _kernel?.acceptReply,
       onRejectReply: (correction) =>
           _kernel?.rejectReply(correction: correction),
+      onDismissCare: _kernel?.dismissCare,
     );
   }
 
@@ -780,8 +781,8 @@ class _PetExpressionHost extends ExpressionHost {
       _controller.playExpressionAnimation(name);
 
   @override
-  void showBubble(String text, {String? meme}) =>
-      _controller.showBubble(text, meme: meme);
+  void showBubble(String text, {String? meme, bool dismissible = false}) =>
+      _controller.showBubble(text, meme: meme, dismissible: dismissible);
 }
 
 class _ErrorView extends StatelessWidget {

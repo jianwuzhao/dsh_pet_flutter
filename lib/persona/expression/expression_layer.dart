@@ -12,7 +12,8 @@ abstract class ExpressionHost {
   void playAnimation(String name);
 
   /// 展示气泡；宿主负责自动隐藏计时。
-  void showBubble(String text, {String? meme});
+  /// [dismissible] = true 时宿主可提供“提前关闭”入口（目前仅主动关心）。
+  void showBubble(String text, {String? meme, bool dismissible = false});
 }
 
 /// TTS 留桩：首期只有空实现，接口先行（计划 4.7）。
@@ -53,7 +54,11 @@ class ExpressionLayer {
     host.playAnimation(decision.animation);
     final text = decision.bubbleText;
     if (text != null && text.trim().isNotEmpty) {
-      host.showBubble(text, meme: decision.meme);
+      host.showBubble(
+        text,
+        meme: decision.meme,
+        dismissible: decision.dismissible,
+      );
       tts.speak(text);
     }
   }

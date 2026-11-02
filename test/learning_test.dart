@@ -18,7 +18,8 @@ class _FakeHost extends ExpressionHost {
   void playAnimation(String name) {}
 
   @override
-  void showBubble(String text, {String? meme}) => bubbles.add(text);
+  void showBubble(String text, {String? meme, bool dismissible = false}) =>
+      bubbles.add(text);
 }
 
 void main() {

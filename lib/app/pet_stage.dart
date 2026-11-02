@@ -43,6 +43,7 @@ class PetStage extends StatefulWidget {
     this.onWhisper,
     this.onAcceptReply,
     this.onRejectReply,
+    this.onDismissCare,
   });
 
   final PetController controller;
@@ -81,6 +82,9 @@ class PetStage extends StatefulWidget {
   /// 聊天回复被采纳 / 被拒绝（重说，可附纠正）的反馈入口。
   final VoidCallback? onAcceptReply;
   final void Function(String correction)? onRejectReply;
+
+  /// 主动关心气泡被提前关闭：记一条拒绝样本（自动过期仍是中性）。
+  final VoidCallback? onDismissCare;
 
   @override
   State<PetStage> createState() => _PetStageState();
@@ -192,8 +196,12 @@ class _PetStageState extends State<PetStage> {
         final pet = controller.petRect;
         // 头顶空间不够时气泡翻到脚下，避免贴顶时被窗口裁掉。
         final below = pet.top - screen.top < 150;
+        // 只有可关闭气泡（主动关心）才放开指针命中：
+        // 默认整层仍 IgnorePointer，桌面点击完全穿透，行为不变。
+        final interactive = state.dismissible && widget.onDismissCare != null;
         return Positioned.fill(
           child: IgnorePointer(
+            ignoring: !interactive,
             child: CustomSingleChildLayout(
               delegate: PetFlyoutLayout(
                 screen: screen,
@@ -204,12 +212,22 @@ class _PetStageState extends State<PetStage> {
                 gap: 8,
                 padding: 8,
               ),
-              child: BubbleWidget(state: state, tailDown: !below),
+              child: BubbleWidget(
+                state: state,
+                tailDown: !below,
+                onDismiss: interactive ? _dismissCare : null,
+              ),
             ),
           ),
         );
       },
     );
+  }
+
+  /// 主动关心被提前关闭：先收起气泡，再记一条拒绝样本。
+  void _dismissCare() {
+    widget.controller.hideBubble();
+    widget.onDismissCare?.call();
   }
 
   Widget _menuLayer() {

@@ -9,12 +9,16 @@ import 'package:flutter_test/flutter_test.dart';
 class _RecordingHost implements ExpressionHost {
   final List<String> animations = [];
   final List<(String, String?)> bubbles = [];
+  final List<bool> dismissibles = [];
 
   @override
   void playAnimation(String name) => animations.add(name);
 
   @override
-  void showBubble(String text, {String? meme}) => bubbles.add((text, meme));
+  void showBubble(String text, {String? meme, bool dismissible = false}) {
+    bubbles.add((text, meme));
+    dismissibles.add(dismissible);
+  }
 }
 
 class _RecordingTts implements TtsSink {
@@ -110,6 +114,8 @@ void main() {
       expect(decision!.bubbleText, '辛苦了，要不要先休息一下？');
       expect(decision.animation, '东张西望');
       expect(decision.tone, '亲近、自然');
+      // 主动关心是唯一允许“知道了”提前关闭的表达。
+      expect(decision.dismissible, isTrue);
     });
 
     test('care 过滤含回避话题的话术；全被过滤则不表达', () {
@@ -144,6 +150,40 @@ void main() {
       final decision = strategy.passive(EmotionPhase.happy);
       expect(decision.animation, '工作状态-雀跃庆祝');
       expect(decision.bubbleText, isNull);
+      // 被动表达不带关闭入口：普通气泡保持纯展示。
+      expect(decision.dismissible, isFalse);
+    });
+  });
+
+  group('表达层转发 dismissible', () {
+    test('care 决策把可关闭标记透传给宿主', () {
+      final host = _RecordingHost();
+      final layer = ExpressionLayer(host: host);
+      final decision = ResponseStrategy(random: _FixedRandom()).care(
+        const EmotionProfile(),
+        phase: EmotionPhase.worried,
+        tier: IntimacyTier.close,
+      )!;
+
+      layer.perform(decision, now: base);
+
+      expect(host.dismissibles.single, isTrue);
+      expect(host.bubbles.single.$1, decision.bubbleText);
+    });
+
+    test('普通表达不带可关闭标记', () {
+      final host = _RecordingHost();
+      final layer = ExpressionLayer(host: host);
+
+      layer.perform(
+        const ExpressionDecision(
+          animation: '待机呼吸休闲',
+          bubbleText: '随便说一句',
+        ),
+        now: base,
+      );
+
+      expect(host.dismissibles.single, isFalse);
     });
   });
 }

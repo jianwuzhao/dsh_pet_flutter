@@ -41,12 +41,17 @@ class ExpressionDecision {
     this.bubbleText,
     this.meme,
     this.tone = '',
+    this.dismissible = false,
   });
 
   final String animation;
   final String? bubbleText;
   final String? meme;
   final String tone;
+
+  /// true = 气泡带“知道了”关闭入口（目前只有主动关心使用）。
+  /// 关闭即“拒绝这次关心”，由装配层接到学习闭环；自动过期仍是中性。
+  final bool dismissible;
 }
 
 class ResponseStrategy {
@@ -76,6 +81,8 @@ class ResponseStrategy {
           emotionAnimations[phase] ?? emotionAnimations[EmotionPhase.calm]!,
       bubbleText: pool[_random.nextInt(pool.length)],
       tone: tierTones[tier]!,
+      // 主动关心是唯一允许“提前关闭”的表达：用户点掉 = 拒绝样本。
+      dismissible: true,
     );
   }
 

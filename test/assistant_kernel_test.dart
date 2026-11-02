@@ -21,6 +21,7 @@ import 'package:dsh_pet_flutter/persona/emotion/emotion_machine.dart';
 import 'package:dsh_pet_flutter/persona/emotion/emotion_signal.dart';
 import 'package:dsh_pet_flutter/persona/expression/expression_layer.dart';
 import 'package:dsh_pet_flutter/persona/memory/memory_entry.dart';
+import 'package:dsh_pet_flutter/persona/memory/memory_store.dart';
 import 'package:dsh_pet_flutter/persona/profile_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -33,7 +34,8 @@ class _FakeHost extends ExpressionHost {
   void playAnimation(String name) => animations.add(name);
 
   @override
-  void showBubble(String text, {String? meme}) => bubbles.add(text);
+  void showBubble(String text, {String? meme, bool dismissible = false}) =>
+      bubbles.add(text);
 }
 
 void main() {
@@ -52,6 +54,8 @@ void main() {
       store: ProfileStore(directory: tmpDir),
       host: host,
       privacy: PrivacyCenter(directory: tmpDir),
+      // 记忆库同样必须指到临时目录：默认 MemoryStore 会写真实用户目录。
+      memory: MemoryStore(directory: Directory('${tmpDir.path}/memory')),
       // 学习层必须指到临时目录：默认 LearningLoop 会写真实用户目录。
       learning: LearningLoop(
         collector: FeedbackCollector(
@@ -230,6 +234,16 @@ void main() {
       expect(lines.first, contains('accepted'));
       expect(lines.last, contains('corrected'));
       expect(lines.last, contains('太长了'));
+    });
+
+    test('主动关心被提前关闭记为拒绝样本（自动过期不记）', () {
+      final kernel = buildKernel()..start();
+      kernel.dismissCare();
+
+      final events = File('${tmpDir.path}/feedback.jsonl').readAsLinesSync();
+      expect(events.length, 1);
+      expect(events.single, contains('rejected'));
+      expect(events.single, contains('care:'));
     });
 
     test('记忆提案经学习闭环接受：生效并留正样本', () {

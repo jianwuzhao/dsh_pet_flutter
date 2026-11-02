@@ -9,12 +9,20 @@ import 'package:flutter/material.dart';
 import '../pet/pet_controller.dart';
 
 class BubbleWidget extends StatelessWidget {
-  const BubbleWidget({super.key, required this.state, this.tailDown = true});
+  const BubbleWidget({
+    super.key,
+    required this.state,
+    this.tailDown = true,
+    this.onDismiss,
+  });
 
   final BubbleState state;
 
   /// true：气泡在宠物上方，尾巴朝下；false：气泡在宠物下方，尾巴朝上。
   final bool tailDown;
+
+  /// 主动关心的“知道了”入口；非 dismissible 气泡传 null。
+  final VoidCallback? onDismiss;
 
   static const Color _cardColor = Color(0xE61B1B20);
 
@@ -22,7 +30,8 @@ class BubbleWidget extends StatelessWidget {
   Widget build(BuildContext context) {
     final card = Container(
       constraints: const BoxConstraints(maxWidth: 260),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      // 可关闭时右侧多留 12，给右上角的关闭钮让位，不压住正文。
+      padding: EdgeInsets.fromLTRB(14, 10, state.dismissible ? 26 : 14, 10),
       decoration: BoxDecoration(
         color: _cardColor,
         borderRadius: BorderRadius.circular(14),
@@ -92,17 +101,51 @@ class BubbleWidget extends StatelessWidget {
       painter: _BubbleTailPainter(color: _cardColor, pointDown: tailDown),
     );
 
+    // 卡片主体永远不接收指针：桌面穿透行为与原先完全一致。
+    // 只有可关闭气泡（主动关心）在卡片右上角叠一个小圆钮（22×22），
+    // 命中测试先问按钮、未命中时落到被 IgnorePointer 包住的卡片 → 继续穿透。
+    final content = Stack(
+      children: [
+        IgnorePointer(child: card),
+        if (state.dismissible && onDismiss != null)
+          Positioned(top: 2, right: 2, child: _DismissButton(onTap: onDismiss!)),
+      ],
+    );
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: tailDown
           ? [
-              card,
+              content,
               // 尾巴与卡片同宽后再居中，避免 Column 收缩到只有尾巴宽度。
               SizedBox(width: 18, height: 8, child: Center(child: tail)),
             ]
-          : [SizedBox(width: 18, height: 8, child: Center(child: tail)), card],
+          : [SizedBox(width: 18, height: 8, child: Center(child: tail)), content],
     );
   }
+}
+
+/// 主动关心的关闭钮：点击 = 提前关闭 = 拒绝样本（自动过期仍算中性）。
+class _DismissButton extends StatelessWidget {
+  const _DismissButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    behavior: HitTestBehavior.opaque,
+    child: Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        color: const Color(0xF21B1B20),
+        shape: BoxShape.circle,
+        border: Border.all(color: const Color(0x40FFFFFF)),
+      ),
+      child: const Icon(Icons.close, size: 12, color: Color(0xF2FFFFFF)),
+    ),
+  );
 }
 
 class _BubbleTailPainter extends CustomPainter {
