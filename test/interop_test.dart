@@ -3,7 +3,6 @@ import 'dart:io';
 import 'package:dsh_pet_flutter/core/result.dart';
 import 'package:dsh_pet_flutter/interop/adapters/chatgpt_adapter.dart';
 import 'package:dsh_pet_flutter/interop/adapters/trae_cn_adapter.dart';
-import 'package:dsh_pet_flutter/interop/adapters/workbuddy_adapter.dart';
 import 'package:dsh_pet_flutter/interop/capability.dart';
 import 'package:dsh_pet_flutter/interop/capability_registry.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -103,39 +102,6 @@ void main() {
       );
       final availability = await adapter.probe();
       expect(availability.status, AvailabilityStatus.unreachable);
-    });
-  });
-
-  group('WorkBuddyCapability', () {
-    test('本地 API 可达 → 可用', () async {
-      final adapter = WorkBuddyCapability(
-        appPaths: const [],
-        portProbe: () async => true,
-      );
-      final availability = await adapter.probe();
-      expect(availability.ready, isTrue);
-      expect(availability.detail, contains('127.0.0.1:8080'));
-    });
-
-    test('API 不通但客户端已安装 → 未配置并指向企业版开通', () async {
-      final installed = Directory('${tmpDir.path}/WorkBuddy.app')..createSync();
-      final adapter = WorkBuddyCapability(
-        appPaths: [installed.path],
-        portProbe: () async => false,
-      );
-      final availability = await adapter.probe();
-      expect(availability.status, AvailabilityStatus.notConfigured);
-      expect(availability.reason, contains('本地 API 未开启'));
-    });
-
-    test('两者都没有 → 未配置，说明个人版无开放 API', () async {
-      final adapter = WorkBuddyCapability(
-        appPaths: const [],
-        portProbe: () async => false,
-      );
-      final availability = await adapter.probe();
-      expect(availability.status, AvailabilityStatus.notConfigured);
-      expect(availability.detail, contains('个人版'));
     });
   });
 

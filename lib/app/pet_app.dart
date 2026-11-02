@@ -33,7 +33,6 @@ import '../gateway/interaction_gateway.dart';
 import '../gateway/privacy_center.dart';
 import '../interop/adapters/chatgpt_adapter.dart';
 import '../interop/adapters/trae_cn_adapter.dart';
-import '../interop/adapters/workbuddy_adapter.dart';
 import '../interop/capability_registry.dart';
 import '../interop/run_event.dart';
 import '../persona/expression/expression_layer.dart';
@@ -250,7 +249,6 @@ class _PetAppState extends State<PetApp> {
             baseUrl: config.ai.baseUrl,
             model: config.ai.model,
           ),
-          WorkBuddyCapability(),
         ],
       );
       unawaited(capabilities.probeAll());
