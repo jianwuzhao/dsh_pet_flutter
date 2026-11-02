@@ -51,6 +51,7 @@ class BrainSection extends StatelessWidget {
           items: const [
             DropdownMenuItem(value: 'none', child: Text('关闭')),
             DropdownMenuItem(value: 'openai', child: Text('OpenAI 兼容接口')),
+            DropdownMenuItem(value: 'deepseek', child: Text('DeepSeek 官方 API')),
             DropdownMenuItem(value: 'ollama', child: Text('本地 Ollama')),
           ],
           onChanged: (value) {
@@ -61,7 +62,7 @@ class BrainSection extends StatelessWidget {
         SettingsField(controller: baseUrl, hint: '例如 https://api.openai.com/v1'),
         const SettingsLabel('模型'),
         SettingsField(controller: model, hint: '例如 gpt-4o-mini / qwen2.5'),
-        if (provider == 'openai') ...[
+        if (provider == 'openai' || provider == 'deepseek') ...[
           const SettingsLabel('API Key（保存在系统安全存储）'),
           SettingsField(
             controller: apiKey,
@@ -89,7 +90,8 @@ class BrainSection extends StatelessWidget {
         ),
         const SizedBox(height: 6),
         const Text(
-          '选择“OpenAI 兼容 / 本地 Ollama”后可直接对话；关闭时输入只转发到关联软件。'
+          '选择“OpenAI 兼容 / DeepSeek / 本地 Ollama”后可直接对话；关闭时输入只转发到关联软件。'
+          'DeepSeek 的 Base URL 填 https://api.deepseek.com，模型按官方当前型号填写。'
           '碎碎念可从右键菜单“让它说句话”立即触发。',
           style: TextStyle(color: Color(0x66FFFFFF), fontSize: 10.5),
         ),

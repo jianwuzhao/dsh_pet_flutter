@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 
 import '../../core/result.dart';
 import '../llm_provider.dart';
+import '../thinking_tier.dart';
 
 class OpenAiProvider extends LlmProvider {
   OpenAiProvider({
@@ -44,6 +45,10 @@ class OpenAiProvider extends LlmProvider {
       _model.isNotEmpty &&
       (await keyLoader()).trim().isNotEmpty;
 
+  /// 子类可补充请求体字段（如 DeepSeek 的 thinking / reasoning_effort）。
+  /// 返回空表时请求体与纯 OpenAI 兼容端点完全一致。
+  Map<String, dynamic> requestExtras(ThinkingTier tier) => const {};
+
   @override
   Future<Result<LlmReply>> chat(LlmRequest request) async {
     final key = (await keyLoader()).trim();
@@ -63,6 +68,8 @@ class OpenAiProvider extends LlmProvider {
               'messages': [
                 for (final message in request.payload) message.toJson(),
               ],
+              // provider 特有参数（如 DeepSeek 的 thinking/reasoning_effort）。
+              ...requestExtras(request.thinkingTier),
             }),
           )
           .timeout(const Duration(seconds: 60));

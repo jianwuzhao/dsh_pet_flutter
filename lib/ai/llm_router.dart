@@ -2,10 +2,10 @@
 ///
 /// 降级优先级（固定）：
 /// 1. `config.ai.provider` 指定的 active（`none` 视为未指定，不参与）；
-/// 2. `openai` —— 要有 baseUrl + model + key；
+/// 2. `openai` / `deepseek` —— 两个都是 OpenAI 兼容端点，装配时按 active 只建其一；
 /// 3. `ollama` —— 要有 baseUrl + model，且 `/api/tags` 探活在 probeTimeout 内成功；
 /// 4. `trae-bridge` —— 恒可用，但 supportsReply=false，对话会落成“只转发”。
-/// 任何一级不可用都立即跳到下一级，不做重试；真正使用时不会再等一次 60s 超时。
+/// 任何一级不可用都立即跳到下一级，不做重试；真正使用时不会再多等一次 60s 超时。
 library;
 
 import 'llm_provider.dart';
@@ -43,7 +43,12 @@ class LlmRouter {
   /// config.ai.provider；'none' 视为“没想要谁”，直接走降级链兜底。
   String activeId;
 
-  static const List<String> fallbackOrder = ['openai', 'ollama', 'trae-bridge'];
+  static const List<String> fallbackOrder = [
+    'openai',
+    'deepseek',
+    'ollama',
+    'trae-bridge',
+  ];
 
   LlmProvider? byId(String id) {
     for (final provider in providers) {

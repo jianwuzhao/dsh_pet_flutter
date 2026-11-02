@@ -5,6 +5,7 @@
 library;
 
 import '../core/result.dart';
+import 'thinking_tier.dart';
 
 /// 会话消息：role ∈ system/user/assistant。
 class LlmMessage {
@@ -20,12 +21,19 @@ class LlmMessage {
 }
 
 class LlmRequest {
-  const LlmRequest({required this.messages, this.system = ''});
+  const LlmRequest({
+    required this.messages,
+    this.system = '',
+    this.thinkingTier = ThinkingTier.balanced,
+  });
 
   final List<LlmMessage> messages;
 
   /// 系统提示（人格 DNA + 情绪摘要 + 记忆上下文由会话服务拼好放这里）。
   final String system;
+
+  /// 本次调用想要的思考深度；provider 负责翻译成自己的参数。
+  final ThinkingTier thinkingTier;
 
   /// 实际下发的消息序列：system 非空时排最前。
   List<LlmMessage> get payload => [

@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
 import '../ai/llm_router.dart';
+import '../ai/providers/deepseek_provider.dart';
 import '../ai/providers/ollama_provider.dart';
 import '../ai/providers/openai_provider.dart';
 import '../ai/providers/trae_bridge_provider.dart';
@@ -557,11 +558,20 @@ class _PetAppState extends State<PetApp> {
   LlmRouter _buildRouter(AppConfig config) {
     return LlmRouter(
       providers: [
-        OpenAiProvider(
-          baseUrl: config.ai.baseUrl,
-          model: config.ai.model,
-          keyLoader: _keyStore.read,
-        ),
+        // OpenAI 兼容与 DeepSeek 共用同一组配置字段（baseUrl/model/key），
+        // 按当前 provider 二选一构造，避免把同一端点当两个后端重复打。
+        if (config.ai.provider == 'deepseek')
+          DeepSeekProvider(
+            baseUrl: config.ai.baseUrl,
+            model: config.ai.model,
+            keyLoader: _keyStore.read,
+          )
+        else
+          OpenAiProvider(
+            baseUrl: config.ai.baseUrl,
+            model: config.ai.model,
+            keyLoader: _keyStore.read,
+          ),
         OllamaProvider(baseUrl: config.ai.baseUrl, model: config.ai.model),
         TraeBridgeProvider(
           send: (prompt) {

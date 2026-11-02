@@ -2,9 +2,11 @@ import 'dart:convert';
 import 'dart:io' show SocketException;
 
 import 'package:dsh_pet_flutter/ai/llm_provider.dart';
+import 'package:dsh_pet_flutter/ai/providers/deepseek_provider.dart';
 import 'package:dsh_pet_flutter/ai/providers/ollama_provider.dart';
 import 'package:dsh_pet_flutter/ai/providers/openai_provider.dart';
 import 'package:dsh_pet_flutter/ai/providers/trae_bridge_provider.dart';
+import 'package:dsh_pet_flutter/ai/thinking_tier.dart';
 import 'package:dsh_pet_flutter/core/result.dart';
 import 'package:dsh_pet_flutter/features/linkage/assistant_adapters.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -140,6 +142,98 @@ void main() {
       // dispose 在接口上可用（编译通过即证明），且不崩溃。
       provider.dispose();
       expect(externalClosed, isFalse);
+    });
+  });
+
+  group('DeepSeekProvider', () {
+    DeepSeekProvider build(MockClient client) => DeepSeekProvider(
+      baseUrl: 'https://api.deepseek.com',
+      model: 'deepseek-v4-pro',
+      keyLoader: () async => 'sk-deepseek',
+      client: client,
+    );
+
+    test('打官方 OpenAI 兼容端点，并在请求体带 thinking 与 reasoning_effort', () async {
+      late http.Request captured;
+      final provider = build(
+        MockClient((request) async {
+          captured = request;
+          return _json({
+            'choices': [
+              {
+                'message': {'content': '好的'},
+              },
+            ],
+          });
+        }),
+      );
+
+      final reply = await provider.chat(
+        const LlmRequest(messages: [LlmMessage.user('你好')]),
+      );
+
+      expect(captured.url.toString(), 'https://api.deepseek.com/chat/completions');
+      expect(captured.headers['Authorization'], 'Bearer sk-deepseek');
+      final body = jsonDecode(captured.body) as Map<String, dynamic>;
+      // 默认档位 = balanced：思考开 + high（与官方默认一致）。
+      expect(body['reasoning_effort'], 'high');
+      expect((body['thinking'] as Map)['type'], 'enabled');
+      expect((reply as Success<LlmReply>).value.content, '好的');
+    });
+
+    test('fast 档关闭思考；deep 档用 max', () async {
+      final bodies = <Map<String, dynamic>>[];
+      final provider = build(
+        MockClient((request) async {
+          bodies.add(jsonDecode(request.body) as Map<String, dynamic>);
+          return _json({
+            'choices': [
+              {
+                'message': {'content': 'ok'},
+              },
+            ],
+          });
+        }),
+      );
+
+      await provider.chat(
+        const LlmRequest(
+          messages: [LlmMessage.user('快问快答')],
+          thinkingTier: ThinkingTier.fast,
+        ),
+      );
+      await provider.chat(
+        const LlmRequest(
+          messages: [LlmMessage.user('深想一下')],
+          thinkingTier: ThinkingTier.deep,
+        ),
+      );
+
+      expect(bodies.first['reasoning_effort'], 'low');
+      expect((bodies.first['thinking'] as Map)['type'], 'disabled');
+      expect(bodies.last['reasoning_effort'], 'max');
+      expect((bodies.last['thinking'] as Map)['type'], 'enabled');
+    });
+
+    test('缺 key 时不可用且结构化失败', () async {
+      final provider = DeepSeekProvider(
+        baseUrl: 'https://api.deepseek.com',
+        model: 'deepseek-v4-pro',
+        keyLoader: () async => '',
+        client: MockClient((_) async => _json({})),
+      );
+      expect(await provider.isReady, isFalse);
+      final reply = await provider.chat(
+        const LlmRequest(messages: [LlmMessage.user('hi')]),
+      );
+      expect((reply as Failure<LlmReply>).code, 'ai.no-key');
+    });
+
+    test('标识与展示名独立于 OpenAI 兼容', () {
+      final provider = build(MockClient((_) async => _json({})));
+      expect(provider.id, 'deepseek');
+      expect(provider.displayName, 'DeepSeek');
+      expect(provider.supportsReply, isTrue);
     });
   });
 

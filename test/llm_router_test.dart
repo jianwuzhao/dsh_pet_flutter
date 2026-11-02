@@ -88,6 +88,34 @@ void main() {
       expect(resolution.degraded, isTrue);
     });
 
+    test('active=deepseek 时优先选 DeepSeek', () async {
+      final router = LlmRouter(
+        providers: [
+          FakeProvider('deepseek'),
+          FakeProvider('ollama'),
+          bridge(),
+        ],
+        activeId: 'deepseek',
+      );
+      final resolution = await router.resolve();
+      expect(resolution!.provider.id, 'deepseek');
+      expect(resolution.degraded, isFalse);
+    });
+
+    test('deepseek 不可用时按固定顺序降级到 ollama', () async {
+      final router = LlmRouter(
+        providers: [
+          FakeProvider('deepseek', ready: false),
+          FakeProvider('ollama'),
+          bridge(),
+        ],
+        activeId: 'deepseek',
+      );
+      final resolution = await router.resolve();
+      expect(resolution!.provider.id, 'ollama');
+      expect(resolution.degraded, isTrue);
+    });
+
     test('provider=none 且 Ollama 不可达：快速落到转发桥，不在不可达后端上白等', () async {
       final stopwatch = Stopwatch()..start();
       final router = LlmRouter(

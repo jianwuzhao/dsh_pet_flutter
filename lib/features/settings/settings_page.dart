@@ -8,6 +8,7 @@ library;
 import 'package:flutter/material.dart';
 
 import '../../ai/llm_provider.dart';
+import '../../ai/providers/deepseek_provider.dart';
 import '../../ai/providers/ollama_provider.dart';
 import '../../ai/providers/openai_provider.dart';
 import '../../core/config/ai_config.dart';
@@ -472,6 +473,11 @@ class _SettingsPageState extends State<SettingsPage>
         baseUrl: _aiBase.text.trim(),
         model: _aiModel.text.trim(),
         // 用输入框里的草稿 key，用户可能还没点保存。
+        keyLoader: () async => _aiKey.text.trim(),
+      ),
+      'deepseek' => DeepSeekProvider(
+        baseUrl: _aiBase.text.trim(),
+        model: _aiModel.text.trim(),
         keyLoader: () async => _aiKey.text.trim(),
       ),
       'ollama' => OllamaProvider(
