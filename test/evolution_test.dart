@@ -475,4 +475,138 @@ void main() {
     expect(entry.rootCause, '不要用命令式语气，改成商量着来');
     expect(entry.verification, 'user-observed');
   });
+
+  test('P1-2 反馈回填：24h 内注入过的 active 准则计数，窗口外不归因', () {
+    guidelines.propose(
+      Guideline(id: 'g1', title: '风格', content: '保持简洁', createdAt: now),
+    );
+    guidelines.accept('g1');
+    guidelines.markUsed(guidelines.active);
+    final injected = guidelines.active.single;
+    expect(injected.useCount, 1);
+    expect(injected.firstInjectedAtMs, greaterThan(0));
+    expect(injected.lastUsedAtMs, injected.firstInjectedAtMs);
+
+    guidelines.recordInjectionOutcome(accepted: true);
+    expect(guidelines.active.single.acceptedAfterUse, 1);
+    expect(guidelines.active.single.correctedAfterUse, 0);
+
+    guidelines.recordInjectionOutcome(accepted: false);
+    expect(guidelines.active.single.correctedAfterUse, 1);
+
+    // 窗口外（25h 后）的反馈不归因到这次注入上。
+    guidelines.recordInjectionOutcome(
+      accepted: false,
+      now: DateTime.now().add(const Duration(hours: 25)),
+    );
+    expect(guidelines.active.single.correctedAfterUse, 1);
+
+    // pending（未生效）准则不参与计数。
+    guidelines.propose(
+      Guideline(id: 'g2', title: '表格', content: '少用表格', createdAt: now),
+    );
+    guidelines.recordInjectionOutcome(accepted: false);
+    expect(
+      guidelines.pending.singleWhere((item) => item.id == 'g2')
+          .correctedAfterUse,
+      0,
+    );
+  });
+
+  test('P1-2 无效准则停用提案：达线生成，接受归档记 retired', () {
+    guidelines.propose(
+      Guideline(id: 'g1', title: '表格偏好', content: '尽量用表格展示', createdAt: now),
+    );
+    guidelines.accept('g1');
+    for (var i = 0; i < 5; i++) {
+      guidelines.markUsed(guidelines.active);
+    }
+    expect(guidelines.active.single.useCount, 5);
+
+    // 首次反馈即达线：1/1 = 100% ≥ 40% 且 useCount 5 ≥ 5。
+    final created = guidelines.recordInjectionOutcome(accepted: false);
+    expect(created, hasLength(1));
+    expect(created.single.guidelineId, 'g1');
+    expect(created.single.reason, contains('已注入 5 次'));
+
+    // 同一准则不重复生成（后续反馈仍计入统计但不重复提案）。
+    guidelines.recordInjectionOutcome(accepted: false);
+    guidelines.recordInjectionOutcome(accepted: true);
+    expect(guidelines.recordInjectionOutcome(accepted: false), isEmpty);
+    expect(guidelines.retireProposals, hasLength(1));
+
+    // 接受：归档 + 历史 retired + 提案出队。
+    expect(guidelines.acceptRetire(created.single.id), isA<Success<void>>());
+    expect(guidelines.active, isEmpty);
+    expect(guidelines.archived.single.history.last.event, 'retired');
+    expect(guidelines.retireProposals, isEmpty);
+  });
+
+  test('P1-2 拒绝停用提案保留准则且本次运行不再重提；未达线不生成', () {
+    guidelines.propose(
+      Guideline(id: 'g1', title: '语气', content: '多用命令式', createdAt: now),
+    );
+    guidelines.accept('g1');
+    for (var i = 0; i < 6; i++) {
+      guidelines.markUsed(guidelines.active);
+    }
+    // 首次反馈即达线：1/1 = 100% ≥ 40% 且 useCount 6 ≥ 5。
+    final created = guidelines.recordInjectionOutcome(accepted: false);
+    expect(created, hasLength(1));
+
+    expect(guidelines.rejectRetire(created.single.id), isA<Success<void>>());
+    expect(guidelines.retireProposals, isEmpty);
+    expect(guidelines.active, hasLength(1));
+    // 拒绝后：后续反馈即使仍达线也不再自动重提（本次运行内）。
+    expect(guidelines.recordInjectionOutcome(accepted: false), isEmpty);
+
+    // useCount 不足不生成。
+    guidelines.propose(
+      Guideline(id: 'g2', title: '长度', content: '回答要详细展开', createdAt: now),
+    );
+    guidelines.accept('g2');
+    for (var i = 0; i < 4; i++) {
+      guidelines.markUsed(
+        guidelines.active.where((item) => item.id == 'g2'),
+      );
+    }
+    guidelines.recordInjectionOutcome(accepted: false);
+    guidelines.recordInjectionOutcome(accepted: false);
+    expect(guidelines.retireProposals, isEmpty, reason: 'useCount=4 < 5');
+
+    // 纠正占比不足不生成。
+    guidelines.propose(
+      Guideline(id: 'g3', title: '表情', content: '少用表情符号', createdAt: now),
+    );
+    guidelines.accept('g3');
+    for (var i = 0; i < 5; i++) {
+      guidelines.markUsed(
+        guidelines.active.where((item) => item.id == 'g3'),
+      );
+    }
+    guidelines.recordInjectionOutcome(accepted: true);
+    guidelines.recordInjectionOutcome(accepted: true);
+    guidelines.recordInjectionOutcome(accepted: true);
+    expect(guidelines.retireProposals, isEmpty, reason: '纠正占比 0% < 40%');
+  });
+
+  test('P1-2 计数与停用提案持久化往返', () {
+    guidelines.propose(
+      Guideline(id: 'g1', title: '风格', content: '保持简洁', createdAt: now),
+    );
+    guidelines.accept('g1');
+    for (var i = 0; i < 5; i++) {
+      guidelines.markUsed(guidelines.active);
+    }
+    for (var i = 0; i < 3; i++) {
+      guidelines.recordInjectionOutcome(accepted: false);
+    }
+    final reloaded = GuidelineStore(directory: tmpDir)..load();
+    final restored = reloaded.active.single;
+    expect(restored.useCount, 5);
+    expect(restored.firstInjectedAtMs, greaterThan(0));
+    expect(restored.correctedAfterUse, 3);
+    expect(reloaded.retireProposals, hasLength(1));
+    expect(reloaded.retireProposals.single.guidelineId, 'g1');
+  });
 }
