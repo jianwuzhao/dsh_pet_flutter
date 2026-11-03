@@ -95,6 +95,16 @@ class AppPaths {
   static File get guidelineFile =>
       File('${learningDir.path}${Platform.pathSeparator}guidelines.json');
 
+  /// 技能库：每技能一个目录（SKILL.md + history/），index.json 是常驻索引。
+  static Directory get skillsDir =>
+      Directory('${root.path}${Platform.pathSeparator}skills');
+  static File get skillIndexFile =>
+      File('${skillsDir.path}${Platform.pathSeparator}index.json');
+
+  /// 技能治理审计流（append-only）：生成/晋升/停用/退役全留痕。
+  static File get skillEventsFile =>
+      File('${learningDir.path}${Platform.pathSeparator}skill_events.jsonl');
+
   static void ensure() {
     if (!root.existsSync()) root.createSync(recursive: true);
     // 四层数据子目录一并建好：各仓库只管写文件，不再各自 ensure。
