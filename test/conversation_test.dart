@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:dsh_pet_flutter/ai/conversation.dart';
 import 'package:dsh_pet_flutter/ai/llm_provider.dart';
 import 'package:dsh_pet_flutter/ai/llm_router.dart';
+import 'package:dsh_pet_flutter/ai/skill_library.dart';
 import 'package:dsh_pet_flutter/core/result.dart';
 import 'package:dsh_pet_flutter/features/ai/chat_memory.dart';
 import 'package:dsh_pet_flutter/gateway/privacy_center.dart';
@@ -63,7 +64,11 @@ void main() {
     tmpDir.deleteSync(recursive: true);
   });
 
-  ConversationService buildService({int rounds = 8, String? policyHint}) =>
+  ConversationService buildService({
+    int rounds = 8,
+    String? policyHint,
+    SkillInjection? Function(String prompt)? skillLoader,
+  }) =>
       ConversationService(
         routerLoader: () => LlmRouter(providers: [provider], activeId: 'fake'),
         memory: memory,
@@ -76,6 +81,7 @@ void main() {
           intimacy: 0.8,
         ),
         policyHintLoader: policyHint == null ? null : () => policyHint,
+        skillLoader: skillLoader,
         rounds: rounds,
       );
 
@@ -102,6 +108,45 @@ void main() {
     expect(system, contains('[[sentiment:'));
     expect(system, contains('[[memory:'));
     expect(provider.requests.single.messages.single.content, '在吗');
+  });
+
+  test('技能注入：索引行常驻，命中展开正文，超预算整条跳过', () async {
+    SkillManifest skill(String name, String body) => SkillManifest(
+      name: name,
+      description: '做法 $name',
+      triggers: '$name|技能',
+      body: body,
+      createdAt: DateTime(2026, 1, 1),
+    );
+
+    provider.script = '好的。';
+    final service = buildService(
+      skillLoader: (prompt) => SkillInjection(
+        index: [skill('a-skill', 'A 的完整做法步骤')],
+        expanded: prompt.contains('命中')
+            ? [
+                skill('b-skill', 'B' * 2500), // 超预算应整条跳过
+                skill('c-skill', 'C 的做法'),
+              ]
+            : const [],
+      ),
+    );
+    await service.handle('没有命中');
+
+    var system = provider.requests.single.system;
+    expect(system, contains('可用技能'));
+    expect(system, contains('- a-skill: 做法 a-skill'));
+    expect(system.contains('b-skill 的做法'), isFalse, reason: '未命中不展开');
+
+    await service.handle('这次命中了');
+    system = provider.requests.last.system;
+    expect(system, contains('- a-skill: 做法 a-skill'), reason: '索引行常驻');
+    expect(system, contains('技能 c-skill 的做法'), reason: '放得下的正文照常展开');
+    expect(
+      system.contains('b-skill 的做法'),
+      isFalse,
+      reason: '超出 2000 字符预算的正文整条跳过，不截半条',
+    );
   });
 
   test('回复剥掉 memory 标记：正文干净 + pending 入库', () async {

@@ -38,6 +38,8 @@ import '../interop/capability_registry.dart';
 import '../interop/run_event.dart';
 import '../learning/guideline_store.dart';
 import '../learning/reflection_store.dart';
+import '../learning/skill_curator.dart';
+import '../ai/skill_library.dart';
 import '../persona/appearance/appearance_state.dart';
 import '../persona/expression/expression_layer.dart';
 import '../persona/persona_dna.dart';
@@ -87,6 +89,12 @@ class _PetAppState extends State<PetApp> {
   final AiKeyStore _keyStore = AiKeyStore();
   final ReflectionStore _reflections = ReflectionStore();
   final GuidelineStore _guidelines = GuidelineStore();
+
+  /// 技能库与策展（P1-1）：装载失败按空库降级，对话不受影响。
+  late final SkillCurator _skillCurator = () {
+    final library = SkillLibrary()..load();
+    return SkillCurator(library: library);
+  }();
   AiService? _ai;
   ChatMemory? _memory;
   Timer? _whisperTimer;
@@ -278,6 +286,7 @@ class _PetAppState extends State<PetApp> {
         privacy: privacy,
         reflections: _reflections,
         guidelines: _guidelines,
+        skillCurator: _skillCurator,
         // 会话历史与 builtin 联动共用一份轮次记录（config.ai.memoryRounds 截断）。
         conversationHistory: _memory,
         conversationRounds: config.ai.memoryRounds,

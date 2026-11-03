@@ -158,6 +158,20 @@ class SkillManifest {
       raw is String ? DateTime.tryParse(raw) : null;
 }
 
+/// 一次 system prompt 注入包：常驻索引行 + 命中展开的正文。
+///
+/// 索引行让模型知道“有哪些技能”；正文只在用户消息命中 triggers 时
+/// 展开——这是渐进加载第一、二级在 prompt 侧的体现。
+class SkillInjection {
+  const SkillInjection({required this.index, required this.expanded});
+
+  /// 常驻索引（useCount Top 5）：进模型视野靠注入次数竞争。
+  final List<SkillManifest> index;
+
+  /// triggers 命中当前消息的技能：正文随注入展开。
+  final List<SkillManifest> expanded;
+}
+
 class SkillLibrary {
   SkillLibrary({Directory? directory, DateTime Function()? clock})
     : _directory = directory ?? AppPaths.skillsDir,

@@ -18,6 +18,7 @@ import 'package:flutter/foundation.dart';
 
 import '../ai/conversation.dart';
 import '../ai/llm_provider.dart';
+import '../ai/skill_library.dart';
 import '../ai/thinking_tier.dart';
 import '../core/result.dart';
 import '../features/ai/chat_memory.dart';
@@ -35,6 +36,7 @@ import '../learning/llm_reflection_synthesizer.dart';
 import '../learning/metrics_store.dart';
 import '../learning/policy_store.dart';
 import '../learning/reflection_store.dart';
+import '../learning/skill_curator.dart';
 import '../persona/appearance/appearance_evolution.dart';
 import '../persona/appearance/appearance_proposal.dart';
 import '../persona/appearance/appearance_state.dart';
@@ -64,6 +66,7 @@ class AssistantKernel {
     MetricsStore? metrics,
     AppearanceStore? appearanceStore,
     AppearanceEvolution appearanceEvolution = const AppearanceEvolution(),
+    SkillCurator? skillCurator,
     DateTime Function()? clock,
   }) : _gateway = gateway,
        _store = store,
@@ -88,6 +91,7 @@ class AssistantKernel {
              ),
        _appearanceStore = appearanceStore ?? AppearanceStore(),
        _appearanceEvolution = appearanceEvolution,
+       _skillCurator = skillCurator,
        _learning =
            learning ??
            LearningLoop(
@@ -123,6 +127,24 @@ class AssistantKernel {
       },
       // 策略参数只影响表达偏好，不碰身份/隐私/打扰上限等安全边界。
       policyHintLoader: () => _learning.policy.params.promptHint,
+      // 技能索引常驻 + 命中展开正文（P1-1c）：注入即记账，
+      // useCount 是索引行 Top5 的竞争信号。
+      skillLoader: _skillCurator == null
+          ? null
+          : (prompt) {
+              final curator = _skillCurator;
+              final active = curator.active;
+              if (active.isEmpty) return null;
+              final ranked = [...active]..sort(
+                  (a, b) => b.useCount.compareTo(a.useCount),
+                );
+              final hits = curator.library.match(prompt);
+              if (hits.isNotEmpty) curator.library.markUsed(hits);
+              return SkillInjection(
+                index: ranked.take(skillIndexLines).toList(growable: false),
+                expanded: hits,
+              );
+            },
       clock: _clock,
       rounds: conversationRounds,
     );
@@ -184,6 +206,12 @@ class AssistantKernel {
   final LearningLoop _learning;
   final AppearanceStore _appearanceStore;
   final AppearanceEvolution _appearanceEvolution;
+
+  /// 技能策展（P1-1）：null = 未启用技能库，对话行为与现状一致。
+  final SkillCurator? _skillCurator;
+
+  /// 常驻索引行数：进模型视野的名额靠注入次数竞争（useCount Top N）。
+  static const int skillIndexLines = 5;
   late final ConversationService _conversation;
 
   EmotionState _emotion = EmotionState();
@@ -246,6 +274,9 @@ class AssistantKernel {
 
   /// 反思流水：设置页展示计数，后续复盘任务读取。
   ReflectionStore? get reflections => _reflections;
+
+  /// 技能策展：设置页的待确认/生效/退役技能入口（P1-1 接入 UI 时用）。
+  SkillCurator? get skillCurator => _skillCurator;
 
   int get reflectionCount => _evolution?.reflectionCount ?? 0;
 

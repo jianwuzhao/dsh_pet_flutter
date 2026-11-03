@@ -21,6 +21,7 @@ import '../persona/persona_dna.dart';
 import '../persona/profile_store.dart';
 import 'llm_provider.dart';
 import 'llm_router.dart';
+import 'skill_library.dart';
 
 class ConversationService {
   ConversationService({
@@ -33,6 +34,7 @@ class ConversationService {
     UserProfile Function()? userProfileLoader,
     List<Guideline> Function(String prompt)? guidelineLoader,
     String Function()? policyHintLoader,
+    SkillInjection? Function(String prompt)? skillLoader,
     DateTime Function()? clock,
     this.rounds = 8,
   }) : _routerLoader = routerLoader,
@@ -44,6 +46,7 @@ class ConversationService {
        _userProfileLoader = userProfileLoader,
        _guidelineLoader = guidelineLoader,
        _policyHintLoader = policyHintLoader,
+       _skillLoader = skillLoader,
        _clock = clock ?? DateTime.now;
 
   /// 配置热替换时 gateway.router 整体会被换掉，注入取值函数保证拿到最新。
@@ -56,6 +59,9 @@ class ConversationService {
   final UserProfile Function()? _userProfileLoader;
   final List<Guideline> Function(String prompt)? _guidelineLoader;
   final String Function()? _policyHintLoader;
+
+  /// 技能检索（渐进加载）：null = 未启用技能库，行为与现状一致。
+  final SkillInjection? Function(String prompt)? _skillLoader;
   final DateTime Function() _clock;
 
   /// 会话历史注入轮数（config.ai.memoryRounds）。
@@ -89,6 +95,7 @@ class ConversationService {
       userProfile: _userProfileLoader?.call(),
       guidelines: _guidelineLoader?.call(prompt) ?? const [],
       policyHint: _policyHintLoader?.call(),
+      skills: _skillLoader?.call(prompt),
     );
     // 滚动摘要拼在 system 段之后：被裁剪的早期对话以摘要形态保留。
     final summary = _history?.rollingSummary.trim() ?? '';
@@ -122,6 +129,7 @@ class ConversationService {
     UserProfile? userProfile,
     List<Guideline> guidelines = const [],
     String? policyHint,
+    SkillInjection? skills,
   }) {
     final buffer = StringBuffer()
       ..writeln('你是${dna.name}，用户的桌面宠物伙伴。')
@@ -150,6 +158,7 @@ class ConversationService {
         ..writeAll([for (final item in guidelines) '- ${item.content}\n'])
         ..writeln();
     }
+    _writeSkillSection(buffer, skills);
     buffer
       ..writeln('硬性底线（任何时候不可违背）：')
       ..writeAll([for (final line in dna.bottomLines) '- $line\n'])
@@ -172,6 +181,41 @@ class ConversationService {
       )
       ..writeln('- 回复保持简洁（默认三句以内），除非用户要求详细。');
     return buffer.toString().trim();
+  }
+
+  /// 技能段字符预算：索引行 + 展开正文合计不超此值，防技能库膨胀挤爆 prompt。
+  static const int _skillSectionCharBudget = 2000;
+
+  /// 技能段（渐进加载在 prompt 侧的落点）：索引行常驻，命中的技能展开正文。
+  /// 索引行优先保底——进模型视野是正文展开的前提；正文整条放入预算，
+  /// 放不下的整条跳过（截半条的做法比不放更误导）。
+  static void _writeSkillSection(StringBuffer buffer, SkillInjection? skills) {
+    if (skills == null) return;
+    final header = '可用技能（既往沉淀的做法，按需参考）：';
+    final indexLines = [
+      for (final skill in skills.index) '- ${skill.name}: ${skill.description}',
+    ];
+    if (indexLines.isEmpty && skills.expanded.isEmpty) return;
+
+    buffer
+      ..writeln(header)
+      ..writeAll([for (final line in indexLines) '$line\n']);
+    var used = header.length;
+    for (final line in indexLines) {
+      used += line.length + 1;
+    }
+    var wroteBody = false;
+    for (final skill in skills.expanded) {
+      final block = '技能 ${skill.name} 的做法：${skill.body}';
+      if (used + block.length > _skillSectionCharBudget) continue;
+      if (!wroteBody) {
+        buffer.writeln();
+        wroteBody = true;
+      }
+      buffer.writeln(block);
+      used += block.length + 1;
+    }
+    buffer.writeln();
   }
 
   /// 用户画像转成可读行：只输出非空字段，避免默认值污染 prompt。
