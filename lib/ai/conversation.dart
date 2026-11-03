@@ -10,6 +10,7 @@ import '../core/result.dart';
 import '../features/ai/chat_memory.dart';
 import '../features/ai/llm_client.dart';
 import '../gateway/privacy_center.dart';
+import '../learning/guideline_store.dart';
 import '../persona/emotion/emotion_machine.dart';
 import '../persona/emotion/emotion_state.dart';
 import '../persona/emotion/response_strategy.dart';
@@ -17,6 +18,7 @@ import '../persona/memory/memory_entry.dart';
 import '../persona/memory/memory_extractor.dart';
 import '../persona/memory/memory_store.dart';
 import '../persona/persona_dna.dart';
+import '../persona/profile_store.dart';
 import 'llm_provider.dart';
 import 'llm_router.dart';
 
@@ -28,6 +30,8 @@ class ConversationService {
     ChatMemory? history,
     PersonaDna Function()? dnaLoader,
     EmotionView Function()? emotionLoader,
+    UserProfile Function()? userProfileLoader,
+    List<Guideline> Function(String prompt)? guidelineLoader,
     String Function()? policyHintLoader,
     DateTime Function()? clock,
     this.rounds = 8,
@@ -37,6 +41,8 @@ class ConversationService {
        _history = history,
        _dnaLoader = dnaLoader,
        _emotionLoader = emotionLoader,
+       _userProfileLoader = userProfileLoader,
+       _guidelineLoader = guidelineLoader,
        _policyHintLoader = policyHintLoader,
        _clock = clock ?? DateTime.now;
 
@@ -47,6 +53,8 @@ class ConversationService {
   final ChatMemory? _history;
   final PersonaDna Function()? _dnaLoader;
   final EmotionView Function()? _emotionLoader;
+  final UserProfile Function()? _userProfileLoader;
+  final List<Guideline> Function(String prompt)? _guidelineLoader;
   final String Function()? _policyHintLoader;
   final DateTime Function() _clock;
 
@@ -78,6 +86,8 @@ class ConversationService {
           _emotionLoader?.call() ??
           const EmotionView(valence: 0, arousal: 0.3, intimacy: 0.3),
       memories: _memory.contextFor(now: _clock()),
+      userProfile: _userProfileLoader?.call(),
+      guidelines: _guidelineLoader?.call(prompt) ?? const [],
       policyHint: _policyHintLoader?.call(),
     );
     final messages = [
@@ -86,7 +96,9 @@ class ConversationService {
       LlmMessage.user(prompt),
     ];
 
-    switch (await provider.chat(LlmRequest(messages: messages, system: system))) {
+    switch (await provider.chat(
+      LlmRequest(messages: messages, system: system),
+    )) {
       case Success(value: final reply):
         final cleaned = _absorb(prompt, reply.content);
         _history?.appendRound(prompt, cleaned);
@@ -101,6 +113,8 @@ class ConversationService {
     required PersonaDna dna,
     required EmotionView view,
     required List<MemoryEntry> memories,
+    UserProfile? userProfile,
+    List<Guideline> guidelines = const [],
     String? policyHint,
   }) {
     final buffer = StringBuffer()
@@ -108,10 +122,23 @@ class ConversationService {
       ..writeln('对用户的称呼：${dna.address}（长期记忆里有称呼偏好时以记忆为准）。')
       ..writeln('语气基调：${dna.toneCore}；${_emotionSummary(view)}。')
       ..writeln();
+    final profileLines = _userProfileLines(userProfile);
+    if (profileLines.isNotEmpty) {
+      buffer
+        ..writeln('用户画像（用户手填/确认过的稳定信息）：')
+        ..writeAll([for (final line in profileLines) '- $line\n'])
+        ..writeln();
+    }
     if (memories.isNotEmpty) {
       buffer
         ..writeln('关于用户的长期记忆（只用于更好地回应，不要主动复述）：')
         ..writeAll([for (final memory in memories) '- ${memory.content}\n'])
+        ..writeln();
+    }
+    if (guidelines.isNotEmpty) {
+      buffer
+        ..writeln('从既往经验学到的准则（已由用户确认，按此调整做法）：')
+        ..writeAll([for (final item in guidelines) '- ${item.content}\n'])
         ..writeln();
     }
     buffer
@@ -136,6 +163,22 @@ class ConversationService {
       )
       ..writeln('- 回复保持简洁（默认三句以内），除非用户要求详细。');
     return buffer.toString().trim();
+  }
+
+  /// 用户画像转成可读行：只输出非空字段，避免默认值污染 prompt。
+  static List<String> _userProfileLines(UserProfile? profile) {
+    if (profile == null) return const [];
+    return [
+      if (profile.routine.trim().isNotEmpty) '作息：${profile.routine.trim()}',
+      if (profile.workRhythm.trim().isNotEmpty)
+        '工作节奏：${profile.workRhythm.trim()}',
+      for (final item in profile.preferences)
+        if (item.trim().isNotEmpty) '偏好：${item.trim()}',
+      for (final item in profile.taboos)
+        if (item.trim().isNotEmpty) '禁忌：${item.trim()}',
+      for (final item in profile.frequentApps)
+        if (item.trim().isNotEmpty) '常用工具：${item.trim()}',
+    ];
   }
 
   /// 情绪摘要一行：五态中文 + 亲密度语气档（tierTones，受 DNA 语气核心约束）。

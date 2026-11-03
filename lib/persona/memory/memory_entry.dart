@@ -8,8 +8,10 @@ library;
 /// 记忆四类：注入优先级 preference > fact > task > episode。
 enum MemoryKind { preference, fact, task, episode }
 
-/// 状态：pending 是待用户确认的提案，active 才生效。
-enum MemoryStatus { active, pending }
+/// 状态：pending 是待用户确认的提案；active 才生效。
+/// archived = 过期/长期未用后只保留审计；superseded = 被新偏好替代；
+/// disputed = 与另一条记忆冲突，等用户裁决。
+enum MemoryStatus { active, pending, archived, superseded, disputed }
 
 /// 注入范围：chat = 可拼进 LLM 上下文；local = 仅本地展示（如含敏感细节）。
 const String memoryScopeChat = 'chat';
@@ -21,14 +23,26 @@ class MemoryEntry {
     required this.kind,
     required this.content,
     required this.createdAt,
+    this.subject = '',
     this.scope = memoryScopeChat,
     this.expireAt,
     this.source = 'rule',
     this.status = MemoryStatus.active,
+    this.confidence = 1.0,
+    this.evidence = const [],
+    this.updatedAt,
+    this.lastUsedAt,
+    this.supersededBy,
+    this.conflictGroup,
   });
 
   final String id;
   final MemoryKind kind;
+
+  /// 稳定主题键（如 address / avoidedTopic / routine / task）。
+  /// 有 subject 时，同 kind + subject 的新旧条目可判冲突/替代；
+  /// 没有 subject 的条目只能按内容相似度去重。
+  final String subject;
 
   /// 记忆正文（一句话，如“称呼偏好：老板”）。
   final String content;
@@ -46,6 +60,28 @@ class MemoryEntry {
 
   final MemoryStatus status;
 
+  /// 置信度 0~1：规则抽取高于 LLM 候选；低置信度不直接升级为规则。
+  final double confidence;
+
+  /// 证据：session/message/file/命令等可追溯标识。
+  final List<String> evidence;
+
+  /// 最近一次内容更新；旧文件没有该字段时回落到 createdAt。
+  final DateTime? updatedAt;
+
+  /// 最近一次被注入上下文/被用户查看的时间；用于衰减与归档。
+  final DateTime? lastUsedAt;
+
+  /// 被哪条新记忆替代（superseded 时非空）。
+  final String? supersededBy;
+
+  /// 冲突组：同一 subject 下互相矛盾的条目共享一个 id。
+  final String? conflictGroup;
+
+  bool get isActive => status == MemoryStatus.active;
+
+  DateTime get effectiveUpdatedAt => updatedAt ?? createdAt;
+
   bool get isExpired {
     final expireAt = this.expireAt;
     return expireAt != null && DateTime.now().isAfter(expireAt);
@@ -61,6 +97,7 @@ class MemoryEntry {
     return MemoryEntry(
       id: json['id'] as String? ?? '',
       kind: _kindOf(json['kind']),
+      subject: json['subject'] as String? ?? '',
       content: json['content'] as String? ?? '',
       scope: json['scope'] as String? ?? memoryScopeChat,
       expireAt: json['expireAt'] is String
@@ -70,9 +107,20 @@ class MemoryEntry {
           DateTime.tryParse(json['createdAt'] as String? ?? '') ??
           DateTime.fromMillisecondsSinceEpoch(0),
       source: json['source'] as String? ?? 'rule',
-      status: json['status'] == 'pending'
-          ? MemoryStatus.pending
-          : MemoryStatus.active,
+      status: _statusOf(json['status']),
+      confidence: ((json['confidence'] as num?)?.toDouble() ?? 1.0).clamp(
+        0.0,
+        1.0,
+      ),
+      evidence: _stringsOf(json['evidence']),
+      updatedAt: json['updatedAt'] is String
+          ? DateTime.tryParse(json['updatedAt'] as String)
+          : null,
+      lastUsedAt: json['lastUsedAt'] is String
+          ? DateTime.tryParse(json['lastUsedAt'] as String)
+          : null,
+      supersededBy: json['supersededBy'] as String?,
+      conflictGroup: json['conflictGroup'] as String?,
     );
   }
 
@@ -83,31 +131,71 @@ class MemoryEntry {
     _ => MemoryKind.fact,
   };
 
+  static MemoryStatus _statusOf(Object? raw) => switch (raw) {
+    'pending' => MemoryStatus.pending,
+    'archived' => MemoryStatus.archived,
+    'superseded' => MemoryStatus.superseded,
+    'disputed' => MemoryStatus.disputed,
+    _ => MemoryStatus.active,
+  };
+
+  static List<String> _stringsOf(Object? raw) {
+    if (raw is! List) return const [];
+    return [
+      for (final item in raw)
+        if (item is String && item.trim().isNotEmpty) item.trim(),
+    ];
+  }
+
   Map<String, dynamic> toJson() => {
     'id': id,
     'kind': kind.name,
+    if (subject.isNotEmpty) 'subject': subject,
     'content': content,
     'scope': scope,
     if (expireAt != null) 'expireAt': expireAt!.toIso8601String(),
     'createdAt': createdAt.toIso8601String(),
     'source': source,
     'status': status.name,
+    'confidence': confidence,
+    if (evidence.isNotEmpty) 'evidence': evidence,
+    'updatedAt': effectiveUpdatedAt.toIso8601String(),
+    if (lastUsedAt != null) 'lastUsedAt': lastUsedAt!.toIso8601String(),
+    if (supersededBy != null) 'supersededBy': supersededBy,
+    if (conflictGroup != null) 'conflictGroup': conflictGroup,
   };
 
   MemoryEntry copyWith({
+    String? subject,
     String? content,
     String? scope,
     DateTime? expireAt,
     bool clearExpireAt = false,
     MemoryStatus? status,
+    double? confidence,
+    List<String>? evidence,
+    DateTime? updatedAt,
+    DateTime? lastUsedAt,
+    String? supersededBy,
+    bool clearSupersededBy = false,
+    String? conflictGroup,
   }) => MemoryEntry(
     id: id,
     kind: kind,
+    subject: subject ?? this.subject,
     content: content ?? this.content,
     scope: scope ?? this.scope,
     expireAt: clearExpireAt ? null : (expireAt ?? this.expireAt),
     createdAt: createdAt,
     source: source,
     status: status ?? this.status,
+    confidence: confidence ?? this.confidence,
+    evidence: evidence ?? this.evidence,
+    updatedAt: updatedAt ?? this.updatedAt,
+    lastUsedAt: lastUsedAt ?? this.lastUsedAt,
+    supersededBy: clearSupersededBy
+        ? null
+        : (supersededBy ?? this.supersededBy),
+    conflictGroup: conflictGroup ?? this.conflictGroup,
   );
 }

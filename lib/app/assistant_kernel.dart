@@ -17,6 +17,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../ai/conversation.dart';
+import '../ai/llm_provider.dart';
 import '../core/result.dart';
 import '../features/ai/chat_memory.dart';
 import '../features/linkage/assistant_adapters.dart';
@@ -24,9 +25,13 @@ import '../features/linkage/status/assistant_event.dart';
 import '../gateway/interaction_gateway.dart';
 import '../gateway/privacy_center.dart';
 import '../learning/eval_gate.dart';
+import '../learning/evolution_engine.dart';
 import '../learning/feedback_collector.dart';
+import '../learning/guideline_store.dart';
 import '../learning/learning_loop.dart';
+import '../learning/llm_reflection_synthesizer.dart';
 import '../learning/policy_store.dart';
+import '../learning/reflection_store.dart';
 import '../persona/appearance/appearance_evolution.dart';
 import '../persona/appearance/appearance_proposal.dart';
 import '../persona/appearance/appearance_state.dart';
@@ -51,6 +56,8 @@ class AssistantKernel {
     int conversationRounds = 8,
     MemoryStore? memory,
     LearningLoop? learning,
+    ReflectionStore? reflections,
+    GuidelineStore? guidelines,
     AppearanceStore? appearanceStore,
     AppearanceEvolution appearanceEvolution = const AppearanceEvolution(),
     DateTime Function()? clock,
@@ -64,6 +71,15 @@ class AssistantKernel {
        // 状态机的节流窗基准必须与注入时钟同源，否则测试时钟永远走不满 90s。
        _machine = EmotionMachine(now: clock == null ? null : clock()),
        _memory = memory ?? MemoryStore(),
+       _reflections = reflections,
+       _guidelines = guidelines,
+       _evolution = (reflections == null || guidelines == null)
+           ? null
+           : EvolutionEngine(
+               reflections: reflections,
+               guidelines: guidelines,
+               clock: clock,
+             ),
        _appearanceStore = appearanceStore ?? AppearanceStore(),
        _appearanceEvolution = appearanceEvolution,
        _learning =
@@ -86,6 +102,15 @@ class AssistantKernel {
       history: conversationHistory,
       dnaLoader: () => _dna,
       emotionLoader: () => _emotion.view,
+      userProfileLoader: () => _userProfile,
+      guidelineLoader: (prompt) {
+        final store = _guidelines;
+        if (store == null) return const <Guideline>[];
+        final picked = store.activeFor(prompt);
+        // 注入即记账：useCount/lastUsedAt 是有效性追踪的最小信号。
+        if (picked.isNotEmpty) store.markUsed(picked);
+        return picked;
+      },
       // 策略参数只影响表达偏好，不碰身份/隐私/打扰上限等安全边界。
       policyHintLoader: () => _learning.policy.params.promptHint,
       clock: _clock,
@@ -102,6 +127,9 @@ class AssistantKernel {
   final ResponseStrategy _strategy = ResponseStrategy();
   final ExpressionLayer _expression;
   final MemoryStore _memory;
+  final ReflectionStore? _reflections;
+  final GuidelineStore? _guidelines;
+  final EvolutionEngine? _evolution;
   final LearningLoop _learning;
   final AppearanceStore _appearanceStore;
   final AppearanceEvolution _appearanceEvolution;
@@ -111,7 +139,15 @@ class AssistantKernel {
   final EmotionMachine _machine;
   EmotionProfile _profile = const EmotionProfile();
   PersonaDna _dna = const PersonaDna();
+  UserProfile _userProfile = const UserProfile();
   DateTime _lastActivityAt = DateTime.now();
+  DateTime? _lastTaskSynthesisAt;
+  int _lastTaskSynthesisCount = 0;
+  bool _synthesizingTaskLessons = false;
+
+  /// 按 source 记连续失败次数：连续 2 次失败立即触发复盘，
+  /// 不等凑满 3 条反思——高代价失败的经验不该被普通样本稀释。
+  final Map<String, int> _consecutiveFailuresBySource = {};
 
   /// UI 可监听的情绪快照（三维数值，供画像/调试展示用）。
   final ValueNotifier<EmotionView> emotion;
@@ -139,6 +175,36 @@ class AssistantKernel {
   /// 学习治理：设置页的策略版本/提案/回滚与记忆提案的反馈采集入口。
   LearningLoop get learning => _learning;
 
+  /// 经验准则：设置页的待确认/已生效/停用入口。
+  GuidelineStore? get guidelines => _guidelines;
+
+  /// 反思流水：设置页展示计数，后续复盘任务读取。
+  ReflectionStore? get reflections => _reflections;
+
+  int get reflectionCount => _evolution?.reflectionCount ?? 0;
+
+  Result<Guideline> acceptGuideline(String id) =>
+      _guidelines?.accept(id) ??
+      const Failure('guideline.offline', '经验准则还没准备好');
+
+  Result<void> rejectGuideline(String id) =>
+      _guidelines?.reject(id) ??
+      const Failure('guideline.offline', '经验准则还没准备好');
+
+  Result<void> archiveGuideline(String id) =>
+      _guidelines?.archiveActive(id) ??
+      const Failure('guideline.offline', '经验准则还没准备好');
+
+  /// 当前人格 DNA（设置页展示与保存用）。
+  PersonaDna get dna => _dna;
+
+  /// 设置页保存人格：写盘成功才改内存；会话服务通过 loader 立即读到新值。
+  Result<void> savePersonaDna(PersonaDna value) {
+    final result = _store.savePersonaDna(value);
+    if (result is Success<void>) _dna = value;
+    return result;
+  }
+
   /// 形象当前值（渲染与设置页都以它为准）。
   AppearanceState get appearanceState => appearance.value;
 
@@ -149,11 +215,132 @@ class AssistantKernel {
   AppearanceProposal? get formProposal => _formProposal;
 
   /// 回复被采纳：用户把建议落地了（记正样本，参与自动回滚监控）。
-  void acceptReply() => _learning.acceptReply();
+  void acceptReply() {
+    _learning.acceptReply();
+    if (_privacy.allowed('memoryRecording')) _evolution?.recordAccept();
+  }
 
-  /// 回复被拒绝（重说）；可附一句纠正，规则解析后可能生成策略提案。
-  void rejectReply({String correction = ''}) =>
-      _learning.rejectReply(correction: correction);
+  /// 回复被拒绝（重说）；可附一句纠正，规则解析后可能生成策略/准则提案。
+  void rejectReply({String correction = ''}) {
+    _learning.rejectReply(correction: correction);
+    if (_privacy.allowed('memoryRecording')) {
+      _evolution?.recordCorrection(correction);
+    }
+  }
+
+  /// 碎碎念：与聊天共用人格/记忆/情绪/策略与同一 provider 路径，
+  /// 但只取一句话，不写入 ChatMemory（避免碎碎念污染对话历史）。
+  Future<Result<String>> whisper() async {
+    final resolution = await _gateway.router.resolve();
+    if (resolution == null) {
+      return const Failure(
+        'ai.unavailable',
+        '没有可用的 AI 提供者：请在设置里配置 OpenAI 兼容接口、DeepSeek 或本地 Ollama',
+      );
+    }
+    final provider = resolution.provider;
+    if (!provider.supportsReply) {
+      return Failure(
+        'ai.forward-only',
+        '「${provider.displayName}」只支持转发，不能生成碎碎念',
+      );
+    }
+    final system = _conversation.buildSystem(
+      dna: _dna,
+      view: _emotion.view,
+      memories: _memory.contextFor(now: _clock()),
+      userProfile: _userProfile,
+      guidelines: _guidelines?.activeFor('') ?? const <Guideline>[],
+      policyHint: _learning.policy.params.promptHint,
+    );
+    final result = await provider.chat(
+      LlmRequest(
+        messages: const [LlmMessage.user('用一句不超过 25 字的中文说一句此刻的碎碎念，不要提问，不要解释。')],
+        system: system,
+      ),
+    );
+    switch (result) {
+      case Success(value: final reply):
+        final content = LlmReply.parse(reply.content).content;
+        if (content.trim().isEmpty) {
+          return const Failure('ai.empty', 'AI 返回了空碎碎念');
+        }
+        return Success(content.trim());
+      case Failure(:final code, :final reason):
+        return Failure(code, reason);
+    }
+  }
+
+  int get _taskReflectionCount =>
+      _reflections
+          ?.load()
+          .where((entry) => entry.kind == ReflectionKind.task)
+          .length ??
+      0;
+
+  /// 每累计 3 条新任务反思、且距上次总结超过 10 分钟，才尝试一次模型复盘。
+  /// [force] = true 时跳过“3 条新反思”门槛（连续失败专用通道），
+  /// 但仍受 10 分钟冷却与并发闸约束。失败不阻塞任务；产出只进待确认队列。
+  Future<void> _maybeSynthesizeTaskLessons({bool force = false}) async {
+    if (_synthesizingTaskLessons ||
+        _reflections == null ||
+        _guidelines == null ||
+        _evolution == null) {
+      return;
+    }
+    if (!_privacy.allowed('memoryRecording')) return;
+    final count = _taskReflectionCount;
+    if (!force && count - _lastTaskSynthesisCount < 3) return;
+    final now = _clock();
+    final last = _lastTaskSynthesisAt;
+    if (last != null && now.difference(last) < const Duration(minutes: 10)) {
+      return;
+    }
+    final resolution = await _gateway.router.resolve();
+    if (resolution == null || !resolution.provider.supportsReply) return;
+
+    _synthesizingTaskLessons = true;
+    try {
+      final tasks = _reflections
+          .load()
+          .where((entry) => entry.kind == ReflectionKind.task)
+          .toList(growable: false);
+      final recent = tasks.length <= 10
+          ? tasks
+          : tasks.sublist(tasks.length - 10);
+      final result = await LlmReflectionSynthesizer(
+        resolution.provider,
+      ).synthesize(recent);
+      switch (result) {
+        case Success(value: final drafts):
+          final added = _evolution.proposeTaskLessons(drafts);
+          _lastTaskSynthesisAt = _clock();
+          _lastTaskSynthesisCount = count;
+          if (added > 0) {
+            _host.showBubble('总结了 $added 条任务经验，去设置页确认');
+          }
+        case Failure(:final code, :final reason):
+          // 失败也记录时间，避免每个终态都重试；下一批任务再试。
+          _lastTaskSynthesisAt = _clock();
+          _lastTaskSynthesisCount = count;
+          debugPrint('[dafishu] 任务复盘失败：[$code] $reason');
+      }
+    } finally {
+      _synthesizingTaskLessons = false;
+    }
+  }
+
+  /// 自动形象推演：由装配层在任务终态/用户反馈后调用。
+  /// 冷却、冻结、信号阈值都在 [evolveAppearance] 内；这里只负责“有机会就试一次”。
+  EvolutionOutcome maybeEvolveAppearance() {
+    // 已有待确认提案时不再反复提醒，避免每个状态终态都冒一条气泡。
+    if (_formProposal != null) return evolveAppearance();
+    final outcome = evolveAppearance();
+    if (outcome.proposal != null) {
+      _host.showBubble('有一个形态建议，去设置页看看要不要接受');
+    }
+    return outcome;
+  }
 
   /// 主动关心气泡被提前关闭：拒绝样本；自然过期不记。
   void dismissCare() => _learning.dismissCare();
@@ -163,6 +350,8 @@ class AssistantKernel {
   /// 最后把会话服务挂到网关对话路径。
   void start() {
     _gateway.conversation = _conversation.handle;
+    _guidelines?.load();
+    _lastTaskSynthesisCount = _taskReflectionCount;
     switch (_store.loadPersonaDna()) {
       case Success(value: final dna):
         _dna = dna;
@@ -175,6 +364,13 @@ class AssistantKernel {
         _emotion = EmotionState(intimacyBaseline: profile.intimacyBaseline);
       case Failure(:final reason):
         _host.showBubble('情绪档案读取失败：$reason');
+    }
+    switch (_store.loadUserProfile()) {
+      case Success(value: final profile):
+        _userProfile = profile;
+      case Failure(:final reason):
+        // 画像损坏不阻塞启动：用空画像继续，但明确告知而不是静默。
+        _host.showBubble('用户画像读取失败：$reason');
     }
     switch (_appearanceStore.load()) {
       case Success(value: final state):
@@ -232,6 +428,20 @@ class AssistantKernel {
           ? EmotionSignal.positiveFeedback
           : EmotionSignal.negativeFeedback,
     );
+    if (_privacy.allowed('memoryRecording')) {
+      _evolution?.recordStatus(snapshot);
+      final failures = snapshot.state == AssistantStatus.error
+          ? (_consecutiveFailuresBySource[snapshot.source] ?? 0) + 1
+          : 0;
+      _consecutiveFailuresBySource[snapshot.source] = failures;
+      if (failures >= 2) {
+        // 计数清零：再触发需要新的连续两次失败；10 分钟冷却兜底限频。
+        _consecutiveFailuresBySource[snapshot.source] = 0;
+        unawaited(_maybeSynthesizeTaskLessons(force: true));
+        return;
+      }
+      unawaited(_maybeSynthesizeTaskLessons());
+    }
   }
 
   /// 点击（面板关闭时）/拖拽开始的互动信号入口。
@@ -463,10 +673,7 @@ class AssistantKernel {
     emotion.value = _emotion.view;
     if (phase != previous) {
       _expression.perform(
-        _strategy.passive(
-          phase,
-          expressionSet: appearance.value.expressionSet,
-        ),
+        _strategy.passive(phase, expressionSet: appearance.value.expressionSet),
         now: _clock(),
       );
     }

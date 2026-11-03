@@ -99,7 +99,17 @@ void main() {
     expect(find.text('设置'), findsWidgets);
 
     // 逐个 Tab 渲染：任何 Material 依赖缺失都会在这里暴露。
-    for (final label in ['联动', '大脑', '隐私', '情绪', '形象', '记忆', '学习']) {
+    for (final label in [
+      '联动',
+      '大脑',
+      '隐私',
+      '情绪',
+      '形象',
+      '记忆',
+      '学习',
+      '进化',
+      '人格',
+    ]) {
       await tester.tap(find.text(label));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull, reason: '$label Tab 渲染异常');

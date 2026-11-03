@@ -50,19 +50,24 @@ void main() {
 
       final all = store.entries();
       expect(all.length, 2);
-      expect(store.entries(kind: MemoryKind.preference).single.content, '称呼偏好：老板');
+      expect(
+        store.entries(kind: MemoryKind.preference).single.content,
+        '称呼偏好：老板',
+      );
       expect(store.entries(kind: MemoryKind.fact).single.content, '作息：早八晚十二');
     });
 
     test('空内容与空 id 拒绝写入', () {
       expect(store.add(entry(MemoryKind.fact, '  ')), isA<Failure<void>>());
       expect(
-        store.add(MemoryEntry(
-          id: '',
-          kind: MemoryKind.fact,
-          content: '没有 id',
-          createdAt: DateTime(2026, 1, 1, 12),
-        )),
+        store.add(
+          MemoryEntry(
+            id: '',
+            kind: MemoryKind.fact,
+            content: '没有 id',
+            createdAt: DateTime(2026, 1, 1, 12),
+          ),
+        ),
         isA<Failure<void>>(),
       );
     });
@@ -103,8 +108,14 @@ void main() {
 
   group('待确认队列', () {
     test('pending 不注入上下文；接受后生效、拒绝后丢弃', () {
-      store.add(entry(MemoryKind.preference, '称呼偏好：老板',
-          status: MemoryStatus.pending, createdAt: DateTime(2026, 1, 2)));
+      store.add(
+        entry(
+          MemoryKind.preference,
+          '称呼偏好：老板',
+          status: MemoryStatus.pending,
+          createdAt: DateTime(2026, 1, 2),
+        ),
+      );
       store.add(entry(MemoryKind.fact, '喜欢简洁的回复'));
 
       expect(store.contextFor(now: DateTime(2026, 1, 3)).length, 1);
@@ -114,8 +125,14 @@ void main() {
       expect(store.pending, isEmpty);
       expect(store.contextFor(now: DateTime(2026, 1, 3)).length, 2);
 
-      store.add(entry(MemoryKind.preference, '回复保持短句',
-          status: MemoryStatus.pending, createdAt: DateTime(2026, 1, 4)));
+      store.add(
+        entry(
+          MemoryKind.preference,
+          '回复保持短句',
+          status: MemoryStatus.pending,
+          createdAt: DateTime(2026, 1, 4),
+        ),
+      );
       expect(store.reject(store.pending.single.id), isA<Success<void>>());
       expect(store.pending, isEmpty);
       expect(store.entries().length, 2);
@@ -124,10 +141,10 @@ void main() {
 
   group('上下文注入', () {
     test('过期记忆不注入，未过期注入', () {
-      store.add(entry(MemoryKind.fact, '旧任务',
-          expireAt: DateTime(2025, 12, 31)));
-      store.add(entry(MemoryKind.fact, '长期作息',
-          expireAt: DateTime(2030, 1, 1)));
+      store.add(
+        entry(MemoryKind.fact, '旧任务', expireAt: DateTime(2025, 12, 31)),
+      );
+      store.add(entry(MemoryKind.fact, '长期作息', expireAt: DateTime(2030, 1, 1)));
 
       final context = store.contextFor(now: DateTime(2026, 6, 1));
       expect(context.map((e) => e.content), ['长期作息']);
@@ -148,8 +165,13 @@ void main() {
 
     test('同级新者优先，且硬上限 12 条', () {
       for (var i = 0; i < 15; i++) {
-        store.add(entry(MemoryKind.episode, '事件$i',
-            createdAt: DateTime(2026, 1, 1, 0, i)));
+        store.add(
+          entry(
+            MemoryKind.episode,
+            '事件$i',
+            createdAt: DateTime(2026, 1, 1, 0, i),
+          ),
+        );
       }
       final context = store.contextFor(now: DateTime(2026, 1, 1));
       expect(context.length, memoryContextMaxCount);
@@ -160,8 +182,13 @@ void main() {
 
     test('字符预算 2000 截断', () {
       for (var i = 0; i < 8; i++) {
-        store.add(entry(MemoryKind.fact, 'f' * 400,
-            createdAt: DateTime(2026, 1, 1, 0, i)));
+        store.add(
+          entry(
+            MemoryKind.fact,
+            'f' * 400,
+            createdAt: DateTime(2026, 1, 1, 0, i),
+          ),
+        );
       }
       final context = store.contextFor(now: DateTime(2026, 1, 1));
       expect(context.length, 4); // 第 5 条会到 2005 > 2000，停下。
@@ -176,12 +203,15 @@ void main() {
   group('导出', () {
     test('导出文件包含全部记忆与导出时间', () {
       store.add(entry(MemoryKind.preference, '称呼偏好：老板'));
-      store.add(entry(MemoryKind.episode, '一起调试到凌晨',
-          status: MemoryStatus.pending));
+      store.add(
+        entry(MemoryKind.episode, '一起调试到凌晨', status: MemoryStatus.pending),
+      );
 
       final result = store.export();
       expect(result, isA<Success<File>>());
-      final raw = jsonDecode((result as Success<File>).value.readAsStringSync());
+      final raw = jsonDecode(
+        (result as Success<File>).value.readAsStringSync(),
+      );
       expect(raw, isA<Map>());
       expect((raw['exportedAt'] as String).isNotEmpty, isTrue);
       expect((raw['entries'] as List).length, 2);
@@ -189,13 +219,73 @@ void main() {
   });
 
   group('损坏容错', () {
-    test('单文件损坏按空库继续，不抛异常', () {
+    test('单文件损坏按空库继续，不抛异常，并留档损坏文件', () {
       store.add(entry(MemoryKind.fact, '正常条目'));
       File('${tmpDir.path}/episode.json').writeAsStringSync('{oops');
 
       final reopened = MemoryStore(directory: tmpDir);
       expect(reopened.entries(kind: MemoryKind.episode), isEmpty);
       expect(reopened.entries(kind: MemoryKind.fact).single.content, '正常条目');
+      expect(reopened.loadWarnings.single, contains('episode.json'));
+      expect(
+        tmpDir.listSync().whereType<File>().any(
+          (file) => file.path.contains('episode.json.corrupt-'),
+        ),
+        isTrue,
+      );
+    });
+  });
+
+  group('记忆治理', () {
+    MemoryEntry candidate(String content, {String subject = ''}) => MemoryEntry(
+      id: MemoryEntry.newId(DateTime(2026, 1, 2, 12)),
+      kind: MemoryKind.task,
+      subject: subject,
+      content: content,
+      createdAt: DateTime(2026, 1, 2, 12),
+      source: 'llm',
+      status: MemoryStatus.pending,
+      confidence: 0.5,
+    );
+
+    test('相似的 LLM pending 候选合并，不堆成多条', () {
+      store.add(candidate('主人计划重构底层架构，实现自主学习'));
+      store.add(candidate('主人计划重构底层系统，实现自主学习能力'));
+
+      expect(store.pending, hasLength(1));
+      expect(store.pending.single.content, contains('系统'));
+    });
+
+    test('同 subject 的新 active 偏好替代旧条，旧条标 superseded', () {
+      store.add(
+        MemoryEntry(
+          id: 'old-address',
+          kind: MemoryKind.preference,
+          subject: 'address',
+          content: '称呼偏好：老板',
+          createdAt: DateTime(2026, 1, 1, 12),
+          source: 'rule',
+        ),
+      );
+      store.add(
+        MemoryEntry(
+          id: 'new-address',
+          kind: MemoryKind.preference,
+          subject: 'address',
+          content: '称呼偏好：主人',
+          createdAt: DateTime(2026, 1, 2, 12),
+          source: 'rule',
+        ),
+      );
+
+      final all = store.entries(kind: MemoryKind.preference);
+      expect(all, hasLength(2));
+      expect(all.first.status, MemoryStatus.superseded);
+      expect(all.first.supersededBy, 'new-address');
+      expect(
+        store.contextFor(now: DateTime(2026, 1, 3)).single.content,
+        '称呼偏好：主人',
+      );
     });
   });
 }

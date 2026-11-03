@@ -19,11 +19,13 @@ import '../features/pet/pet_controller.dart';
 import '../features/pet/render/pet_view.dart';
 import '../features/settings/settings_page.dart';
 import '../interop/capability_registry.dart';
+import '../learning/guideline_store.dart';
 import '../learning/learning_loop.dart';
 import '../persona/appearance/appearance_evolution.dart';
 import '../persona/appearance/appearance_proposal.dart';
 import '../persona/appearance/appearance_state.dart';
 import '../persona/memory/memory_store.dart';
+import '../persona/persona_dna.dart';
 import '../persona/profile_store.dart';
 import '../platform/pet_platform.dart';
 import 'flyout_layout.dart';
@@ -40,6 +42,13 @@ class PetStage extends StatefulWidget {
     required this.appearanceReason,
     required this.memory,
     required this.learning,
+    this.persona = const PersonaDna(),
+    this.onSavePersona,
+    this.guidelines,
+    this.reflectionCount = 0,
+    this.onAcceptGuideline,
+    this.onRejectGuideline,
+    this.onArchiveGuideline,
     required this.onSend,
     required this.onSaveConfig,
     required this.onSaveEmotion,
@@ -94,6 +103,17 @@ class PetStage extends StatefulWidget {
 
   /// 学习治理（内核同一实例）：策略版本、提案、回滚。
   final LearningLoop? learning;
+
+  /// 人格 DNA 当前值：设置页“人格”分区用。
+  final PersonaDna persona;
+  final Result<void> Function(PersonaDna)? onSavePersona;
+
+  /// 经验准则：设置页“进化”分区用。
+  final GuidelineStore? guidelines;
+  final int reflectionCount;
+  final Result<Guideline> Function(String id)? onAcceptGuideline;
+  final Result<void> Function(String id)? onRejectGuideline;
+  final Result<void> Function(String id)? onArchiveGuideline;
 
   final Future<Result<DispatchOutcome>> Function(String prompt) onSend;
 
@@ -232,12 +252,16 @@ class _PetStageState extends State<PetStage> {
       return PetView(
         controller: controller,
         palette: widget.appearance.palette,
+        accessory: widget.appearance.accessory,
       );
     }
     return ValueListenableBuilder<AppearanceState>(
       valueListenable: changes,
-      builder: (context, appearance, _) =>
-          PetView(controller: controller, palette: appearance.palette),
+      builder: (context, appearance, _) => PetView(
+        controller: controller,
+        palette: appearance.palette,
+        accessory: appearance.accessory,
+      ),
     );
   }
 
@@ -348,6 +372,13 @@ class _PetStageState extends State<PetStage> {
             onRejectFormProposal: widget.onRejectFormProposal,
             memory: widget.memory,
             learning: widget.learning,
+            persona: widget.persona,
+            onSavePersona: widget.onSavePersona,
+            guidelines: widget.guidelines,
+            reflectionCount: widget.reflectionCount,
+            onAcceptGuideline: widget.onAcceptGuideline,
+            onRejectGuideline: widget.onRejectGuideline,
+            onArchiveGuideline: widget.onArchiveGuideline,
             onSave: widget.onSaveConfig,
             onSaveEmotion: widget.onSaveEmotion,
             onEvolveAppearance: widget.onEvolveAppearance,

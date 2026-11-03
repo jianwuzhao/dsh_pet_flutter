@@ -1,0 +1,187 @@
+/// 进化分区：反思数量、待确认准则、已生效准则与停用入口。
+///
+/// 准则全部来自用户纠正的重复出现；接受后才注入 system prompt。
+/// 没有“自动应用”按钮，避免自我演化绕过用户判断。
+library;
+
+import 'package:flutter/material.dart';
+
+import '../../../learning/guideline_store.dart';
+import 'settings_controls.dart';
+
+class EvolutionSection extends StatelessWidget {
+  const EvolutionSection({
+    super.key,
+    required this.guidelines,
+    required this.reflectionCount,
+    required this.onAccept,
+    required this.onReject,
+    required this.onArchive,
+    required this.hint,
+  });
+
+  final GuidelineStore? guidelines;
+  final int reflectionCount;
+  final void Function(String id) onAccept;
+  final void Function(String id) onReject;
+  final void Function(String id) onArchive;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    final store = guidelines;
+    if (store == null) {
+      return const Padding(
+        padding: EdgeInsets.symmetric(vertical: 16),
+        child: Text(
+          '进化引擎还没准备好，稍后再打开设置试试',
+          style: TextStyle(color: Color(0x66FFFFFF), fontSize: 12),
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SettingsDivider('反思流水'),
+        Text(
+          '已记录 $reflectionCount 条任务/纠正/反馈反思；'
+          '同一纠正 30 天内出现至少 2 次才会生成准则提案。',
+          style: const TextStyle(
+            color: Color(0x99FFFFFF),
+            fontSize: 11.5,
+            height: 1.5,
+          ),
+        ),
+        if (store.pending.isNotEmpty) ...[
+          SettingsDivider('待确认准则（${store.pending.length} 条）'),
+          for (final item in store.pending)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.title,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                        Text(
+                          item.content,
+                          style: const TextStyle(
+                            color: Color(0x99FFFFFF),
+                            fontSize: 11,
+                            height: 1.45,
+                          ),
+                        ),
+                        if (item.evidence.isNotEmpty)
+                          Text(
+                            item.evidence.join(' · '),
+                            style: const TextStyle(
+                              color: Color(0x59FFFFFF),
+                              fontSize: 10,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => onAccept(item.id),
+                    child: const Text(
+                      '接受',
+                      style: TextStyle(color: Color(0xFF69F0AE), fontSize: 12),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => onReject(item.id),
+                    child: const Text(
+                      '拒绝',
+                      style: TextStyle(color: Color(0xFFFF8A80), fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+        const SettingsDivider('已生效准则'),
+        if (store.active.isEmpty)
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 8),
+            child: Text(
+              '还没有已生效准则。拒绝回复时可附一句纠正，重复出现后会生成提案。',
+              style: TextStyle(color: Color(0x66FFFFFF), fontSize: 11),
+            ),
+          )
+        else
+          for (final item in store.active)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.content,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
+                        ),
+                        Text(
+                          'v${item.version} · 已注入 ${item.useCount} 次'
+                          '${item.approvedAt == null ? '' : ' · ${_formatTime(item.approvedAt!)}'}',
+                          style: const TextStyle(
+                            color: Color(0x59FFFFFF),
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => onArchive(item.id),
+                    child: const Text(
+                      '停用',
+                      style: TextStyle(color: Color(0xFFFFB74D), fontSize: 11),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        const SizedBox(height: 6),
+        const Text(
+          '准则由用户确认后才生效，不能改身份、隐私、权限、打扰上限或人格底线；'
+          '接受/拒绝/停用都会保留记录，方便回滚与审计。',
+          style: TextStyle(
+            color: Color(0x66FFFFFF),
+            fontSize: 10.5,
+            height: 1.5,
+          ),
+        ),
+        if (hint.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(top: 6),
+            child: Text(
+              hint,
+              style: const TextStyle(color: Color(0x99FFFFFF), fontSize: 11),
+            ),
+          ),
+      ],
+    );
+  }
+
+  static String _formatTime(DateTime at) {
+    String two(int value) => value.toString().padLeft(2, '0');
+    return '${at.year}-${two(at.month)}-${two(at.day)} '
+        '${two(at.hour)}:${two(at.minute)}';
+  }
+}

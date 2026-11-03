@@ -89,6 +89,12 @@ class AppPaths {
   static Directory get policySnapshotsDir =>
       Directory('${learningDir.path}${Platform.pathSeparator}snapshots');
 
+  /// 自主进化：反思流水（append-only）与经验准则（待确认/已生效）。
+  static File get reflectionFile =>
+      File('${learningDir.path}${Platform.pathSeparator}reflections.jsonl');
+  static File get guidelineFile =>
+      File('${learningDir.path}${Platform.pathSeparator}guidelines.json');
+
   static void ensure() {
     if (!root.existsSync()) root.createSync(recursive: true);
     // 四层数据子目录一并建好：各仓库只管写文件，不再各自 ensure。

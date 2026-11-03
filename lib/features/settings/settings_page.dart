@@ -16,6 +16,7 @@ import '../../core/config/app_config.dart';
 import '../../core/result.dart';
 import '../../gateway/hotkey_source.dart';
 import '../../interop/capability_registry.dart';
+import '../../learning/guideline_store.dart';
 import '../../learning/learning_loop.dart';
 import '../../persona/appearance/appearance_evolution.dart';
 import '../../persona/appearance/appearance_proposal.dart';
@@ -24,12 +25,15 @@ import '../../persona/memory/memory_entry.dart';
 import '../../persona/memory/memory_store.dart';
 import '../../persona/profile_store.dart';
 import '../ai/secret_store.dart';
+import '../../persona/persona_dna.dart';
 import 'sections/appearance_section.dart';
 import 'sections/brain_section.dart';
 import 'sections/emotion_section.dart';
+import 'sections/evolution_section.dart';
 import 'sections/learning_section.dart';
 import 'sections/linkage_section.dart';
 import 'sections/memory_section.dart';
+import 'sections/persona_section.dart';
 import 'sections/privacy_section.dart';
 
 class SettingsPage extends StatefulWidget {
@@ -44,6 +48,13 @@ class SettingsPage extends StatefulWidget {
     required this.learning,
     required this.onSave,
     required this.onSaveEmotion,
+    this.persona = const PersonaDna(),
+    this.onSavePersona,
+    this.guidelines,
+    this.reflectionCount = 0,
+    this.onAcceptGuideline,
+    this.onRejectGuideline,
+    this.onArchiveGuideline,
     this.appearanceProposal,
     this.onAcceptFormProposal,
     this.onRejectFormProposal,
@@ -88,16 +99,25 @@ class SettingsPage extends StatefulWidget {
   /// 学习治理（内核实例）：策略版本、提案、回滚与反馈采集。
   final LearningLoop? learning;
 
+  /// 人格 DNA 当前值；只允许用户手动编辑，学习层不可改。
+  final PersonaDna persona;
+  final Result<void> Function(PersonaDna)? onSavePersona;
+
+  /// 经验准则：待确认/已生效/停用。
+  final GuidelineStore? guidelines;
+  final int reflectionCount;
+  final Result<Guideline> Function(String id)? onAcceptGuideline;
+  final Result<void> Function(String id)? onRejectGuideline;
+  final Result<void> Function(String id)? onArchiveGuideline;
+
   /// 能力注册表（只读）：联动分区底部展示各外部软件的探测结果。
   final CapabilityRegistry? capabilities;
 
   /// 重新探测（忽略缓存）。
   final VoidCallback? onProbeCapabilities;
 
-  final Future<Result<void>> Function(
-    AppConfig config,
-    PrivacySettings privacy,
-  ) onSave;
+  final Future<Result<void>> Function(AppConfig config, PrivacySettings privacy)
+  onSave;
 
   /// 情绪档案独立落盘（emotion_profile.json）；与主配置分开保存。
   final Result<void> Function(EmotionProfile emotion) onSaveEmotion;
@@ -113,7 +133,7 @@ class SettingsPage extends StatefulWidget {
 
 class _SettingsPageState extends State<SettingsPage>
     with SingleTickerProviderStateMixin {
-  late final TabController _tabs = TabController(length: 7, vsync: this);
+  late final TabController _tabs = TabController(length: 9, vsync: this);
 
   late String _active =
       widget.config.linkage.activeAdapter?.id ??
@@ -159,6 +179,9 @@ class _SettingsPageState extends State<SettingsPage>
 
   // ---- 学习治理：操作结果提示（版本与提案数据直接从 learning 读） ----
   String _learningHint = '';
+
+  // ---- 进化准则：操作结果提示（数据直接从 guidelines 读） ----
+  String _evolutionHint = '';
 
   bool _aiTesting = false;
   String _aiTestResult = '';
@@ -374,7 +397,8 @@ class _SettingsPageState extends State<SettingsPage>
     _runMemory(
       learning != null && memory != null
           ? learning.acceptMemoryProposal(memory, id)
-          : (memory?.confirm(id) ?? const Failure('memory.offline', '记忆库还没准备好')),
+          : (memory?.confirm(id) ??
+                const Failure('memory.offline', '记忆库还没准备好')),
       '已记住这条提案',
     );
   }
@@ -431,14 +455,21 @@ class _SettingsPageState extends State<SettingsPage>
     return confirmed == true ? text : null;
   }
 
-  void _editMemory(MemoryEntry entry) =>
-      _runMemory(widget.memory?.update(entry) ?? const Failure('memory.offline', '记忆库还没准备好'), '已纠正');
+  void _editMemory(MemoryEntry entry) => _runMemory(
+    widget.memory?.update(entry) ?? const Failure('memory.offline', '记忆库还没准备好'),
+    '已纠正',
+  );
 
-  void _forgetMemory(String id) =>
-      _runMemory(widget.memory?.remove(id) ?? const Failure('memory.offline', '记忆库还没准备好'), '已遗忘');
+  void _forgetMemory(String id) => _runMemory(
+    widget.memory?.remove(id) ?? const Failure('memory.offline', '记忆库还没准备好'),
+    '已遗忘',
+  );
 
-  void _clearMemoryKind(MemoryKind kind) =>
-      _runMemory(widget.memory?.clearKind(kind) ?? const Failure('memory.offline', '记忆库还没准备好'), '这一类记忆已清空');
+  void _clearMemoryKind(MemoryKind kind) => _runMemory(
+    widget.memory?.clearKind(kind) ??
+        const Failure('memory.offline', '记忆库还没准备好'),
+    '这一类记忆已清空',
+  );
 
   void _exportMemories() {
     final store = widget.memory;
@@ -484,7 +515,8 @@ class _SettingsPageState extends State<SettingsPage>
   );
 
   void _rollbackPolicy() => _runLearning(
-    widget.learning?.rollback() ?? const Failure('learning.offline', '学习治理还没准备好'),
+    widget.learning?.rollback() ??
+        const Failure('learning.offline', '学习治理还没准备好'),
     '已回滚到上一版',
   );
 
@@ -493,6 +525,42 @@ class _SettingsPageState extends State<SettingsPage>
         const Failure('learning.offline', '学习治理还没准备好'),
     '已回滚到 v$version',
   );
+
+  void _acceptGuideline(String id) {
+    final result =
+        widget.onAcceptGuideline?.call(id) ??
+        const Failure<Guideline>('guideline.offline', '进化引擎还没准备好');
+    setState(() {
+      _evolutionHint = switch (result) {
+        Success() => '已接受这条准则，下一次对话生效',
+        Failure(:final reason) => reason,
+      };
+    });
+  }
+
+  void _rejectGuideline(String id) {
+    final result =
+        widget.onRejectGuideline?.call(id) ??
+        const Failure<void>('guideline.offline', '进化引擎还没准备好');
+    setState(() {
+      _evolutionHint = switch (result) {
+        Success() => '已拒绝这条准则',
+        Failure(:final reason) => reason,
+      };
+    });
+  }
+
+  void _archiveGuideline(String id) {
+    final result =
+        widget.onArchiveGuideline?.call(id) ??
+        const Failure<void>('guideline.offline', '进化引擎还没准备好');
+    setState(() {
+      _evolutionHint = switch (result) {
+        Success() => '已停用这条准则',
+        Failure(:final reason) => reason,
+      };
+    });
+  }
 
   // ---------------------------------------------------------------------------
   // 形象：推演 / 回滚 / 冻结（护栏都在内核与纯函数里，这里只同步展示）
@@ -655,9 +723,7 @@ class _SettingsPageState extends State<SettingsPage>
     if (!mounted) return;
     setState(() {
       _accessChecking = false;
-      _accessResult = trusted
-          ? '已授权'
-          : '未授权：请在 系统设置 › 隐私与安全性 › 辅助功能 勾选本应用';
+      _accessResult = trusted ? '已授权' : '未授权：请在 系统设置 › 隐私与安全性 › 辅助功能 勾选本应用';
     });
   }
 
@@ -716,6 +782,8 @@ class _SettingsPageState extends State<SettingsPage>
             ),
             TabBar(
               controller: _tabs,
+              isScrollable: true,
+              tabAlignment: TabAlignment.start,
               labelColor: const Color(0xF2FFFFFF),
               unselectedLabelColor: const Color(0x80FFFFFF),
               indicatorColor: const Color(0xCCFFFFFF),
@@ -728,6 +796,8 @@ class _SettingsPageState extends State<SettingsPage>
                 Tab(text: '形象'),
                 Tab(text: '记忆'),
                 Tab(text: '学习'),
+                Tab(text: '进化'),
+                Tab(text: '人格'),
               ],
             ),
             Flexible(
@@ -808,7 +878,10 @@ class _SettingsPageState extends State<SettingsPage>
                         padding: EdgeInsets.symmetric(vertical: 16),
                         child: Text(
                           '记忆库还没准备好，稍后再打开设置试试',
-                          style: TextStyle(color: Color(0x66FFFFFF), fontSize: 12),
+                          style: TextStyle(
+                            color: Color(0x66FFFFFF),
+                            fontSize: 12,
+                          ),
                         ),
                       )
                     else
@@ -835,6 +908,20 @@ class _SettingsPageState extends State<SettingsPage>
                       onRollback: _rollbackPolicy,
                       onRollbackTo: _rollbackPolicyTo,
                       hint: _learningHint,
+                    ),
+                    EvolutionSection(
+                      guidelines: widget.guidelines,
+                      reflectionCount: widget.reflectionCount,
+                      onAccept: _acceptGuideline,
+                      onReject: _rejectGuideline,
+                      onArchive: _archiveGuideline,
+                      hint: _evolutionHint,
+                    ),
+                    PersonaSection(
+                      persona: widget.persona,
+                      onSave:
+                          widget.onSavePersona ??
+                          (_) => const Failure('persona.offline', '人格档案还没准备好'),
                     ),
                   ],
                 ),

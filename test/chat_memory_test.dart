@@ -36,4 +36,14 @@ void main() {
     memory.clear();
     expect(ChatMemory().messages, isEmpty);
   });
+
+  test('超过原文上限时只保留最近的消息，磁盘不会无限增长', () {
+    final memory = ChatMemory();
+    for (var index = 0; index < chatMemoryMaxMessages / 2 + 20; index++) {
+      memory.appendRound('问$index', '答$index');
+    }
+    expect(memory.messages.length, chatMemoryMaxMessages);
+    expect(ChatMemory().messages.length, chatMemoryMaxMessages);
+    expect(memory.messages.first.content, contains('问20'));
+  });
 }

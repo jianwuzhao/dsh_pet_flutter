@@ -39,14 +39,18 @@ class MemoryExtractor {
       final kind = _kindOfTag(match.group(1));
       final content = (match.group(2) ?? '').trim();
       if (kind != null && content.isNotEmpty) {
-        candidates.add(MemoryEntry(
-          id: MemoryEntry.newId(now),
-          kind: kind,
-          content: content,
-          createdAt: now,
-          source: 'llm',
-          status: MemoryStatus.pending,
-        ));
+        candidates.add(
+          MemoryEntry(
+            id: MemoryEntry.newId(now),
+            kind: kind,
+            content: content,
+            createdAt: now,
+            source: 'llm',
+            status: MemoryStatus.pending,
+            confidence: 0.5,
+            updatedAt: now,
+          ),
+        );
       }
       index = match.end;
     }
@@ -77,9 +81,12 @@ class MemoryExtractor {
       MemoryEntry(
         id: MemoryEntry.newId(now),
         kind: MemoryKind.preference,
+        subject: 'address',
         content: '称呼偏好：$name',
         createdAt: now,
         source: 'rule',
+        confidence: 0.9,
+        updatedAt: now,
       ),
     ];
   }
@@ -92,9 +99,13 @@ class MemoryExtractor {
           MemoryEntry(
             id: MemoryEntry.newId(now),
             kind: MemoryKind.preference,
+            subject:
+                'avoidedTopic:${(match.group(1) ?? match.group(2))!.trim()}',
             content: '回避话题：${(match.group(1) ?? match.group(2))!.trim()}',
             createdAt: now,
             source: 'rule',
+            confidence: 0.85,
+            updatedAt: now,
           ),
     ];
   }
@@ -116,9 +127,12 @@ class MemoryExtractor {
       MemoryEntry(
         id: MemoryEntry.newId(now),
         kind: MemoryKind.fact,
+        subject: 'routine',
         content: '作息：约 $hour 点$half$action',
         createdAt: now,
         source: 'rule',
+        confidence: 0.8,
+        updatedAt: now,
       ),
     ];
   }

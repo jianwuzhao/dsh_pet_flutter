@@ -65,6 +65,18 @@ class LinkageSection extends StatelessWidget {
             if (value != null) onActiveChanged(value);
           },
         ),
+        const Padding(
+          padding: EdgeInsets.only(top: 6),
+          child: Text(
+            '说明：当「大脑」里配置了可回复的提供者时，输入由本地对话接管；'
+            '关联软件只在提供者关闭/不可回复时用于转发与状态回显。',
+            style: TextStyle(
+              color: Color(0x66FFFFFF),
+              fontSize: 10.5,
+              height: 1.5,
+            ),
+          ),
+        ),
         const SettingsLabel('Bundle ID'),
         SettingsField(controller: bundleId, hint: '例如 cn.trae.app'),
         const SettingsLabel('唤起深链（{prompt} 会被替换）'),
@@ -79,7 +91,10 @@ class LinkageSection extends StatelessWidget {
             ),
             DropdownMenuItem(value: DeliveryMode.uri, child: Text('深链唤起')),
             DropdownMenuItem(value: DeliveryMode.http, child: Text('HTTP 端点')),
-            DropdownMenuItem(value: DeliveryMode.ws, child: Text('WebSocket 端点')),
+            DropdownMenuItem(
+              value: DeliveryMode.ws,
+              child: Text('WebSocket 端点'),
+            ),
           ],
           onChanged: (value) {
             if (value != null) onDeliveryChanged(value);
@@ -87,7 +102,10 @@ class LinkageSection extends StatelessWidget {
         ),
         if (delivery == DeliveryMode.http || delivery == DeliveryMode.ws) ...[
           const SettingsLabel('端点地址'),
-          SettingsField(controller: endpoint, hint: '例如 http://127.0.0.1:9000/prompt'),
+          SettingsField(
+            controller: endpoint,
+            hint: '例如 http://127.0.0.1:9000/prompt',
+          ),
         ],
         const SettingsDivider('全局快捷键'),
         const SettingsLabel('唤起对话面板（至少一个 cmd/ctrl/alt）'),
@@ -161,15 +179,15 @@ class _CapabilityRow extends StatelessWidget {
                   ),
                 Text(
                   _modeLabel(adapter.descriptor.mode),
-                  style: const TextStyle(color: Color(0x4DFFFFFF), fontSize: 9.5),
+                  style: const TextStyle(
+                    color: Color(0x4DFFFFFF),
+                    fontSize: 9.5,
+                  ),
                 ),
               ],
             ),
           ),
-          Text(
-            label,
-            style: TextStyle(color: color, fontSize: 11.5),
-          ),
+          Text(label, style: TextStyle(color: color, fontSize: 11.5)),
         ],
       ),
     );

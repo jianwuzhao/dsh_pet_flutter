@@ -71,7 +71,10 @@ class AppearanceSection extends StatelessWidget {
                   _param('配饰', _accessoryName(state.accessory)),
                   _param('动作组', _motionName(state.motionSet)),
                   _param('表情集', _expressionName(state.expressionSet)),
-                  _param('修订', 'v${state.revision}${state.frozen ? ' · 已冻结' : ''}'),
+                  _param(
+                    '修订',
+                    'v${state.revision}${state.frozen ? ' · 已冻结' : ''}',
+                  ),
                 ],
               ),
             ),
@@ -100,7 +103,10 @@ class AppearanceSection extends StatelessWidget {
                 const SizedBox(height: 4),
                 Text(
                   proposal!.reason,
-                  style: const TextStyle(color: Color(0xB3FFFFFF), fontSize: 11),
+                  style: const TextStyle(
+                    color: Color(0xB3FFFFFF),
+                    fontSize: 11,
+                  ),
                 ),
                 const SizedBox(height: 6),
                 Row(
@@ -130,14 +136,8 @@ class AppearanceSection extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
-            OutlinedButton(
-              onPressed: onEvolve,
-              child: const Text('推演一次'),
-            ),
-            OutlinedButton(
-              onPressed: onRollback,
-              child: const Text('回滚上一版'),
-            ),
+            OutlinedButton(onPressed: onEvolve, child: const Text('推演一次')),
+            OutlinedButton(onPressed: onRollback, child: const Text('回滚上一版')),
             OutlinedButton(
               onPressed: onFreeze == null
                   ? null
@@ -157,8 +157,9 @@ class AppearanceSection extends StatelessWidget {
         const Text(
           '推演只由情绪三维、人格主动性与 24 小时内的接受/拒绝反馈驱动：'
           '至少间隔 12 小时、一次只改一个维度、信号不足就不动；'
-          '配色与表情集即时生效，形态只生成提案、由你决定是否接受；'
-          '每一次变化都会写进历史并可回滚，冻结后完全暂停。',
+          '配色、体型、动作组、配饰与表情集都会作用到宠物本体；'
+          '形态（form）目前只影响预览/头像，不改变动画素材；'
+          '形态提案由你决定是否接受；每一次变化都会写进历史并可回滚，冻结后完全暂停。',
           style: TextStyle(color: Color(0x66FFFFFF), fontSize: 10.5),
         ),
       ],

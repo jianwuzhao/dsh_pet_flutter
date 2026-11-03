@@ -8,6 +8,7 @@ library;
 import 'dart:math' as math;
 
 import '../../../core/config/animation_manifest.dart';
+import '../../../persona/appearance/appearance_state.dart';
 
 enum PetPoseKind { idle, turn, move, category, click, drag, event }
 
@@ -35,6 +36,9 @@ class PoseMachine {
   /// 1 = 面向右，-1 = 面向左（镜像绘制）。
   int facing = 1;
 
+  /// 形象动作组：只调整随机链权重，不锁死具体动画。
+  AppearanceMotionSet motionSet = AppearanceMotionSet.calm;
+
   String? pickIdle() => _pickFrom(manifest.idle);
 
   String? pickDrag() => _pickFrom(manifest.drag);
@@ -46,15 +50,35 @@ class PoseMachine {
   /// 从随机链抽下一段：idle / 转向 / 移动 / 分类动作。
   PosePick? rollNext({bool fixed = false}) {
     final weights = manifest.weights;
-    final turnWeight = fixed ? 0.0 : weights.turn;
-    final moveWeight = fixed ? 0.0 : weights.move;
-    final idleWeight = weights.idle;
+    var turnWeight = fixed ? 0.0 : weights.turn;
+    var moveWeight = fixed ? 0.0 : weights.move;
+    var idleWeight = weights.idle;
+
+    // 动作组只改权重分配：活泼多走动，俏皮多动作，困倦多待机。
+    switch (motionSet) {
+      case AppearanceMotionSet.lively:
+        idleWeight *= 0.6;
+        turnWeight *= 1.5;
+        moveWeight *= 2.0;
+        break;
+      case AppearanceMotionSet.playful:
+        idleWeight *= 0.8;
+        break;
+      case AppearanceMotionSet.sleepy:
+        idleWeight *= 2.0;
+        turnWeight *= 0.5;
+        moveWeight *= 0.35;
+        break;
+      case AppearanceMotionSet.calm:
+        break;
+    }
 
     // 固定模式：转向/移动的份额并入随机分类（上游同款处理）
     var categoryBudget = manifest.categories.fold<double>(
       0,
       (sum, c) => sum + c.weight,
     );
+    if (motionSet == AppearanceMotionSet.playful) categoryBudget *= 1.6;
     if (fixed) categoryBudget = math.max(categoryBudget, 0);
 
     final total = idleWeight + turnWeight + moveWeight + categoryBudget;

@@ -16,6 +16,7 @@ class PetView extends StatelessWidget {
     super.key,
     required this.controller,
     this.palette = AppearancePalette.blue,
+    this.accessory = AppearanceAccessory.none,
   });
 
   final PetController controller;
@@ -23,20 +24,25 @@ class PetView extends StatelessWidget {
   /// 当前配色；blue 为原画，其余色板按固定比例混入。
   final AppearancePalette palette;
 
+  /// 配饰叠加：只画在宠物矩形内，不扩大窗口命中区。
+  final AppearanceAccessory accessory;
+
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      painter: _PetPainter(controller, palette),
+      painter: _PetPainter(controller, palette, accessory),
       size: controller.petSize,
     );
   }
 }
 
 class _PetPainter extends CustomPainter {
-  _PetPainter(this.controller, this.palette) : super(repaint: controller.repaint);
+  _PetPainter(this.controller, this.palette, this.accessory)
+    : super(repaint: controller.repaint);
 
   final PetController controller;
   final AppearancePalette palette;
+  final AppearanceAccessory accessory;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -46,6 +52,73 @@ class _PetPainter extends CustomPainter {
 
     final image = controller.player?.image;
     if (image != null) _paintFrame(canvas, image, size, progress);
+    _paintAccessory(canvas, size);
+  }
+
+  /// 配饰是程序化叠加：不改素材、不改命中区，只做可见表达。
+  void _paintAccessory(Canvas canvas, Size size) {
+    switch (accessory) {
+      case AppearanceAccessory.none:
+        return;
+      case AppearanceAccessory.scarf:
+        final scarf = Paint()..color = const Color(0xFFE05A5A);
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(
+              center: Offset(size.width * 0.52, size.height * 0.78),
+              width: size.width * 0.36,
+              height: size.height * 0.07,
+            ),
+            Radius.circular(size.width * 0.03),
+          ),
+          scarf,
+        );
+        canvas.drawCircle(
+          Offset(size.width * 0.65, size.height * 0.83),
+          size.width * 0.025,
+          scarf,
+        );
+        break;
+      case AppearanceAccessory.glasses:
+        final rim = Paint()
+          ..color = const Color(0xFF3B4A5F)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = size.width * 0.008;
+        final eyeY = size.height * 0.42;
+        final left = Offset(size.width * 0.44, eyeY);
+        final right = Offset(size.width * 0.62, eyeY);
+        final radius = size.width * 0.04;
+        canvas.drawCircle(left, radius, rim);
+        canvas.drawCircle(right, radius, rim);
+        canvas.drawLine(
+          Offset(left.dx + radius, eyeY),
+          Offset(right.dx - radius, eyeY),
+          rim,
+        );
+        break;
+      case AppearanceAccessory.hat:
+        final hat = Paint()..color = const Color(0xFF4E6E8E);
+        canvas.drawRect(
+          Rect.fromCenter(
+            center: Offset(size.width * 0.52, size.height * 0.2),
+            width: size.width * 0.2,
+            height: size.height * 0.1,
+          ),
+          hat,
+        );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(
+            Rect.fromCenter(
+              center: Offset(size.width * 0.52, size.height * 0.26),
+              width: size.width * 0.3,
+              height: size.height * 0.02,
+            ),
+            Radius.circular(size.width * 0.01),
+          ),
+          hat,
+        );
+        break;
+    }
   }
 
   void _paintFrame(Canvas canvas, ui.Image image, Size size, double opacity) {
@@ -114,5 +187,5 @@ class _PetPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _PetPainter oldDelegate) =>
-      oldDelegate.palette != palette;
+      oldDelegate.palette != palette || oldDelegate.accessory != accessory;
 }

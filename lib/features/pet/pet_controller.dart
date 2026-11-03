@@ -356,6 +356,11 @@ class PetController {
     position.value = _body.position;
   }
 
+  /// 应用形象动作组：只改姿态抽签权重，不改当前正在播放的动画。
+  void setMotionSet(AppearanceMotionSet value) {
+    _poses.motionSet = value;
+  }
+
   /// 应用体型缩放：以**底边中心**为锚点，脚不动，避免缩放时宠物跳位。
   ///
   /// 缩放同时更新绘制尺寸、物理包围盒与命中区——只改视觉会让点击区域错位。
@@ -365,10 +370,7 @@ class PetController {
     if ((next - _bodyScale).abs() < 1e-6) return;
     final previous = _petSize;
     _bodyScale = next;
-    _petSize = Size(
-      _basePetSize.width * next,
-      _basePetSize.height * next,
-    );
+    _petSize = Size(_basePetSize.width * next, _basePetSize.height * next);
     final anchor = Offset(
       _body.position.dx + previous.width / 2,
       _body.position.dy + previous.height,
@@ -760,7 +762,8 @@ class PetController {
     // 快甩：保留“被鼠标拖拽悬空反馈”动画 + 物理抛掷，落地后才恢复基础姿态。
     // 慢放：直接钉在指针最终位置（顶部/任意高度都停得住），立即恢复基础姿态。
     // 触摸抬手前的末速度天然高于鼠标，阈值同步放大，避免轻放也被判成甩出。
-    final throwThreshold = physics.throwThreshold *
+    final throwThreshold =
+        physics.throwThreshold *
         (PetPlatform.isTouch ? _touchThrowThresholdScale : 1);
     if (velocity.distance >= throwThreshold) {
       _body.endDrag(velocity);
@@ -902,7 +905,11 @@ class PetController {
         direction = -1;
       }
       _poses.facing = direction;
-      _movePlan = planMove(move.params, petSize: petSize.width, facing: direction);
+      _movePlan = planMove(
+        move.params,
+        petSize: petSize.width,
+        facing: direction,
+      );
       _moveStartX = _body.position.dx;
     }
 
@@ -1115,7 +1122,8 @@ class PetController {
     }
     final now = DateTime.now();
     final lastTap = _lastTapAt;
-    if (lastTap != null && now.difference(lastTap) <= const Duration(milliseconds: 300)) {
+    if (lastTap != null &&
+        now.difference(lastTap) <= const Duration(milliseconds: 300)) {
       _lastTapAt = null;
       openPanel(PetPanel.chat);
       return;

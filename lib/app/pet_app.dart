@@ -36,8 +36,11 @@ import '../interop/adapters/chatgpt_adapter.dart';
 import '../interop/adapters/trae_cn_adapter.dart';
 import '../interop/capability_registry.dart';
 import '../interop/run_event.dart';
+import '../learning/guideline_store.dart';
+import '../learning/reflection_store.dart';
 import '../persona/appearance/appearance_state.dart';
 import '../persona/expression/expression_layer.dart';
+import '../persona/persona_dna.dart';
 import '../persona/profile_store.dart';
 import '../platform/pet_platform.dart';
 import 'assistant_kernel.dart';
@@ -82,6 +85,8 @@ class _PetAppState extends State<PetApp> {
   final BridgeHub _bridgeHub = BridgeHub();
 
   final AiKeyStore _keyStore = AiKeyStore();
+  final ReflectionStore _reflections = ReflectionStore();
+  final GuidelineStore _guidelines = GuidelineStore();
   AiService? _ai;
   ChatMemory? _memory;
   Timer? _whisperTimer;
@@ -161,6 +166,13 @@ class _PetAppState extends State<PetApp> {
       onFreezeAppearance: _kernel?.setAppearanceFrozen,
       memory: _kernel?.memory,
       learning: _kernel?.learning,
+      persona: _kernel?.dna ?? const PersonaDna(),
+      onSavePersona: _kernel?.savePersonaDna,
+      guidelines: _kernel?.guidelines,
+      reflectionCount: _kernel?.reflectionCount ?? 0,
+      onAcceptGuideline: _kernel?.acceptGuideline,
+      onRejectGuideline: _kernel?.rejectGuideline,
+      onArchiveGuideline: _kernel?.archiveGuideline,
       onSend: _dispatch,
       onSaveConfig: _saveConfig,
       onSaveEmotion: _saveEmotionProfile,
@@ -173,10 +185,18 @@ class _PetAppState extends State<PetApp> {
       onWhisper: (_ai?.canChat ?? false)
           ? () => unawaited(_whisperNow(manual: true))
           : null,
-      onAcceptReply: _kernel?.acceptReply,
-      onRejectReply: (correction) =>
-          _kernel?.rejectReply(correction: correction),
-      onDismissCare: _kernel?.dismissCare,
+      onAcceptReply: () {
+        _kernel?.acceptReply();
+        _kernel?.maybeEvolveAppearance();
+      },
+      onRejectReply: (correction) {
+        _kernel?.rejectReply(correction: correction);
+        _kernel?.maybeEvolveAppearance();
+      },
+      onDismissCare: () {
+        _kernel?.dismissCare();
+        _kernel?.maybeEvolveAppearance();
+      },
       capabilities: _capabilities,
       onProbeCapabilities: () => unawaited(_probeCapabilities()),
     );
@@ -239,7 +259,10 @@ class _PetAppState extends State<PetApp> {
         activeId: config.linkage.active,
       );
       final router = _buildRouter(config);
-      final gateway = InteractionGateway(dispatcher: dispatcher, router: router);
+      final gateway = InteractionGateway(
+        dispatcher: dispatcher,
+        router: router,
+      );
       final privacy = PrivacyCenter(
         legacyContentRead: config.linkage.contentRead,
       );
@@ -252,6 +275,8 @@ class _PetAppState extends State<PetApp> {
         store: ProfileStore(),
         host: _PetExpressionHost(controller),
         privacy: privacy,
+        reflections: _reflections,
+        guidelines: _guidelines,
         // 会话历史与 builtin 联动共用一份轮次记录（config.ai.memoryRounds 截断）。
         conversationHistory: _memory,
         conversationRounds: config.ai.memoryRounds,
@@ -287,6 +312,10 @@ class _PetAppState extends State<PetApp> {
       final statusSubscription = aggregator.changes.listen((snapshot) {
         controller.applyStatus(snapshot);
         kernel.onStatusSnapshot(snapshot);
+        // 只有任务终态才尝试形象推演；冷却/冻结/信号阈值由内核自己拦。
+        if (snapshot != null && snapshot.isTerminal) {
+          kernel.maybeEvolveAppearance();
+        }
       });
       final serverError = await server.start();
       final watch = AppWatchSource(
@@ -624,7 +653,9 @@ class _PetAppState extends State<PetApp> {
     unawaited(
       hotkey.register(config.gateway.hotkey).then((result) {
         if (result is Failure<bool>) {
-          debugPrint('[dafishu] 热键注册失败（${config.gateway.hotkey}）：${result.reason}');
+          debugPrint(
+            '[dafishu] 热键注册失败（${config.gateway.hotkey}）：${result.reason}',
+          );
         }
       }),
     );
@@ -681,25 +712,16 @@ class _PetAppState extends State<PetApp> {
     );
   }
 
-  /// 手动/定时碎碎念：模型生成一句短话 + 随机表情包。
+  /// 手动/定时碎碎念：走内核同一人格/记忆/情绪/策略与 provider 路径。
   Future<void> _whisperNow({bool manual = false}) async {
     if (_whisperBusy) return;
-    final ai = _ai;
+    final kernel = _kernel;
     final controller = _controller;
     final pet = _config?.desktopPet;
-    if (ai == null || controller == null || pet == null) return;
-    if (!ai.canChat) {
-      if (manual) {
-        controller.showBubble('碎碎念需要先配置内置 AI（设置 → 内置对话）');
-      }
-      return;
-    }
+    if (kernel == null || controller == null || pet == null) return;
     _whisperBusy = true;
     try {
-      final result = await ai.chat(
-        messages: const [AiMessage.user('用一句不超过 25 字的中文说一句此刻的碎碎念，不要提问，不要解释。')],
-        system: _personaFor(pet),
-      );
+      final result = await kernel.whisper();
       // 重载配置可能已换掉控制器；旧请求回来时不要再碰已 dispose 的 notifier。
       if (!mounted || !identical(_controller, controller)) return;
       switch (result) {
@@ -754,12 +776,12 @@ class _PetAppState extends State<PetApp> {
       unawaited(
         _platform
             .notify(
-              title: event.source.isEmpty
-                  ? '大肥鱼助手'
-                  : '大肥鱼助手 · ${event.source}',
+              title: event.source.isEmpty ? '大肥鱼助手' : '大肥鱼助手 · ${event.source}',
               body: text.isEmpty ? '有新的消息' : text,
             )
-            .catchError((Object error) => debugPrint('[dafishu] 系统通知失败：$error')),
+            .catchError(
+              (Object error) => debugPrint('[dafishu] 系统通知失败：$error'),
+            ),
       );
       return;
     }
@@ -835,7 +857,11 @@ class _PetAppState extends State<PetApp> {
     ValueNotifier<AppearanceState> source,
   ) {
     _unwatchAppearance();
-    void apply() => controller.setBodyScale(source.value.bodyScale);
+    void apply() {
+      controller.setBodyScale(source.value.bodyScale);
+      controller.setMotionSet(source.value.motionSet);
+    }
+
     apply();
     source.addListener(apply);
     _appearanceSource = source;
@@ -881,8 +907,7 @@ class _PetExpressionHost extends ExpressionHost {
   final PetController _controller;
 
   @override
-  void playAnimation(String name) =>
-      _controller.playExpressionAnimation(name);
+  void playAnimation(String name) => _controller.playExpressionAnimation(name);
 
   @override
   void showBubble(String text, {String? meme, bool dismissible = false}) =>
