@@ -87,6 +87,9 @@ class AssistantKernel {
            : EvolutionEngine(
                reflections: reflections,
                guidelines: guidelines,
+               // 复盘产出扩展为准则/技能草案二选一（P1-1d）：
+               // 策展器随内核注入，与对话注入共用同一份技能库。
+               skillCurator: skillCurator,
                clock: clock,
              ),
        _appearanceStore = appearanceStore ?? AppearanceStore(),
@@ -415,7 +418,12 @@ class AssistantKernel {
       ).synthesize(recent);
       switch (result) {
         case Success(value: final drafts):
-          final added = _evolution.proposeTaskLessons(drafts);
+          final added = _evolution.proposeTaskLessons(
+            drafts,
+            originReflectionIds: [
+              for (final entry in recent) entry.id,
+            ],
+          );
           _lastTaskSynthesisAt = _clock();
           _lastTaskSynthesisCount = count;
           if (added > 0) {

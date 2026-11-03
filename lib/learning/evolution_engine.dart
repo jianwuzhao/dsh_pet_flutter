@@ -4,23 +4,31 @@
 /// 都只生成待确认准则，用户接受后才生效，避免不可解释的自动改写。
 library;
 
+import '../ai/skill_library.dart';
 import '../core/result.dart';
 import '../features/linkage/status/assistant_event.dart';
 import 'guideline_store.dart';
 import 'llm_reflection_synthesizer.dart';
 import 'reflection_store.dart';
+import 'skill_curator.dart';
 
 class EvolutionEngine {
   EvolutionEngine({
     required ReflectionStore reflections,
     required GuidelineStore guidelines,
+    SkillCurator? skillCurator,
     DateTime Function()? clock,
   }) : _reflections = reflections,
        _guidelines = guidelines,
+       _skillCurator = skillCurator,
        _clock = clock ?? DateTime.now;
 
   final ReflectionStore _reflections;
   final GuidelineStore _guidelines;
+
+  /// 技能策展（P1-1d）：null 时复盘产出回落纯准则路径（现状行为）。
+  final SkillCurator? _skillCurator;
+
   final DateTime Function() _clock;
 
   ReflectionStore get reflections => _reflections;
@@ -123,10 +131,33 @@ class EvolutionEngine {
     );
   }
 
-  /// 把模型提炼的任务经验转成待确认准则；返回新增提案数。
-  int proposeTaskLessons(List<TaskLessonDraft> drafts) {
+  /// 把模型提炼的任务经验转成待确认准则或技能草案（二选一分流）；返回新增数。
+  ///
+  /// 技能草案的证据链 = 这次复盘输入的反思 id：策展层校验为空即丢弃，
+  /// 保证每份“怎么做”都能回溯到真实任务终态。
+  int proposeTaskLessons(
+    List<TaskLessonDraft> drafts, {
+    List<String> originReflectionIds = const [],
+  }) {
     var added = 0;
     for (final draft in drafts) {
+      if (draft.isSkill) {
+        final curator = _skillCurator;
+        if (curator == null) continue;
+        final result = curator.propose(
+          SkillManifest(
+            name: draft.name,
+            description: draft.content,
+            triggers: draft.trigger,
+            body: draft.steps,
+            source: 'task-reflection',
+            originReflectionIds: originReflectionIds,
+            createdAt: _clock(),
+          ),
+        );
+        if (result is Success<SkillManifest>) added += 1;
+        continue;
+      }
       final before = _guidelines.pending.length;
       final result = _guidelines.propose(
         Guideline(

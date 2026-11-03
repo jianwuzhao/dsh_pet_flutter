@@ -17,12 +17,25 @@ class TaskLessonDraft {
     required this.content,
     this.trigger = '',
     this.confidence = 0.5,
+    this.isSkill = false,
+    this.name = '',
+    this.steps = '',
   });
 
   final String title;
   final String content;
   final String trigger;
   final double confidence;
+
+  /// true = 程序性做法（多步“怎么做”），走技能草案通道；
+  /// false = 一句话倾向（“别做什么”），走准则提案通道。
+  final bool isSkill;
+
+  /// 技能 id（kebab-case）：isSkill 时必填，非法即丢弃整条。
+  final String name;
+
+  /// 技能正文（≤300 字做法步骤）：isSkill 时必填。
+  final String steps;
 }
 
 class LlmReflectionSynthesizer {
@@ -89,11 +102,13 @@ class LlmReflectionSynthesizer {
   static const String _systemPrompt = '''
 你是任务复盘助手。请从用户提供的任务终态反思中提炼 1–3 条可复用经验。
 只输出一个 JSON 对象，不要解释、不要 Markdown 代码围栏：
-{"lessons":[{"title":"不超过24字","content":"不超过80字","trigger":"关键词|关键词","confidence":0.0}]}
+{"lessons":[{"kind":"guideline","title":"不超过24字","content":"不超过80字","trigger":"关键词|关键词","confidence":0.0}]}
+或（仅当经验是多步骤的“怎么做”时）：
+{"lessons":[{"kind":"skill","name":"kebab-case-id","title":"不超过24字","content":"不超过80字","trigger":"关键词|关键词","steps":"不超过300字的做法步骤","confidence":0.0}]}
 
 规则：
 1. 只依据输入中真实出现的结果，不编造事实。
-2. 经验必须是“遇到什么情况，应该怎么做”的可执行表述。
+2. guideline 是“遇到什么情况，应该怎么做”的一句话倾向；skill 是可复用多次的多步做法——只在步骤确实多于一步时才用 skill。
 3. 不涉及身份、隐私、权限、密钥、打扰上限的修改。
 4. 没有可复用经验时返回 {"lessons":[]}。
 5. confidence ∈ [0,1]，证据弱时给低分。
@@ -126,14 +141,32 @@ class LlmReflectionSynthesizer {
           continue;
         }
         final trigger = _shorten((item['trigger'] as String? ?? '').trim(), 40);
+        final isSkill = (item['kind'] as String? ?? '') == 'skill';
+        final steps = _shorten((item['steps'] as String? ?? '').trim(), 300);
+        final name = (item['name'] as String? ?? '').trim();
+        // 技能条目三重门槛：合法 id、非空步骤、步骤也过越权过滤。
+        // 缺任何一项整条丢弃——技能是可复用多次的做法，宁缺毋滥。
+        if (isSkill) {
+          if (!RegExp(r'^[a-z0-9]+(-[a-z0-9]+)*$').hasMatch(name)) continue;
+          if (steps.isEmpty || unsafePattern.hasMatch(steps)) continue;
+        }
         // 事实一致性：经验必须与输入反思有交集（正文共现或 trigger 命中），
         // 挡住“正确但与本次任务无关的废话”。
-        if (!_groundedIn(content, trigger, input)) continue;
+        if (!_groundedIn(
+          isSkill ? '$content$steps' : content,
+          trigger,
+          input,
+        )) {
+          continue;
+        }
         lessons.add(
           TaskLessonDraft(
             title: _shorten(title, 24),
             content: _shorten(content, 80),
             trigger: trigger,
+            isSkill: isSkill,
+            name: name,
+            steps: steps,
             confidence: ((item['confidence'] as num?)?.toDouble() ?? 0.5).clamp(
               0.0,
               1.0,
