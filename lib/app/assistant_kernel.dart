@@ -395,6 +395,10 @@ class AssistantKernel {
       case Success(value: final profile):
         _profile = profile;
         _emotion = EmotionState(intimacyBaseline: profile.intimacyBaseline);
+        // 恢复上次落盘的亲密度：没有这步，攒了几天的亲近感每次重启清零。
+        if (profile.persistedIntimacy >= 0) {
+          _emotion.intimacy = profile.persistedIntimacy.clamp(0.0, 1.0);
+        }
       case Failure(:final reason):
         _host.showBubble('情绪档案读取失败：$reason');
     }
@@ -516,7 +520,7 @@ class AssistantKernel {
     _syncPhase(impulse: impulse);
   }
 
-  /// 日程维护（每天最多一次）：记忆自动衰减 + 指标快照。
+  /// 日程维护（每天最多一次）：记忆自动衰减 + 亲密度快照 + 指标快照。
   /// start() 兜底一次，长驻进程靠 decayOnce 的跨天检测补跑——
   /// 即使桌宠连开几天不重启，快照序列也不断天。
   void _housekeeping() {
@@ -528,7 +532,23 @@ class AssistantKernel {
     if (archived > 0) {
       debugPrint('[dafishu] 记忆衰减：归档 $archived 条旧记忆（只留档审计，不再注入）');
     }
+    _persistIntimacy();
     _recordMetrics();
+  }
+
+  /// 亲密度快照落盘：退出（dispose）与日终各兜一次，
+  /// 异常退出最多丢一天增量，慢变量对这个精度不敏感。
+  void _persistIntimacy() {
+    final next = _profile.copyWith(
+      persistedIntimacy: _emotion.intimacy.clamp(0.0, 1.0),
+      persistedAtMs: _clock().millisecondsSinceEpoch,
+    );
+    final result = _store.saveEmotionProfile(next);
+    if (result is Failure<void>) {
+      debugPrint('[dafishu] 亲密度快照写入失败：${result.reason}');
+      return;
+    }
+    _profile = next;
   }
 
   /// 组装并落一天的指标快照（复评 0-6 基线）：
@@ -683,16 +703,25 @@ class AssistantKernel {
   /// 设置页保存情绪档案：写盘成功才改内存；换基线不重置当前三维，
   /// 只让亲密度的慢回归朝新目标走；总开关从开到关时状态机复位。
   Result<void> saveEmotionProfile(EmotionProfile value) {
-    final result = _store.saveEmotionProfile(value);
+    // 设置页表单通常重建整个档案对象（不带快照字段）：
+    // 无快照信息时沿用已落盘值，避免一次保存把亲密度快照清掉。
+    var incoming = value;
+    if (incoming.persistedAtMs == 0) {
+      incoming = incoming.copyWith(
+        persistedIntimacy: _profile.persistedIntimacy,
+        persistedAtMs: _profile.persistedAtMs,
+      );
+    }
+    final result = _store.saveEmotionProfile(incoming);
     if (result is Failure<void>) return result;
     final wasEnabled = _profile.emotionEnabled;
-    _profile = value;
-    final next = EmotionState(intimacyBaseline: value.intimacyBaseline)
+    _profile = incoming;
+    final next = EmotionState(intimacyBaseline: incoming.intimacyBaseline)
       ..valence = _emotion.valence
       ..arousal = _emotion.arousal
       ..intimacy = _emotion.intimacy;
     _emotion = next;
-    if (wasEnabled && !value.emotionEnabled) _machine.reset(now: _clock());
+    if (wasEnabled && !incoming.emotionEnabled) _machine.reset(now: _clock());
     _syncPhase();
     return const Success(null);
   }
@@ -842,6 +871,8 @@ class AssistantKernel {
   void dispose() {
     _decayTimer?.cancel();
     _careTimer?.cancel();
+    // 退出前兜一次亲密度快照：正常退出不靠日终那条路。
+    _persistIntimacy();
     emotion.dispose();
     appearance.dispose();
   }

@@ -95,5 +95,28 @@ void main() {
       // 未指定字段走模型默认，而不是被清空语义污染。
       expect(emotion.value.dailyCareLimit, 3);
     });
+
+    test('亲密度快照字段持久化往返，且旧档案缺字段时读出 -1', () {
+      store.saveEmotionProfile(
+        const EmotionProfile(
+          intimacyBaseline: 0.4,
+          persistedIntimacy: 0.72,
+          persistedAtMs: 1762100000000,
+        ),
+      );
+      final loaded = store.loadEmotionProfile() as Success<EmotionProfile>;
+      expect(loaded.value.intimacyBaseline, 0.4);
+      expect(loaded.value.persistedIntimacy, closeTo(0.72, 1e-9));
+      expect(loaded.value.persistedAtMs, 1762100000000);
+
+      // 旧版档案没有快照字段：必须读出“从未持久化”而不是崩或猜值。
+      File(
+        '${tmpDir.path}/emotion_profile.json',
+      ).writeAsStringSync('{"intimacyBaseline": 0.5}');
+      final legacy = store.loadEmotionProfile() as Success<EmotionProfile>;
+      expect(legacy.value.persistedIntimacy, -1);
+      expect(legacy.value.persistedAtMs, 0);
+      expect(legacy.value.intimacyBaseline, 0.5);
+    });
   });
 }

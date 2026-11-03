@@ -63,6 +63,8 @@ class EmotionProfile {
     this.dailyCareLimit = 3,
     this.focusMode = false,
     this.intimacyBaseline = 0.3,
+    this.persistedIntimacy = -1,
+    this.persistedAtMs = 0,
     this.careDate = '',
     this.careCount = 0,
     this.lastCareAtMs = 0,
@@ -91,6 +93,15 @@ class EmotionProfile {
 
   /// 亲密度基线：情绪三维里 intimacy 的慢回归目标。
   final double intimacyBaseline;
+
+  /// 最近一次落盘的亲密度快照 ∈ [0,1]；-1 = 从未持久化（首次启动）。
+  ///
+  /// 没有它，每次重启 intimacy 都被拉回基线——用户攒了几天的
+  /// 亲近感一夜清零，亲密度永远动不起来。
+  final double persistedIntimacy;
+
+  /// 快照时间（毫秒；0 = 从未持久化）。
+  final int persistedAtMs;
 
   // ---- 以下为预算计数状态（非用户偏好，勿在设置页展示） ----
   final String careDate;
@@ -129,6 +140,11 @@ class EmotionProfile {
       dailyCareLimit: readInt('dailyCareLimit', 3),
       focusMode: json['focusMode'] is bool ? json['focusMode'] as bool : false,
       intimacyBaseline: readDouble('intimacyBaseline', 0.3).clamp(0, 1),
+      // -1 保留“从未持久化”语义；有效值夹取 [0,1]。
+      persistedIntimacy: readDouble('persistedIntimacy', -1) < 0
+          ? -1
+          : readDouble('persistedIntimacy', -1).clamp(0, 1),
+      persistedAtMs: readInt('persistedAtMs', 0),
       careDate: json['careDate'] is String ? json['careDate'] as String : '',
       careCount: readInt('careCount', 0),
       lastCareAtMs: readInt('lastCareAtMs', 0),
@@ -148,6 +164,8 @@ class EmotionProfile {
     'dailyCareLimit': dailyCareLimit,
     'focusMode': focusMode,
     'intimacyBaseline': intimacyBaseline,
+    'persistedIntimacy': persistedIntimacy,
+    'persistedAtMs': persistedAtMs,
     'careDate': careDate,
     'careCount': careCount,
     'lastCareAtMs': lastCareAtMs,
@@ -164,6 +182,8 @@ class EmotionProfile {
     int? dailyCareLimit,
     bool? focusMode,
     double? intimacyBaseline,
+    double? persistedIntimacy,
+    int? persistedAtMs,
     String? careDate,
     int? careCount,
     int? lastCareAtMs,
@@ -178,6 +198,8 @@ class EmotionProfile {
     dailyCareLimit: dailyCareLimit ?? this.dailyCareLimit,
     focusMode: focusMode ?? this.focusMode,
     intimacyBaseline: intimacyBaseline ?? this.intimacyBaseline,
+    persistedIntimacy: persistedIntimacy ?? this.persistedIntimacy,
+    persistedAtMs: persistedAtMs ?? this.persistedAtMs,
     careDate: careDate ?? this.careDate,
     careCount: careCount ?? this.careCount,
     lastCareAtMs: lastCareAtMs ?? this.lastCareAtMs,
