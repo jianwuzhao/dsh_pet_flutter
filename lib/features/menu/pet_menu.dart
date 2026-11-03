@@ -1,40 +1,25 @@
-/// 宠物右键菜单：复刻 dsh-pet 的级联系统菜单模式。
+/// 宠物右键菜单：单面板深色菜单，桌面右键与触屏长按共用。
 ///
-/// 结构（与上游一致）：
-///   一级 = 工具项 + 「动作」
-///   二级（动作子级）= 分类：待机/转向/拖拽/点击回应/移动/config 分类/事件档位
-///   三级 = 具体动画名
-///
-/// 交互（与上游一致）：悬停分支向右展开；贴右/下边缘自动向左/上翻转并夹在屏幕内；
-/// 每一级是独立面板、各自滚动；指针在整棵菜单树内移动不会收起；离开菜单树 200ms 后关闭；
-/// 点击叶子/菜单外关闭。视觉也是上游那套浅色系统菜单（白底、深色 13px 文字、蓝色悬停、圆角 8）。
+/// 结构：根视图（高频入口）→「动作」视图（分类分组动画列表）/
+/// 「更多」视图（低频维护入口）。不再使用悬停级联：触屏没有 hover，
+/// 且父面板滚动后按索引推算子菜单位置必然错位。
+/// 定位统一交给 [PetFlyoutLayout]：先量真实尺寸，再按屏幕边界翻转/夹取。
 library;
 
-import 'dart:async';
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import '../../app/flyout_layout.dart';
 import '../../core/config/animation_manifest.dart';
 
-/// 菜单节点：叶子可点击；分支带子级。
-class PetMenuItem {
-  const PetMenuItem.leaf(this.label, this.onTap)
-    : children = const <PetMenuItem>[];
-
-  const PetMenuItem.branch(this.label, this.children) : onTap = null;
-
-  final String label;
-  final VoidCallback? onTap;
-  final List<PetMenuItem> children;
-
-  bool get isBranch => onTap == null;
-}
+/// 菜单当前展示的视图。
+enum _MenuView { root, actions, more }
 
 class PetMenu extends StatefulWidget {
   const PetMenu({
     super.key,
     required this.screen,
+    required this.pet,
     required this.anchor,
     required this.manifest,
     required this.activeName,
@@ -52,7 +37,10 @@ class PetMenu extends StatefulWidget {
   /// 当前屏幕可见区（窗口本地坐标）。
   final Rect screen;
 
-  /// 右键位置（窗口本地坐标）。
+  /// 宠物身体矩形：浮层定位在锚点失效时用它兜底。
+  final Rect pet;
+
+  /// 右键 / 长按位置（窗口本地坐标）。
   final Offset anchor;
 
   final AnimationManifest manifest;
@@ -72,71 +60,202 @@ class PetMenu extends StatefulWidget {
 }
 
 class _PetMenuState extends State<PetMenu> {
-  static const double _rowHeight = 28;
-  static const double _panelPadding = 4;
-  static const double _maxPanelHeight = 460;
-  static const double _rootWidth = 196;
-  static const double _categoriesWidth = 168;
-  static const double _actionsWidth = 236;
+  static const double _panelWidth = 232;
+  static const double _maxPanelHeight = 420;
+  static const double _rowHeight = 40;
 
-  int? _openRootIndex;
-  int? _openCategoryIndex;
-  Timer? _closeTimer;
+  static const Color _surface = Color(0xF21B1B20);
+  static const Color _border = Color(0x26FFFFFF);
+  static const Color _primaryText = Color(0xE6FFFFFF);
+  static const Color _secondaryText = Color(0x66FFFFFF);
+  static const Color _iconColor = Color(0x99FFFFFF);
+  static const Color _dangerText = Color(0xFFFF9A8A);
+  static const Color _hover = Color(0x14FFFFFF);
+
+  _MenuView _view = _MenuView.root;
+  final ScrollController _scroll = ScrollController();
 
   @override
   void dispose() {
-    _closeTimer?.cancel();
+    _scroll.dispose();
     super.dispose();
   }
 
-  void _cancelClose() {
-    _closeTimer?.cancel();
-    _closeTimer = null;
-  }
-
-  /// 上游的软关闭：指针离开菜单树 200ms 后才收起；移到相邻子面板会把它取消。
-  void _scheduleClose() {
-    _closeTimer?.cancel();
-    _closeTimer = Timer(const Duration(milliseconds: 200), () {
-      if (mounted) widget.onClose();
-    });
-  }
-
-  List<PetMenuItem> get _rootItems {
-    final items = <PetMenuItem>[
-      if (widget.onOpenApp != null)
-        PetMenuItem.leaf('打开 ${widget.activeName}', widget.onOpenApp!),
-      if (widget.onWhisper != null) PetMenuItem.leaf('碎碎念', widget.onWhisper!),
-      PetMenuItem.leaf('对话', widget.onChat),
-      if (widget.onResetPosition != null)
-        PetMenuItem.leaf('回到初始位置', widget.onResetPosition!),
-      if (widget.onReloadConfig != null)
-        PetMenuItem.leaf('重载配置', widget.onReloadConfig!),
-      PetMenuItem.leaf('设置', widget.onSettings),
-      PetMenuItem.leaf('退出大肥鱼助手', widget.onQuit),
-    ];
-    final actions = _actionGroups();
-    if (actions.isNotEmpty) {
-      items.add(PetMenuItem.branch('动作', actions));
+  @override
+  Widget build(BuildContext context) {
+    final screen = widget.screen;
+    // 布局尚未就绪（极少见）时宁可不显示，也不要在一个无效矩形里定位。
+    if (screen.width <= 0 || screen.height <= 0) {
+      return const SizedBox.shrink();
     }
-    return items;
+    return Stack(
+      children: [
+        // 点击/右键空白处关闭；菜单打开期间整窗已由控制器接管鼠标。
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: widget.onClose,
+            onSecondaryTap: widget.onClose,
+          ),
+        ),
+        Positioned.fill(
+          child: CustomSingleChildLayout(
+            delegate: PetFlyoutLayout(
+              screen: screen,
+              pet: widget.pet,
+              placement: FlyoutPlacement.pointer,
+              anchor: widget.anchor,
+              padding: 6,
+            ),
+            child: CallbackShortcuts(
+              bindings: {
+                const SingleActivator(LogicalKeyboardKey.escape): widget.onClose,
+              },
+              child: Focus(autofocus: true, child: _panel()),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
-  List<PetMenuItem> _actionGroups() {
+  Widget _panel() {
+    return Container(
+      key: const ValueKey('pet-menu-panel'),
+      width: _panelWidth,
+      constraints: const BoxConstraints(maxHeight: _maxPanelHeight),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x33000000),
+            blurRadius: 18,
+            offset: Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Scrollbar(
+        controller: _scroll,
+        thickness: 4,
+        radius: const Radius.circular(2),
+        child: SingleChildScrollView(
+          controller: _scroll,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: _content(),
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _content() => switch (_view) {
+    _MenuView.root => _rootRows(),
+    _MenuView.actions => _actionRows(),
+    _MenuView.more => _moreRows(),
+  };
+
+  // ---------------------------------------------------------------------------
+  // 根视图：只放高频入口；低频维护项收进「更多」
+  // ---------------------------------------------------------------------------
+
+  List<Widget> _rootRows() => [
+    _row(
+      icon: Icons.chat_bubble_outline,
+      label: '对话',
+      onTap: () => _activate(widget.onChat),
+    ),
+    if (widget.onWhisper != null)
+      _row(
+        icon: Icons.auto_awesome,
+        label: '碎碎念',
+        onTap: () => _activate(widget.onWhisper!),
+      ),
+    if (widget.onOpenApp != null)
+      _row(
+        icon: Icons.open_in_new,
+        label: '打开 ${widget.activeName}',
+        onTap: () => _activate(widget.onOpenApp!),
+      ),
+    _row(
+      icon: Icons.animation,
+      label: '动作',
+      chevron: true,
+      onTap: () => _show(_MenuView.actions),
+    ),
+    _row(
+      icon: Icons.settings,
+      label: '设置',
+      onTap: () => _activate(widget.onSettings),
+    ),
+    _row(
+      icon: Icons.more_horiz,
+      label: '更多',
+      chevron: true,
+      onTap: () => _show(_MenuView.more),
+    ),
+    _divider(),
+    _row(
+      icon: Icons.power_settings_new,
+      label: '退出大肥鱼助手',
+      danger: true,
+      onTap: () => _activate(widget.onQuit),
+    ),
+  ];
+
+  // ---------------------------------------------------------------------------
+  // 更多视图：低频但有实际用途的维护入口
+  // ---------------------------------------------------------------------------
+
+  List<Widget> _moreRows() => [
+    _backRow(),
+    if (widget.onResetPosition != null)
+      _row(
+        icon: Icons.my_location,
+        label: '回到初始位置',
+        onTap: () => _activate(widget.onResetPosition!),
+      ),
+    if (widget.onReloadConfig != null)
+      _row(
+        icon: Icons.refresh,
+        label: '重载配置',
+        onTap: () => _activate(widget.onReloadConfig!),
+      ),
+  ];
+
+  // ---------------------------------------------------------------------------
+  // 动作视图：分类分组 + 动画名，一屏内滚动，点一次即播放
+  // ---------------------------------------------------------------------------
+
+  List<Widget> _actionRows() {
+    final groups = _actionGroups();
+    return [
+      _backRow(),
+      for (final group in groups) ...[
+        _sectionHeader(group.label),
+        for (final name in group.names)
+          _row(
+            label: name,
+            onTap: () => _activate(() => widget.onPlayAnimation(name)),
+          ),
+      ],
+    ];
+  }
+
+  List<_ActionGroup> _actionGroups() {
     final manifest = widget.manifest;
-    final groups = <PetMenuItem>[];
+    final groups = <_ActionGroup>[];
 
     void add(String label, Iterable<String> names) {
       final usable = names
           .where(manifest.names.contains)
           .toList(growable: false);
       if (usable.isEmpty) return;
-      groups.add(
-        PetMenuItem.branch(label, [
-          for (final name in usable)
-            PetMenuItem.leaf(name, () => widget.onPlayAnimation(name)),
-        ]),
-      );
+      groups.add(_ActionGroup(label, usable));
     }
 
     add('待机', manifest.idle);
@@ -153,368 +272,99 @@ class _PetMenuState extends State<PetMenu> {
     return groups;
   }
 
-  double _panelHeight(int count) =>
-      math.min(_maxPanelHeight, _panelPadding * 2 + count * _rowHeight);
+  // ---------------------------------------------------------------------------
+  // 行与切换
+  // ---------------------------------------------------------------------------
 
-  Offset _placeRoot(double width, double height) {
-    final screen = widget.screen;
-    final minX = screen.left + 4;
-    final minY = screen.top + 4;
-    final maxX = math.max(minX, screen.right - 4 - width);
-    final maxY = math.max(minY, screen.bottom - 4 - height);
-    var x = widget.anchor.dx;
-    var y = widget.anchor.dy;
-    if (x + width > screen.right - 4) x = widget.anchor.dx - width;
-    if (y + height > screen.bottom - 4) y = widget.anchor.dy - height;
-    return Offset(x.clamp(minX, maxX), y.clamp(minY, maxY));
-  }
+  Widget _backRow() => _row(
+    icon: Icons.chevron_left,
+    label: '返回',
+    onTap: () => _show(_MenuView.root),
+  );
 
-  Offset _placeSub({
-    required Offset parent,
-    required double parentWidth,
-    required double itemTop,
-    required double width,
-    required double height,
-    required bool preferLeft,
+  Widget _divider() => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 6),
+    child: Container(height: 1, color: const Color(0x14FFFFFF)),
+  );
+
+  Widget _sectionHeader(String label) => Padding(
+    padding: const EdgeInsets.fromLTRB(10, 10, 10, 4),
+    child: Text(
+      label,
+      style: const TextStyle(color: _secondaryText, fontSize: 11),
+    ),
+  );
+
+  Widget _row({
+    required String label,
+    required VoidCallback onTap,
+    IconData? icon,
+    bool chevron = false,
+    bool danger = false,
   }) {
-    final screen = widget.screen;
-    final minX = screen.left + 4;
-    final maxX = math.max(minX, screen.right - 4 - width);
-    final minY = screen.top + 4;
-    final maxY = math.max(minY, screen.bottom - 4 - height);
-
-    var x = preferLeft ? parent.dx - width - 4 : parent.dx + parentWidth + 4;
-    if (x + width > screen.right - 4) x = parent.dx - width - 4;
-    if (x < screen.left + 4) x = parent.dx + parentWidth + 4;
-    var y = itemTop;
-    if (y + height > screen.bottom - 4) y = screen.bottom - 4 - height;
-    return Offset(x.clamp(minX, maxX), y.clamp(minY, maxY));
-  }
-
-  void _onRootHover(int index, PetMenuItem item) {
-    _cancelClose();
-    if (item.isBranch) {
-      if (_openRootIndex != index || _openCategoryIndex != null) {
-        setState(() {
-          _openRootIndex = index;
-          _openCategoryIndex = null;
-        });
-      }
-    } else if (_openRootIndex != null || _openCategoryIndex != null) {
-      setState(() {
-        _openRootIndex = null;
-        _openCategoryIndex = null;
-      });
-    }
-  }
-
-  void _onRootTap(int index, PetMenuItem item) {
-    _cancelClose();
-    if (!item.isBranch) {
-      _activate(item);
-      return;
-    }
-    setState(() {
-      _openRootIndex = index;
-      _openCategoryIndex = null;
-    });
-  }
-
-  void _onCategoryHover(int index) {
-    _cancelClose();
-    if (_openCategoryIndex != index) {
-      setState(() => _openCategoryIndex = index);
-    }
-  }
-
-  void _onCategoryTap(int index, PetMenuItem item) {
-    _cancelClose();
-    setState(() => _openCategoryIndex = index);
-  }
-
-  void _activate(PetMenuItem item) {
-    _cancelClose();
-    widget.onClose();
-    item.onTap?.call();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final root = _rootItems;
-    if (root.isEmpty) return const SizedBox.shrink();
-
-    final rootHeight = _panelHeight(root.length);
-    final rootPos = _placeRoot(_rootWidth, rootHeight);
-    final rootIndex = _openRootIndex;
-    final rootBranch =
-        rootIndex != null && rootIndex < root.length && root[rootIndex].isBranch
-        ? root[rootIndex]
-        : null;
-    final categories = rootBranch?.children ?? const <PetMenuItem>[];
-
-    final categoriesHeight = _panelHeight(categories.length);
-    final categoriesPos = categories.isEmpty
-        ? null
-        : _placeSub(
-            parent: rootPos,
-            parentWidth: _rootWidth,
-            itemTop: rootPos.dy + _panelPadding + (rootIndex ?? 0) * _rowHeight,
-            width: _categoriesWidth,
-            height: categoriesHeight,
-            preferLeft:
-                rootPos.dx + _rootWidth + 4 + _categoriesWidth >
-                widget.screen.right - 4,
-          );
-
-    final categoryIndex = _openCategoryIndex;
-    final categoryBranch =
-        categoriesPos != null &&
-            categoryIndex != null &&
-            categoryIndex < categories.length &&
-            categories[categoryIndex].isBranch
-        ? categories[categoryIndex]
-        : null;
-    final actions = categoryBranch?.children ?? const <PetMenuItem>[];
-
-    final actionsHeight = _panelHeight(actions.length);
-    final actionsPos = actions.isEmpty || categoriesPos == null
-        ? null
-        : _placeSub(
-            parent: categoriesPos,
-            parentWidth: _categoriesWidth,
-            itemTop:
-                categoriesPos.dy +
-                _panelPadding +
-                (categoryIndex ?? 0) * _rowHeight,
-            width: _actionsWidth,
-            height: actionsHeight,
-            preferLeft: categoriesPos.dx < rootPos.dx,
-          );
-
-    return Stack(
-      children: [
-        Positioned.fill(
-          child: GestureDetector(
-            behavior: HitTestBehavior.opaque,
-            onTap: widget.onClose,
-            onSecondaryTap: widget.onClose,
-          ),
-        ),
-        _panel(
-          nodes: root,
-          position: rootPos,
-          width: _rootWidth,
-          height: rootHeight,
-          activeIndex: rootIndex,
-          onHover: _onRootHover,
-          onTap: _onRootTap,
-        ),
-        if (categoriesPos != null)
-          _panel(
-            nodes: categories,
-            position: categoriesPos,
-            width: _categoriesWidth,
-            height: categoriesHeight,
-            activeIndex: categoryIndex,
-            onHover: (index, _) => _onCategoryHover(index),
-            onTap: _onCategoryTap,
-          ),
-        if (actionsPos != null)
-          _panel(
-            nodes: actions,
-            position: actionsPos,
-            width: _actionsWidth,
-            height: actionsHeight,
-            activeIndex: null,
-            onHover: (_, _) {},
-            onTap: (_, item) => _activate(item),
-          ),
-      ],
-    );
-  }
-
-  Widget _panel({
-    required List<PetMenuItem> nodes,
-    required Offset position,
-    required double width,
-    required double height,
-    required int? activeIndex,
-    required void Function(int index, PetMenuItem item) onHover,
-    required void Function(int index, PetMenuItem item) onTap,
-  }) {
-    return Positioned(
-      left: position.dx,
-      top: position.dy,
-      child: _MenuPanel(
-        nodes: nodes,
-        width: width,
-        height: height,
-        activeIndex: activeIndex,
-        onHover: onHover,
+    final foreground = danger ? _dangerText : _primaryText;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
         onTap: onTap,
-        onEnter: _cancelClose,
-        onExit: _scheduleClose,
-      ),
-    );
-  }
-}
-
-/// 一级独立面板：白底、圆角 8、独立滚动，绝不把子面板嵌进父面板里。
-class _MenuPanel extends StatefulWidget {
-  const _MenuPanel({
-    required this.nodes,
-    required this.width,
-    required this.height,
-    required this.activeIndex,
-    required this.onHover,
-    required this.onTap,
-    required this.onEnter,
-    required this.onExit,
-  });
-
-  final List<PetMenuItem> nodes;
-  final double width;
-  final double height;
-  final int? activeIndex;
-  final void Function(int index, PetMenuItem item) onHover;
-  final void Function(int index, PetMenuItem item) onTap;
-  final VoidCallback onEnter;
-  final VoidCallback onExit;
-
-  @override
-  State<_MenuPanel> createState() => _MenuPanelState();
-}
-
-class _MenuPanelState extends State<_MenuPanel> {
-  final ScrollController _scroll = ScrollController();
-
-  @override
-  void dispose() {
-    _scroll.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return MouseRegion(
-      onEnter: (_) => widget.onEnter(),
-      onExit: (_) => widget.onExit(),
-      // 面板背景也要吃掉点击：dsh-pet 里点面板空白处不会把整棵菜单关掉。
-      // 没有这层时，面板 padding/行间空隙的点击会穿透到后面的 barrier。
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: () {},
-        child: Container(
-          width: widget.width,
-          height: widget.height,
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: const Color(0xFAFFFFFF),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0x1F000000)),
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x33000000),
-                blurRadius: 18,
-                offset: Offset(0, 6),
-              ),
-            ],
-          ),
-          child: Scrollbar(
-            controller: _scroll,
-            thumbVisibility: true,
-            thickness: 6,
-            radius: const Radius.circular(3),
-            child: SingleChildScrollView(
-              controller: _scroll,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  for (var i = 0; i < widget.nodes.length; i++)
-                    _MenuRow(
-                      node: widget.nodes[i],
-                      active: widget.activeIndex == i,
-                      onEnter: () => widget.onHover(i, widget.nodes[i]),
-                      onTap: () => widget.onTap(i, widget.nodes[i]),
+        borderRadius: BorderRadius.circular(8),
+        mouseCursor: SystemMouseCursors.click,
+        hoverColor: _hover,
+        splashColor: const Color(0x1AFFFFFF),
+        highlightColor: const Color(0x10FFFFFF),
+        child: SizedBox(
+          height: _rowHeight,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Row(
+              children: [
+                if (icon != null) ...[
+                  Icon(icon, size: 18, color: danger ? foreground : _iconColor),
+                  const SizedBox(width: 10),
+                ] else
+                  const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: 13,
+                      height: 1.25,
                     ),
-                ],
-              ),
+                  ),
+                ),
+                if (chevron)
+                  const Icon(
+                    Icons.chevron_right,
+                    size: 16,
+                    color: _secondaryText,
+                  ),
+              ],
             ),
           ),
         ),
       ),
     );
   }
-}
 
-class _MenuRow extends StatefulWidget {
-  const _MenuRow({
-    required this.node,
-    required this.active,
-    required this.onEnter,
-    required this.onTap,
-  });
-
-  final PetMenuItem node;
-  final bool active;
-  final VoidCallback onEnter;
-  final VoidCallback onTap;
-
-  @override
-  State<_MenuRow> createState() => _MenuRowState();
-}
-
-class _MenuRowState extends State<_MenuRow> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final background = _hover
-        ? const Color(0x242B63FF)
-        : widget.active
-        ? const Color(0x142B63FF)
-        : Colors.transparent;
-    return MouseRegion(
-      cursor: SystemMouseCursors.click,
-      onEnter: (_) {
-        setState(() => _hover = true);
-        widget.onEnter();
-      },
-      onExit: (_) => setState(() => _hover = false),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onTap: widget.onTap,
-        child: Container(
-          height: 28,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          decoration: BoxDecoration(
-            color: background,
-            borderRadius: BorderRadius.circular(6),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  widget.node.label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: Color(0xFF2B2B2B),
-                    fontSize: 13,
-                    height: 1.3,
-                  ),
-                ),
-              ),
-              if (widget.node.isBranch)
-                const Icon(
-                  Icons.chevron_right,
-                  size: 16,
-                  color: Color(0xFF9AA0A6),
-                ),
-            ],
-          ),
-        ),
-      ),
-    );
+  void _show(_MenuView view) {
+    setState(() => _view = view);
+    if (_scroll.hasClients) _scroll.jumpTo(0);
   }
+
+  /// 所有动作项都先关菜单再执行，避免菜单层挡在结果前面。
+  void _activate(VoidCallback action) {
+    widget.onClose();
+    action();
+  }
+}
+
+class _ActionGroup {
+  const _ActionGroup(this.label, this.names);
+
+  final String label;
+  final List<String> names;
 }

@@ -298,9 +298,10 @@ class _PetStageState extends State<PetStage> {
         if (controller.panel.value != PetPanel.menu) {
           return const SizedBox.shrink();
         }
-        // dsh-pet 模式：菜单自己负责根面板/级联子面板的定位与点外关闭。
+        // 单面板菜单：内部按「根/动作/更多」切换视图，定位与点外关闭都在菜单里。
         return PetMenu(
           screen: controller.activeScreen,
+          pet: controller.petRect,
           anchor: controller.menuAnchor ?? controller.petRect.center,
           manifest: controller.manifest,
           activeName: widget.activeName,

@@ -170,7 +170,9 @@ class _PetAppState extends State<PetApp> {
           ? null
           : () => unawaited(_openActiveApp()),
       onReloadConfig: () => unawaited(_reloadConfig()),
-      onWhisper: () => unawaited(_whisperNow(manual: true)),
+      onWhisper: (_ai?.canChat ?? false)
+          ? () => unawaited(_whisperNow(manual: true))
+          : null,
       onAcceptReply: _kernel?.acceptReply,
       onRejectReply: (correction) =>
           _kernel?.rejectReply(correction: correction),

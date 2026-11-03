@@ -1,7 +1,11 @@
 import 'package:dsh_pet_flutter/core/config/animation_manifest.dart';
 import 'package:dsh_pet_flutter/features/menu/pet_menu.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+const Rect _screen = Rect.fromLTWH(0, 0, 800, 600);
+const Rect _pet = Rect.fromLTWH(30, 40, 120, 68);
 
 AnimationManifest _manifest() => AnimationManifest.fromJson({
   'width': 240,
@@ -24,91 +28,153 @@ AnimationManifest _manifest() => AnimationManifest.fromJson({
   'weights': {'idle': 10, 'turn': 0, 'move': 0},
 });
 
-void main() {
-  testWidgets('菜单按 dsh-pet 模式级联展开动作分类', (tester) async {
-    final calls = <String>[];
-    var closed = 0;
-    String? played;
+Widget _menu({
+  Offset anchor = const Offset(40, 40),
+  String activeName = 'Trae CN',
+  VoidCallback? onOpenApp,
+  VoidCallback? onWhisper,
+  VoidCallback? onResetPosition,
+  VoidCallback? onReloadConfig,
+  VoidCallback? onChat,
+  VoidCallback? onSettings,
+  VoidCallback? onQuit,
+  ValueChanged<String>? onPlayAnimation,
+  VoidCallback? onClose,
+}) {
+  return MaterialApp(
+    theme: ThemeData.dark(useMaterial3: true),
+    home: Scaffold(
+      body: PetMenu(
+        screen: _screen,
+        pet: _pet,
+        anchor: anchor,
+        manifest: _manifest(),
+        activeName: activeName,
+        onChat: onChat ?? () {},
+        onSettings: onSettings ?? () {},
+        onQuit: onQuit ?? () {},
+        onPlayAnimation: onPlayAnimation ?? (_) {},
+        onClose: onClose ?? () {},
+        onResetPosition: onResetPosition,
+        onOpenApp: onOpenApp,
+        onReloadConfig: onReloadConfig,
+        onWhisper: onWhisper,
+      ),
+    ),
+  );
+}
 
+void main() {
+  testWidgets('根视图只保留高频入口，低频项收进更多', (tester) async {
+    final calls = <String>[];
     await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          backgroundColor: const Color(0xFF202020),
-          body: PetMenu(
-            screen: const Rect.fromLTWH(0, 0, 800, 600),
-            anchor: const Offset(40, 40),
-            manifest: _manifest(),
-            activeName: 'Trae CN',
-            onChat: () => calls.add('chat'),
-            onSettings: () => calls.add('settings'),
-            onQuit: () => calls.add('quit'),
-            onPlayAnimation: (name) => played = name,
-            onClose: () => closed++,
-            onResetPosition: () => calls.add('reset'),
-            onOpenApp: () => calls.add('open'),
-            onReloadConfig: () => calls.add('reload'),
-            onWhisper: () => calls.add('whisper'),
-          ),
-        ),
+      _menu(
+        onOpenApp: () => calls.add('open'),
+        onWhisper: () => calls.add('whisper'),
+        onChat: () => calls.add('chat'),
+        onSettings: () => calls.add('settings'),
+        onQuit: () => calls.add('quit'),
+        onResetPosition: () => calls.add('reset'),
+        onReloadConfig: () => calls.add('reload'),
       ),
     );
 
-    // 一级：工具项 + 动作；不再有旧的卡片标题/副标题。
-    expect(find.text('打开 Trae CN'), findsOneWidget);
-    expect(find.text('碎碎念'), findsOneWidget);
     expect(find.text('对话'), findsOneWidget);
+    expect(find.text('碎碎念'), findsOneWidget);
+    expect(find.text('打开 Trae CN'), findsOneWidget);
+    expect(find.text('动作'), findsOneWidget);
+    expect(find.text('设置'), findsOneWidget);
+    expect(find.text('更多'), findsOneWidget);
+    expect(find.text('退出大肥鱼助手'), findsOneWidget);
+    // 低频维护项不再占主菜单。
+    expect(find.text('重载配置'), findsNothing);
+    expect(find.text('回到初始位置'), findsNothing);
+
+    await tester.tap(find.text('对话'));
+    await tester.tap(find.text('碎碎念'));
+    await tester.tap(find.text('打开 Trae CN'));
+    await tester.tap(find.text('设置'));
+    await tester.tap(find.text('退出大肥鱼助手'));
+    expect(calls, ['chat', 'whisper', 'open', 'settings', 'quit']);
+  });
+
+  testWidgets('没有 AI / 没有关联软件时隐藏对应入口', (tester) async {
+    await tester.pumpWidget(_menu(activeName: ''));
+
+    expect(find.text('碎碎念'), findsNothing);
+    expect(find.textContaining('打开 '), findsNothing);
+    expect(find.text('对话'), findsOneWidget);
+    expect(find.text('设置'), findsOneWidget);
+  });
+
+  testWidgets('更多视图收纳回到初始位置与重载配置', (tester) async {
+    final calls = <String>[];
+    await tester.pumpWidget(
+      _menu(
+        onResetPosition: () => calls.add('reset'),
+        onReloadConfig: () => calls.add('reload'),
+      ),
+    );
+
+    await tester.tap(find.text('更多'));
+    await tester.pumpAndSettle();
     expect(find.text('回到初始位置'), findsOneWidget);
     expect(find.text('重载配置'), findsOneWidget);
-    expect(find.text('设置'), findsOneWidget);
-    expect(find.text('退出大肥鱼助手'), findsOneWidget);
-    expect(find.text('动作'), findsOneWidget);
+    expect(find.text('动作'), findsNothing);
 
-    // 二级：点「动作」展开分类。
+    await tester.tap(find.text('回到初始位置'));
+    await tester.pumpAndSettle();
+    expect(calls, ['reset']);
+
+    await tester.tap(find.text('返回'));
+    await tester.pumpAndSettle();
+    expect(find.text('更多'), findsOneWidget);
+  });
+
+  testWidgets('动作视图按分类分组，点动画名即播放并关闭', (tester) async {
+    final played = <String>[];
+    var closed = 0;
+    await tester.pumpWidget(
+      _menu(onPlayAnimation: played.add, onClose: () => closed++),
+    );
+
     await tester.tap(find.text('动作'));
     await tester.pumpAndSettle();
     expect(find.text('待机'), findsOneWidget);
+    expect(find.text('拖拽'), findsOneWidget);
     expect(find.text('小动作'), findsOneWidget);
-
-    // 三级：点分类展开具体动画；点动画回调并关闭菜单。
-    await tester.tap(find.text('小动作'));
-    await tester.pumpAndSettle();
+    expect(find.text('待机呼吸休闲'), findsOneWidget);
+    expect(find.text('被鼠标拖拽悬空反馈'), findsOneWidget);
     expect(find.text('吃掉'), findsOneWidget);
+
     await tester.tap(find.text('吃掉'));
     await tester.pumpAndSettle();
-    expect(played, '吃掉');
+    expect(played, ['吃掉']);
+    expect(closed, 1);
+
+    await tester.tap(find.text('返回'));
+    await tester.pumpAndSettle();
+    expect(find.text('动作'), findsOneWidget);
+  });
+
+  testWidgets('Esc 可关闭菜单', (tester) async {
+    var closed = 0;
+    await tester.pumpWidget(_menu(onClose: () => closed++));
+    await tester.pump();
+
+    await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+    await tester.pump();
     expect(closed, 1);
   });
 
-  testWidgets('没有关联软件时不显示打开项，点击工具项走对应回调', (tester) async {
-    final calls = <String>[];
-    await tester.pumpWidget(
-      MaterialApp(
-        home: Scaffold(
-          body: PetMenu(
-            screen: const Rect.fromLTWH(0, 0, 800, 600),
-            anchor: const Offset(40, 40),
-            manifest: _manifest(),
-            activeName: '',
-            onChat: () => calls.add('chat'),
-            onSettings: () => calls.add('settings'),
-            onQuit: () => calls.add('quit'),
-            onPlayAnimation: (_) {},
-            onClose: () {},
-            onResetPosition: () => calls.add('reset'),
-            onReloadConfig: () => calls.add('reload'),
-            onWhisper: () => calls.add('whisper'),
-          ),
-        ),
-      ),
-    );
+  testWidgets('贴近屏幕右下时翻转到屏幕内', (tester) async {
+    await tester.pumpWidget(_menu(anchor: const Offset(780, 580)));
+    await tester.pumpAndSettle();
 
-    expect(find.textContaining('打开 '), findsNothing);
-    await tester.tap(find.text('碎碎念'));
-    await tester.tap(find.text('对话'));
-    await tester.tap(find.text('回到初始位置'));
-    await tester.tap(find.text('重载配置'));
-    await tester.tap(find.text('设置'));
-    await tester.tap(find.text('退出大肥鱼助手'));
-    expect(calls, ['whisper', 'chat', 'reset', 'reload', 'settings', 'quit']);
+    final panel = tester.getRect(find.byKey(const ValueKey('pet-menu-panel')));
+    expect(panel.left, greaterThanOrEqualTo(_screen.left + 6));
+    expect(panel.top, greaterThanOrEqualTo(_screen.top + 6));
+    expect(panel.right, lessThanOrEqualTo(_screen.right - 6));
+    expect(panel.bottom, lessThanOrEqualTo(_screen.bottom - 6));
   });
 }
