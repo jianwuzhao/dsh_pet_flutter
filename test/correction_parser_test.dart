@@ -37,7 +37,12 @@ class _FakeHost extends ExpressionHost {
   void playAnimation(String name) {}
 
   @override
-  void showBubble(String text, {String? meme, bool dismissible = false}) {}
+  void showBubble(
+    String text, {
+    String? meme,
+    bool dismissible = false,
+    void Function()? onTap,
+  }) {}
 }
 
 void main() {

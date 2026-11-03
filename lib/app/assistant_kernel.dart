@@ -416,6 +416,33 @@ class AssistantKernel {
   /// 主动关心气泡被提前关闭：拒绝样本；自然过期不记。
   void dismissCare() => _learning.dismissCare();
 
+  /// 待确认队列合计：策略提案 + 准则待确认 + 记忆待确认。
+  int get pendingConfirmationCount =>
+      _learning.policy.proposals.length +
+      (_guidelines?.pending.length ?? 0) +
+      _memory.pending.length;
+
+  /// 最近一次待确认触达的时间：冷却窗口内不重复冒气泡。
+  DateTime? _lastPendingNoticeAt;
+
+  /// 触达冷却：确认闭环要推进，但不能拿提醒轰炸用户。
+  static const Duration pendingNoticeCooldown = Duration(hours: 6);
+
+  /// 待确认队列轻量触达（P0-6）：有积压时冒一条可点开的气泡，
+  /// 点击直达设置面板；冷却 6 小时，空队列完全静默。
+  void notifyPendingConfirmations() {
+    final count = pendingConfirmationCount;
+    if (count <= 0) return;
+    final now = _clock();
+    final last = _lastPendingNoticeAt;
+    if (last != null && now.difference(last) < pendingNoticeCooldown) return;
+    _lastPendingNoticeAt = now;
+    _host.showBubble(
+      '我攒了 $count 条学习心得等你确认，要看看吗？',
+      onTap: _host.openPendingConfirmations,
+    );
+  }
+
   /// 启动：读人格 DNA 与情绪档案（失败气泡报错、保持默认值不写盘），
   /// 再挂上衰减（60s/拍）与主动关心巡检（30s/拍）两个周期任务，
   /// 最后把会话服务挂到网关对话路径。
@@ -572,6 +599,9 @@ class AssistantKernel {
     }
     _persistIntimacy();
     _recordMetrics();
+    // 日终顺带检查待确认积压：重启（start 也走这里）与跨天各触达一次，
+    // 冷却窗口防双发。放在最后：前面任何写入失败都不影响触达独立判断。
+    notifyPendingConfirmations();
   }
 
   /// 亲密度快照落盘：退出（dispose）与日终各兜一次，

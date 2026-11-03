@@ -14,6 +14,7 @@ class BubbleWidget extends StatelessWidget {
     required this.state,
     this.tailDown = true,
     this.onDismiss,
+    this.onOpen,
   });
 
   final BubbleState state;
@@ -23,6 +24,9 @@ class BubbleWidget extends StatelessWidget {
 
   /// 主动关心的“知道了”入口；非 dismissible 气泡传 null。
   final VoidCallback? onDismiss;
+
+  /// 气泡动作（“去看看”）入口；待确认队列触达等可点开面板的场景。
+  final VoidCallback? onOpen;
 
   static const Color _cardColor = Color(0xE61B1B20);
 
@@ -109,6 +113,12 @@ class BubbleWidget extends StatelessWidget {
         IgnorePointer(child: card),
         if (state.dismissible && onDismiss != null)
           Positioned(top: 2, right: 2, child: _DismissButton(onTap: onDismiss!)),
+        if (onOpen != null)
+          Positioned(
+            bottom: 4,
+            right: 4,
+            child: _ActionButton(onTap: onOpen!),
+          ),
       ],
     );
 
@@ -144,6 +154,32 @@ class _DismissButton extends StatelessWidget {
         border: Border.all(color: const Color(0x40FFFFFF)),
       ),
       child: const Icon(Icons.close, size: 12, color: Color(0xF2FFFFFF)),
+    ),
+  );
+}
+
+/// 气泡动作钮（“去看看”）：与关闭钮同一套命中语义——只点按钮本体，
+/// 未命中区域继续桌面穿透。
+class _ActionButton extends StatelessWidget {
+  const _ActionButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    onTap: onTap,
+    behavior: HitTestBehavior.opaque,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0x33FFFFFF),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0x40FFFFFF)),
+      ),
+      child: const Text(
+        '去看看',
+        style: TextStyle(color: Color(0xF2FFFFFF), fontSize: 11),
+      ),
     ),
   );
 }

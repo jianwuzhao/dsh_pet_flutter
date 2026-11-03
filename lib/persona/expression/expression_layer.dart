@@ -4,6 +4,8 @@
 /// PetController 的适配在装配层完成。
 library;
 
+import 'dart:ui' show VoidCallback;
+
 import '../emotion/response_strategy.dart';
 
 /// 表达宿主：动画点播与气泡展示的最小能力集。
@@ -13,7 +15,17 @@ abstract class ExpressionHost {
 
   /// 展示气泡；宿主负责自动隐藏计时。
   /// [dismissible] = true 时宿主可提供“提前关闭”入口（目前仅主动关心）。
-  void showBubble(String text, {String? meme, bool dismissible = false});
+  /// [onTap] 非空时气泡带“去看看”动作入口（待确认队列触达用）。
+  void showBubble(
+    String text, {
+    String? meme,
+    bool dismissible = false,
+    VoidCallback? onTap,
+  });
+
+  /// 气泡动作点击后的落点：打开待确认面板。
+  /// 宿主没有面板能力时保持默认空实现，气泡退化为纯文案提醒。
+  void openPendingConfirmations() {}
 }
 
 /// TTS 留桩：首期只有空实现，接口先行（计划 4.7）。

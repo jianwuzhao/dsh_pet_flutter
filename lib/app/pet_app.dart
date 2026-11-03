@@ -911,8 +911,21 @@ class _PetExpressionHost extends ExpressionHost {
   void playAnimation(String name) => _controller.playExpressionAnimation(name);
 
   @override
-  void showBubble(String text, {String? meme, bool dismissible = false}) =>
-      _controller.showBubble(text, meme: meme, dismissible: dismissible);
+  void showBubble(
+    String text, {
+    String? meme,
+    bool dismissible = false,
+    VoidCallback? onTap,
+  }) => _controller.showBubble(
+    text,
+    meme: meme,
+    dismissible: dismissible,
+    onTap: onTap,
+  );
+
+  @override
+  void openPendingConfirmations() =>
+      _controller.openPanel(PetPanel.settings);
 }
 
 class _ErrorView extends StatelessWidget {

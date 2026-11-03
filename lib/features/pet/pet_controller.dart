@@ -32,6 +32,7 @@ class BubbleState {
     this.source = '',
     this.meme,
     this.dismissible = false,
+    this.onTap,
   });
 
   final String text;
@@ -44,6 +45,9 @@ class BubbleState {
   /// true = 气泡带“知道了”关闭入口（仅主动关心使用）。
   /// 其余气泡保持纯展示：桌面穿透行为完全不变。
   final bool dismissible;
+
+  /// 气泡动作（“去看看”）：待确认队列触达点击后打开面板。
+  final void Function()? onTap;
 }
 
 enum _Mode { pose, drag, status }
@@ -623,6 +627,7 @@ class PetController {
     String source = '',
     String? meme,
     bool dismissible = false,
+    void Function()? onTap,
   }) {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
@@ -632,6 +637,7 @@ class PetController {
       source: source,
       meme: meme,
       dismissible: dismissible,
+      onTap: onTap,
     );
     _bubbleTimer?.cancel();
     _bubbleTimer = Timer(const Duration(seconds: 7), hideBubble);

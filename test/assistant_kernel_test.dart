@@ -35,13 +35,27 @@ import 'package:flutter_test/flutter_test.dart';
 class _FakeHost extends ExpressionHost {
   final animations = <String>[];
   final bubbles = <String>[];
+  int panelOpens = 0;
+
+  /// 最近一条气泡携带的动作（待确认触达的“去看看”落点）。
+  void Function()? lastBubbleTap;
 
   @override
   void playAnimation(String name) => animations.add(name);
 
   @override
-  void showBubble(String text, {String? meme, bool dismissible = false}) =>
-      bubbles.add(text);
+  void showBubble(
+    String text, {
+    String? meme,
+    bool dismissible = false,
+    void Function()? onTap,
+  }) {
+    bubbles.add(text);
+    lastBubbleTap = onTap;
+  }
+
+  @override
+  void openPendingConfirmations() => panelOpens++;
 }
 
 /// 可回复的假提供者：日终复盘测试用，chat 永远返回固定 JSON。
@@ -586,6 +600,80 @@ void main() {
       ]);
       expect(metrics.latest()!.memoryActive, 0);
       expect(metrics.latest()!.memoryArchived, 1);
+    });
+  });
+
+  group('待确认队列触达', () {
+    test('空队列完全静默：不冒气泡', () {
+      final kernel = buildKernel()..start();
+      expect(kernel.pendingConfirmationCount, 0);
+      kernel.notifyPendingConfirmations();
+      expect(host.bubbles, isEmpty);
+    });
+
+    test('有积压冒可点开面板的气泡，冷却窗口内不重复', () {
+      final memory = MemoryStore(directory: Directory('${tmpDir.path}/memory'))
+        ..add(
+          MemoryEntry(
+            id: 'm-pending',
+            kind: MemoryKind.preference,
+            content: '称呼偏好：老板',
+            createdAt: now,
+            status: MemoryStatus.pending,
+            source: 'llm',
+          ),
+        );
+      final kernel = AssistantKernel(
+        gateway: InteractionGateway(
+          dispatcher: Dispatcher(
+            registry: AdapterRegistry(const {}),
+            activeId: '',
+          ),
+          router: LlmRouter(providers: const []),
+        ),
+        store: ProfileStore(directory: tmpDir),
+        host: host,
+        privacy: PrivacyCenter(directory: tmpDir),
+        memory: memory,
+        learning: LearningLoop(
+          collector: FeedbackCollector(
+            file: File('${tmpDir.path}/feedback.jsonl'),
+            clock: () => now,
+          ),
+          policy: PolicyStore(
+            directory: Directory('${tmpDir.path}/learning'),
+            clock: () => now,
+          ),
+          host: host,
+          clock: () => now,
+        ),
+        metrics: MetricsStore(
+          directory: Directory('${tmpDir.path}/learning'),
+          clock: () => now,
+        ),
+        appearanceStore: AppearanceStore(
+          directory: Directory('${tmpDir.path}/profile'),
+        ),
+        clock: () => now,
+      )..start();
+
+      // start（→ housekeeping）就该触达一次：重启时积压要提醒。
+      expect(kernel.pendingConfirmationCount, 1);
+      expect(host.bubbles.single, contains('1 条学习心得'));
+      expect(host.lastBubbleTap, isNotNull);
+
+      // 点击“去看看”：收气泡 + 打开待确认面板。
+      host.lastBubbleTap!();
+      expect(host.panelOpens, 1);
+
+      // 冷却窗口内的重复触发被节流。
+      kernel.notifyPendingConfirmations();
+      expect(host.bubbles, hasLength(1));
+
+      // 窗口过后恢复触达。
+      now = now.add(const Duration(hours: 6, minutes: 1));
+      kernel.notifyPendingConfirmations();
+      expect(host.bubbles, hasLength(2));
     });
   });
 }

@@ -16,10 +16,18 @@ class _RecordingHost implements ExpressionHost {
   void playAnimation(String name) => animations.add(name);
 
   @override
-  void showBubble(String text, {String? meme, bool dismissible = false}) {
+  void showBubble(
+    String text, {
+    String? meme,
+    bool dismissible = false,
+    void Function()? onTap,
+  }) {
     bubbles.add((text, meme));
     dismissibles.add(dismissible);
   }
+
+  @override
+  void openPendingConfirmations() {}
 }
 
 class _RecordingTts implements TtsSink {

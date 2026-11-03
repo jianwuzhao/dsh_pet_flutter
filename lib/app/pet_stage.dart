@@ -284,9 +284,10 @@ class _PetStageState extends State<PetStage> {
         final pet = controller.petRect;
         // 头顶空间不够时气泡翻到脚下，避免贴顶时被窗口裁掉。
         final below = pet.top - screen.top < 150;
-        // 只有可关闭气泡（主动关心）才放开指针命中：
+        // 可交互（可关闭/带动作）气泡才放开指针命中：
         // 默认整层仍 IgnorePointer，桌面点击完全穿透，行为不变。
-        final interactive = state.dismissible && widget.onDismissCare != null;
+        final dismissible = state.dismissible && widget.onDismissCare != null;
+        final interactive = dismissible || state.onTap != null;
         return Positioned.fill(
           child: IgnorePointer(
             ignoring: !interactive,
@@ -303,7 +304,15 @@ class _PetStageState extends State<PetStage> {
               child: BubbleWidget(
                 state: state,
                 tailDown: !below,
-                onDismiss: interactive ? _dismissCare : null,
+                onDismiss: dismissible ? _dismissCare : null,
+                // 动作点击：先收气泡再执行（打开面板等），与关闭钮同语义。
+                onOpen:
+                    state.onTap == null
+                        ? null
+                        : () {
+                            controller.hideBubble();
+                            state.onTap!();
+                          },
               ),
             ),
           ),
