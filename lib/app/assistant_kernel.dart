@@ -536,6 +536,7 @@ class AssistantKernel {
   void _recordMetrics() {
     final now = _clock();
     final stats = _memory.stats;
+    final quality = _qualityMetrics(now);
     final result = _metrics.record(
       MetricsSnapshot(
         // ISO 时间串前 10 位即 YYYY-MM-DD，与 MetricsStore 的主键口径一致。
@@ -549,11 +550,88 @@ class AssistantKernel {
         feedbackCount: _learning.collector.load().length,
         policyVersion: _learning.policy.version,
         appearanceRevisions: _appearanceStore.history().length,
+        replyAcceptRate7d: quality.$1,
+        correctionRate7d: quality.$2,
+        taskSuccessRate7d: quality.$3,
+        guidelineProposalRate7d: quality.$4,
+        pendingBacklog: quality.$5,
       ),
     );
     if (result is Failure<void>) {
       debugPrint('[dafishu] 指标快照写入失败：${result.reason}');
     }
+  }
+
+  /// 近 7 天质量指标：全部从本地流水现算，无样本的维度保持 -1。
+  ///
+  /// 口径固定（跨版本可比）：
+  /// - 回复接受率 = reply 目标 accepted / reply 目标全部反馈；
+  /// - 纠正占比 = corrected / 全部反馈（含 memory/policy 目标）；
+  /// - 任务成功率 = 任务终态 success / 全部任务终态（读反思流水）；
+  /// - 准则提案数 = 近 7 天创建的准则（含已接受/已停用）；
+  /// - 积压 = 准则与策略待确认队列长度之和。
+  (double, double, double, double, double) _qualityMetrics(DateTime now) {
+    final window = const Duration(days: 7);
+    final feedback = _learning.collector.load();
+    final recent = feedback
+        .where((event) => event.at.isAfter(now.subtract(window)))
+        .toList(growable: false);
+
+    final replyTotal = recent
+        .where((event) => event.target.startsWith('reply:'))
+        .length;
+    final replyAccepted = recent
+        .where(
+          (event) =>
+              event.target.startsWith('reply:') &&
+              event.verdict == FeedbackVerdict.accepted,
+        )
+        .length;
+    final replyAcceptRate = replyTotal == 0
+        ? -1.0
+        : replyAccepted / replyTotal;
+
+    final correctedTotal = recent
+        .where((event) => event.verdict == FeedbackVerdict.corrected)
+        .length;
+    final correctionRate = recent.isEmpty ? -1.0 : correctedTotal / recent.length;
+
+    final tasks = _evolution?.reflections
+        .load()
+        .where(
+          (entry) =>
+              entry.kind == ReflectionKind.task &&
+              entry.at.isAfter(now.subtract(window)),
+        )
+        .toList(growable: false);
+    final taskTotal = tasks?.length ?? 0;
+    final taskSuccess = tasks
+        ?.where((entry) => entry.outcome == 'success')
+        .length ?? 0;
+    final taskSuccessRate = taskTotal == 0 ? -1.0 : taskSuccess / taskTotal;
+
+    final guidelines = _evolution?.guidelines;
+    final proposals7d = guidelines == null
+        ? 0.0
+        : [
+                ...guidelines.pending,
+                ...guidelines.active,
+                ...guidelines.archived,
+              ]
+              .where((item) => item.createdAt.isAfter(now.subtract(window)))
+              .length
+              .toDouble();
+
+    final backlog = (_evolution?.guidelines.pending.length ?? 0) +
+        _learning.policy.proposals.length;
+
+    return (
+      replyAcceptRate,
+      correctionRate,
+      taskSuccessRate,
+      proposals7d,
+      backlog.toDouble(),
+    );
   }
 
   /// 衰减一拍（timer 调用；公开以便离线测试）：

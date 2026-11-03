@@ -95,6 +95,11 @@ void main() {
       feedbackCount: 9,
       policyVersion: 3,
       appearanceRevisions: 5,
+      replyAcceptRate7d: 0.75,
+      correctionRate7d: 0.25,
+      taskSuccessRate7d: 0.6,
+      guidelineProposalRate7d: 3,
+      pendingBacklog: 8,
       recordedAt: DateTime.parse('2026-11-03T23:59:59'),
     );
     final restored = MetricsSnapshot.fromJson(
@@ -111,9 +116,15 @@ void main() {
     expect(restored.feedbackCount, 9);
     expect(restored.policyVersion, 3);
     expect(restored.appearanceRevisions, 5);
+    expect(restored.replyAcceptRate7d, 0.75);
+    expect(restored.correctionRate7d, 0.25);
+    expect(restored.taskSuccessRate7d, 0.6);
+    // 计数字段可以大于 1，不能被比率夹取截断。
+    expect(restored.guidelineProposalRate7d, 3);
+    expect(restored.pendingBacklog, 8);
     expect(restored.recordedAt, DateTime.parse('2026-11-03T23:59:59'));
 
-    // 容错解析：只给主键，其余字段一律 0/epoch。
+    // 容错解析：只给主键，其余字段一律 0/epoch/-1。
     final sparse = MetricsSnapshot.fromJson({'date': '2026-11-02'});
     expect(sparse.date, '2026-11-02');
     expect(sparse.sessions, 0);
@@ -124,6 +135,23 @@ void main() {
     expect(sparse.feedbackCount, 0);
     expect(sparse.policyVersion, 0);
     expect(sparse.appearanceRevisions, 0);
+    expect(sparse.replyAcceptRate7d, -1);
+    expect(sparse.correctionRate7d, -1);
+    expect(sparse.taskSuccessRate7d, -1);
+    expect(sparse.guidelineProposalRate7d, -1);
+    expect(sparse.pendingBacklog, -1);
     expect(sparse.recordedAt, DateTime.fromMillisecondsSinceEpoch(0));
+  });
+
+  test('比率字段非法值（负数/NaN/超界）容错：负数归 -1，超界夹取', () {
+    final restored = MetricsSnapshot.fromJson({
+      'date': '2026-11-03',
+      'replyAcceptRate7d': -0.5,
+      'correctionRate7d': 1.7,
+      'pendingBacklog': double.nan,
+    });
+    expect(restored.replyAcceptRate7d, -1); // 负数 = 无样本
+    expect(restored.correctionRate7d, 1.0); // 超界夹取
+    expect(restored.pendingBacklog, -1); // NaN = 未采集
   });
 }

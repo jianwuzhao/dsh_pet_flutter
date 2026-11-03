@@ -33,6 +33,11 @@ class MetricsSnapshot {
     this.feedbackCount = 0,
     this.policyVersion = 0,
     this.appearanceRevisions = 0,
+    this.replyAcceptRate7d = -1,
+    this.correctionRate7d = -1,
+    this.taskSuccessRate7d = -1,
+    this.guidelineProposalRate7d = -1,
+    this.pendingBacklog = -1,
   });
 
   /// YYYY-MM-DD：一天一条的主键，字符串序即时间序。
@@ -56,6 +61,22 @@ class MetricsSnapshot {
   /// 形象推演累计次数。
   final int appearanceRevisions;
 
+  /// 近 7 天回复接受率（reply 目标 accepted / 全部 reply 反馈）。
+  /// -1 = 窗口内没有样本，不能当 0 算。
+  final double replyAcceptRate7d;
+
+  /// 近 7 天纠正占比（corrected / 全部反馈）：越低越好。
+  final double correctionRate7d;
+
+  /// 近 7 天任务成功率（成功终态 / 全部任务终态）。
+  final double taskSuccessRate7d;
+
+  /// 近 7 天准则提案数：学习回路“有没有在产出”的直接信号。
+  final double guidelineProposalRate7d;
+
+  /// 采集时刻的待确认提案积压（准则 + 策略）：负向健康度。
+  final double pendingBacklog;
+
   /// 记录时刻（落盘为 ISO 时间）。
   final DateTime recordedAt;
 
@@ -72,10 +93,29 @@ class MetricsSnapshot {
         policyVersion: (json['policyVersion'] as num?)?.toInt() ?? 0,
         appearanceRevisions:
             (json['appearanceRevisions'] as num?)?.toInt() ?? 0,
+        replyAcceptRate7d: _rateOf(json['replyAcceptRate7d']),
+        correctionRate7d: _rateOf(json['correctionRate7d']),
+        taskSuccessRate7d: _rateOf(json['taskSuccessRate7d']),
+        guidelineProposalRate7d: _countOf(json['guidelineProposalRate7d']),
+        pendingBacklog: _countOf(json['pendingBacklog']),
         recordedAt:
             DateTime.tryParse(json['recordedAt'] as String? ?? '') ??
             DateTime.fromMillisecondsSinceEpoch(0),
       );
+
+  /// 比率字段解析：null/负数/非法一律 -1（无样本），正常值夹取 [0,1]。
+  static double _rateOf(Object? raw) {
+    final value = (raw as num?)?.toDouble();
+    if (value == null || value.isNaN || value < 0) return -1;
+    return value.clamp(0.0, 1.0);
+  }
+
+  /// 计数字段解析：非负保留原值（可以大于 1），非法一律 -1（未采集）。
+  static double _countOf(Object? raw) {
+    final value = (raw as num?)?.toDouble();
+    if (value == null || value.isNaN || value < 0) return -1;
+    return value;
+  }
 
   /// 全量输出：不省略零值，字段口径稳定便于跨版本对比。
   Map<String, dynamic> toJson() => {
@@ -88,6 +128,11 @@ class MetricsSnapshot {
     'feedbackCount': feedbackCount,
     'policyVersion': policyVersion,
     'appearanceRevisions': appearanceRevisions,
+    'replyAcceptRate7d': replyAcceptRate7d,
+    'correctionRate7d': correctionRate7d,
+    'taskSuccessRate7d': taskSuccessRate7d,
+    'guidelineProposalRate7d': guidelineProposalRate7d,
+    'pendingBacklog': pendingBacklog,
     'recordedAt': recordedAt.toIso8601String(),
   };
 }
