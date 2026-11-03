@@ -28,25 +28,44 @@ class EvolutionEngine {
 
   int get reflectionCount => _reflections.load().length;
 
+  /// intent 截断上限：dispatch 原文可能很长，反思里只需要“当时想做什么”。
+  static const int maxIntentChars = 80;
+
   /// 任务终态：记录结果摘要，供后续复盘；不直接生成准则。
-  void recordStatus(StatusSnapshot? snapshot) {
+  ///
+  /// [intent] 是触发这次任务的 dispatch 原文（截断 80 字符）：
+  /// 没有它，后续复盘只能看到“失败了”，猜不出“当时想干什么”。
+  void recordStatus(StatusSnapshot? snapshot, {String intent = ''}) {
     if (snapshot == null || !snapshot.isTerminal) return;
+    final isSuccess = snapshot.state == AssistantStatus.success;
     _reflections.record(
       ReflectionEntry(
         id: ReflectionEntry.newId(_clock()),
         at: _clock(),
         kind: ReflectionKind.task,
-        outcome: snapshot.state == AssistantStatus.success
-            ? 'success'
-            : 'failure',
+        outcome: isSuccess ? 'success' : 'failure',
         summary: snapshot.text.trim().isEmpty
             ? snapshot.state.name
             : snapshot.text.trim(),
         source: snapshot.source,
         taskId: snapshot.taskId ?? '',
+        intent: _clipIntent(intent),
+        // 根因初值只到“哪个通道、什么终态”这一层：把猜测留给复盘，
+        // 但先占住字段位，保证后续复盘是“修正”而不是“补写”。
+        rootCause: isSuccess
+            ? ''
+            : '${snapshot.source} 通道任务失败（${snapshot.state.name}），根因待复盘',
+        // 任务终态没有用户参与判定：成功是系统自报，失败根因未验证。
+        verification: isSuccess ? 'auto-observed' : 'unverified',
         evidence: ['status:${snapshot.state.name}'],
       ),
     );
+  }
+
+  static String _clipIntent(String text) {
+    final trimmed = text.trim();
+    if (trimmed.length <= maxIntentChars) return trimmed;
+    return '${trimmed.substring(0, maxIntentChars)}…';
   }
 
   /// 用户采纳回复：正样本，用于后续判断某条准则是否有效。
@@ -78,6 +97,11 @@ class EvolutionEngine {
         outcome: 'negative',
         summary: text,
         source: 'user',
+        // 用户指出的“哪里不对”本身就是根因的最好初值，
+        // 后续复盘只需要在此基础上细化，而不是从零猜。
+        rootCause: text,
+        // 纠正来自用户亲眼观察：结果验证方式记 user-observed。
+        verification: 'user-observed',
         evidence: ['feedback:corrected'],
       ),
     );

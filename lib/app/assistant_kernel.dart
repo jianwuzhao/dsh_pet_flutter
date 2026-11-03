@@ -163,6 +163,15 @@ class AssistantKernel {
   /// 最近一次“日程维护”的日期（天粒度）：记忆衰减 + 指标快照每天最多一次。
   DateTime? _lastHousekeepingDay;
 
+  /// 最近一次 dispatch 的原文与时间：任务终态回填反思 intent 用。
+  /// 只保留单槽 + 新鲜度窗口——终态通常紧跟最近一次派发，
+  /// 跨 source 精确匹配的成本远大于收益。
+  String _lastDispatchText = '';
+  DateTime? _lastDispatchAt;
+
+  /// intent 只在 dispatch 后 10 分钟内有效：过期的原文与后续终态无关。
+  static const Duration dispatchIntentWindow = Duration(minutes: 10);
+
   /// UI 可监听的情绪快照（三维数值，供画像/调试展示用）。
   final ValueNotifier<EmotionView> emotion;
 
@@ -426,6 +435,9 @@ class AssistantKernel {
     applySignal(EmotionSignal.interaction);
     final guessed = guessSignalFromText(text);
     if (guessed != null) applySignal(guessed);
+    // 先记后发：终态回来时才拿得到“当时想做什么”。
+    _lastDispatchText = text;
+    _lastDispatchAt = _clock();
     return _gateway.submit(text, source);
   }
 
@@ -449,7 +461,7 @@ class AssistantKernel {
           : EmotionSignal.negativeFeedback,
     );
     if (_privacy.allowed('memoryRecording')) {
-      _evolution?.recordStatus(snapshot);
+      _evolution?.recordStatus(snapshot, intent: _freshDispatchIntent());
       final failures = snapshot.state == AssistantStatus.error
           ? (_consecutiveFailuresBySource[snapshot.source] ?? 0) + 1
           : 0;
@@ -463,6 +475,15 @@ class AssistantKernel {
       _maybeRunDailyReview();
       unawaited(_maybeSynthesizeTaskLessons());
     }
+  }
+
+  /// 取仍在新鲜度窗口内的 dispatch 原文：过期返回空串（反思 intent 留空）。
+  String _freshDispatchIntent() {
+    final at = _lastDispatchAt;
+    if (at == null || _lastDispatchText.trim().isEmpty) return '';
+    final elapsed = _clock().difference(at);
+    if (elapsed.isNegative || elapsed > dispatchIntentWindow) return '';
+    return _lastDispatchText;
   }
 
   /// 日终复盘：新一天的第一条任务终态时，若前一天留下了 ≥2 条

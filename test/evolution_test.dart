@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:dsh_pet_flutter/ai/llm_provider.dart';
 import 'package:dsh_pet_flutter/core/result.dart';
+import 'package:dsh_pet_flutter/features/linkage/status/assistant_event.dart';
 import 'package:dsh_pet_flutter/learning/evolution_engine.dart';
 import 'package:dsh_pet_flutter/learning/guideline_store.dart';
 import 'package:dsh_pet_flutter/learning/llm_reflection_synthesizer.dart';
@@ -283,5 +284,60 @@ void main() {
     );
     guidelines.accept('g2');
     expect(guidelines.reactivate('g2'), isA<Failure<Guideline>>());
+  });
+
+  test('任务终态回填 intent/rootCause 初值与 verification', () {
+    engine.recordStatus(
+      StatusSnapshot(
+        state: AssistantStatus.error,
+        text: '任务执行失败',
+        source: 'assistant',
+        updatedAt: DateTime(2026, 11, 3, 8),
+      ),
+      intent: '帮我把日志按天归档',
+    );
+    final failure = reflections.load().single;
+    expect(failure.intent, '帮我把日志按天归档');
+    expect(failure.rootCause, contains('assistant'));
+    expect(failure.rootCause, contains('待复盘'));
+    expect(failure.verification, 'unverified');
+    expect(failure.evidence, contains('status:error'));
+
+    engine.recordStatus(
+      StatusSnapshot(
+        state: AssistantStatus.success,
+        text: '归档完成',
+        source: 'assistant',
+        updatedAt: DateTime(2026, 11, 3, 9),
+      ),
+      intent: '帮我把日志按天归档',
+    );
+    final success = reflections.load().last;
+    expect(success.outcome, 'success');
+    expect(success.rootCause, isEmpty);
+    expect(success.verification, 'auto-observed');
+  });
+
+  test('任务终态的 intent 超长被截断到 80 字符', () {
+    final longIntent = '把' * 100;
+    engine.recordStatus(
+      StatusSnapshot(
+        state: AssistantStatus.success,
+        text: '完成',
+        source: 'assistant',
+        updatedAt: DateTime(2026, 11, 3, 10),
+      ),
+      intent: longIntent,
+    );
+    final entry = reflections.load().single;
+    expect(entry.intent.length, 81); // 80 字符 + 省略号
+    expect(entry.intent.endsWith('…'), isTrue);
+  });
+
+  test('纠正反思把纠正文本作为 rootCause 初值并记 user-observed', () {
+    engine.recordCorrection('不要用命令式语气，改成商量着来');
+    final entry = reflections.load().single;
+    expect(entry.rootCause, '不要用命令式语气，改成商量着来');
+    expect(entry.verification, 'user-observed');
   });
 }
