@@ -1,0 +1,1122 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TRAE 宝：自主学习、进化与形象演化技术迭代方案</title>
+<style>
+  :root{
+    --bg:#f6f7f9;
+    --surface:#ffffff;
+    --surface-2:#fbfcfe;
+    --ink:#1c2430;
+    --ink-2:#344054;
+    --muted:#667085;
+    --line:#e4e7ec;
+    --line-soft:#eef1f5;
+    --accent:#2f6feb;
+    --accent-soft:#eef4ff;
+    --teal:#0f766e;
+    --ok:#067647;
+    --ok-soft:#ecfdf3;
+    --warn:#b45309;
+    --warn-soft:#fffaeb;
+    --danger:#b42318;
+    --danger-soft:#fef3f2;
+    --shadow:0 18px 50px rgba(20,32,55,.07);
+    --shadow-sm:0 8px 24px rgba(20,32,55,.05);
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei",sans-serif;
+    line-height:1.78;font-size:15px;-webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1180px;margin:0 auto;padding:30px 22px 90px}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  code{
+    font-family:"SFMono-Regular",Menlo,Consolas,"Liberation Mono",monospace;
+    font-size:12.5px;background:#f2f4f7;border:1px solid #e4e7ec;border-radius:5px;padding:1px 5px;
+    color:#344054;word-break:normal;overflow-wrap:anywhere;
+  }
+  td code,th code{font-size:11.5px}
+  pre{
+    margin:12px 0 16px;padding:16px 18px;background:#0f172a;color:#e2e8f0;
+    border-radius:12px;overflow:auto;font-size:12.5px;line-height:1.65;
+  }
+  pre code{background:transparent;border:0;padding:0;color:inherit;font-size:12.5px}
+  .hero{
+    background:linear-gradient(180deg,#ffffff 0%,#fbfcff 100%);
+    border:1px solid var(--line);border-radius:22px;padding:38px 40px;box-shadow:var(--shadow);
+  }
+  .kicker{letter-spacing:.16em;text-transform:uppercase;font-size:10.5px;color:var(--accent);font-weight:750}
+  h1{font-size:34px;line-height:1.28;margin:12px 0 14px;letter-spacing:-.025em}
+  .lede{font-size:16px;color:var(--muted);max-width:900px;margin:0}
+  .meta-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:22px}
+  .meta{font-size:12px;color:var(--ink-2);background:#f8fafc;border:1px solid var(--line);border-radius:999px;padding:5px 11px}
+  .summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:26px}
+  .summary{
+    background:#fff;border:1px solid var(--line);border-radius:16px;padding:18px 18px 16px;box-shadow:var(--shadow-sm);
+  }
+  .summary b{display:block;font-size:14px;margin-bottom:6px}
+  .summary p{margin:0;font-size:13px;color:var(--muted)}
+  .toc{
+    display:flex;flex-wrap:wrap;gap:8px;margin:22px 0 6px;
+  }
+  .toc a{font-size:12.5px;color:var(--ink-2);background:#fff;border:1px solid var(--line);border-radius:999px;padding:6px 11px}
+  .toc a:hover{background:var(--accent-soft);border-color:#c7d7fe;text-decoration:none}
+  .card{
+    background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:26px 28px;
+    box-shadow:var(--shadow-sm);margin-top:20px;
+  }
+  .card.tight{padding:20px 22px}
+  h2{font-size:23px;line-height:1.4;margin:0 0 14px;letter-spacing:-.02em;display:flex;align-items:baseline;gap:10px}
+  h2 .no{font-size:12px;font-weight:750;color:var(--accent);background:var(--accent-soft);border:1px solid #c7d7fe;border-radius:8px;padding:2px 7px;letter-spacing:.04em}
+  h3{font-size:17px;margin:26px 0 10px;letter-spacing:-.01em}
+  h3:first-of-type{margin-top:6px}
+  p{margin:8px 0 12px}
+  .muted{color:var(--muted)}
+  .small{font-size:12.5px}
+  .badge{
+    display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:999px;
+    font-size:11px;font-weight:700;border:1px solid;line-height:1.6;white-space:nowrap
+  }
+  .b-ok{color:var(--ok);background:var(--ok-soft);border-color:#abefc6}
+  .b-infer{color:var(--warn);background:var(--warn-soft);border-color:#fedf89}
+  .b-pending{color:#475467;background:#f2f4f7;border-color:#d0d5dd}
+  .b-pilot{color:#93370d;background:#fffaeb;border-color:#fedf89}
+  .b-no{color:var(--danger);background:var(--danger-soft);border-color:#fecdca}
+  .b-blue{color:#175cd3;background:#eff8ff;border-color:#b2ddff}
+  table{width:100%;border-collapse:collapse;font-size:13px;margin:14px 0 18px}
+  th{text-align:left;background:#f8fafc;color:var(--ink-2);font-weight:700;padding:10px 11px;border-bottom:1px solid var(--line);font-size:12.5px}
+  td{padding:10px 11px;border-bottom:1px solid var(--line-soft);vertical-align:top}
+  tr:hover td{background:#fcfdff}
+  .table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:12px}
+  .table-wrap table{margin:0;min-width:760px}
+  .table-wrap th:first-child,.table-wrap td:first-child{padding-left:14px}
+  .table-wrap th:last-child,.table-wrap td:last-child{padding-right:14px}
+  .callout{
+    border-left:3px solid var(--accent);background:var(--accent-soft);border-radius:0 12px 12px 0;
+    padding:13px 16px;margin:14px 0;font-size:13.5px;color:#1d2939;
+  }
+  .callout.warn{border-left-color:#f79009;background:var(--warn-soft)}
+  .callout.danger{border-left-color:#f04438;background:var(--danger-soft)}
+  .callout.ok{border-left-color:#12b76a;background:var(--ok-soft)}
+  .callout b{font-weight:750}
+  ul,ol{margin:8px 0 14px;padding-left:22px}
+  li{margin:5px 0}
+  .diagram{background:var(--surface-2);border:1px solid var(--line);border-radius:16px;padding:12px 10px;overflow:hidden}
+  .diagram svg{display:block;width:100%;height:auto}
+  .legend{display:flex;flex-wrap:wrap;gap:16px;margin-top:10px;font-size:11.5px;color:var(--muted)}
+  .legend span{display:inline-flex;align-items:center;gap:6px}
+  .line-solid{display:inline-block;width:26px;height:2px;background:#344054}
+  .line-dash{display:inline-block;width:26px;height:2px;background:repeating-linear-gradient(90deg,#98a2b3 0 6px,transparent 6px 10px)}
+  .flow{display:flex;align-items:stretch;gap:10px;flex-wrap:wrap;margin:14px 0 8px}
+  .flow-step{
+    flex:1 1 112px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 11px;
+    position:relative;min-height:100px;box-shadow:0 3px 10px rgba(20,32,55,.03)
+  }
+  .flow-step b{font-size:12.5px}
+  .flow-step p{font-size:10.5px}
+  .action-table td:first-child,.action-table th:first-child{width:52px;white-space:nowrap}
+  .action-table td:nth-child(2),.action-table th:nth-child(2){min-width:104px}
+  .action-table td:nth-child(3),.action-table th:nth-child(3){min-width:240px}
+  h4{font-size:14px;margin:18px 0 8px;color:var(--ink-2);letter-spacing:-.01em}
+  .flow-step .k{font-size:10px;font-weight:750;color:var(--accent);letter-spacing:.08em;text-transform:uppercase}
+  .flow-step b{display:block;font-size:12.5px;margin:4px 0 4px}
+  .flow-step p{font-size:10.5px;color:var(--muted);margin:0}
+  .flow-step:not(:last-child)::after{
+    content:"→";position:absolute;right:-13px;top:50%;transform:translateY(-50%);
+    color:#98a2b3;font-weight:800;font-size:15px;background:var(--surface-2);padding:0 2px
+  }
+  .phase{position:relative;margin-top:18px;padding:22px 24px 20px;border:1px solid var(--line);border-radius:16px;background:#fff}
+  .phase::before{content:"";position:absolute;left:0;top:18px;bottom:18px;width:4px;border-radius:0 4px 4px 0;background:var(--accent)}
+  .phase.p1::before{background:var(--teal)}
+  .phase.p2::before{background:#7f56d9}
+  .phase h3{margin:0 0 4px;font-size:18px}
+  .phase .sub{color:var(--muted);font-size:12.5px;margin:0 0 12px}
+  .kv{display:grid;grid-template-columns:160px 1fr;gap:8px 16px;margin:12px 0}
+  .kv dt{font-weight:700;color:var(--ink-2);font-size:13px}
+  .kv dd{margin:0;font-size:13.5px;color:var(--ink)}
+  .grid-2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grid-3{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .mini{background:#fbfcfe;border:1px solid var(--line);border-radius:12px;padding:14px 15px}
+  .mini b{display:block;font-size:13px;margin-bottom:4px}
+  .mini p,.mini ul{font-size:12.5px;color:var(--muted);margin:0}
+  .mini ul{padding-left:18px}
+  .tag{display:inline-block;font-size:10.5px;font-weight:700;color:var(--ink-2);background:#f2f4f7;border:1px solid var(--line);border-radius:6px;padding:1px 6px;margin-right:4px}
+  .src{font-size:12.5px;color:var(--muted)}
+  .src ol{padding-left:24px}
+  .src li{margin:7px 0}
+  .src .u{color:var(--accent);word-break:break-all}
+  .evidence{font-size:11.5px;color:var(--muted);margin-top:6px}
+  details{margin:10px 0}
+  summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--ink-2)}
+  .footer{margin-top:26px;padding:22px 4px;color:var(--muted);font-size:12px;text-align:center}
+  @media (max-width:900px){
+    .summary-grid,.grid-3,.grid-2{grid-template-columns:1fr}
+    .hero{padding:28px 22px}
+    h1{font-size:27px}
+    .card{padding:22px 18px}
+    .kv{grid-template-columns:1fr}
+    .flow-step:not(:last-child)::after{display:none}
+  }
+  @media print{
+    body{background:#fff}
+    .wrap{max-width:none;padding:0}
+    .hero,.card,.summary,.phase{box-shadow:none;break-inside:avoid}
+    .toc{display:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker">Deep Research &amp; Technical Roadmap · 2026-11-02</div>
+  <h1>TRAE 宝：自主学习、进化与形象演化<br>技术迭代方案</h1>
+  <p class="lede">基于本机真实文件、Trae CN 客户端产物与公开研究的现状诊断，给出“先治理、再进化、后形象”的三阶段落地方案。报告严格区分已核实事实与推断，不把空目录或想象架构当作现状。</p>
+  <div class="meta-row">
+    <span class="meta">研究对象：Trae 宝（IDE assistant）+ dsh_pet_flutter（桌面形象）</span>
+    <span class="meta">代码基线：<code>/Volumes/data/dev/github/assistant</code></span>
+    <span class="meta">证据：19 个测试文件 / 98 个用例 / 106 个动画</span>
+    <span class="meta">版本：v0.1（方案稿，不改代码）</span>
+  </div>
+  <div class="summary-grid">
+    <div class="summary">
+      <b>大脑与身体是两套系统</b>
+      <p>记忆、技能、子会话在 Trae IDE 侧；人格状态、动画、投递在本仓库的 Flutter 桌宠侧。两者目前只通过 HTTP 桥和聊天投递相连，没有共享状态。</p>
+    </div>
+    <div class="summary">
+      <b>缺的不是“记忆文件”，是治理闭环</b>
+      <p>已有 user_profile、project_memory、topics、session_memory 与 Manage Memory 工具，但没有证据、置信度、时效、冲突解决、反思与评估。</p>
+    </div>
+    <div class="summary">
+      <b>先做可达的进化，不做参数自改</b>
+      <p>用“反思日志 → 经验 → 技能/规则提案 → 用户审批 → 快照回滚”替代 SEAL 式权重自改；形象先用现有 106 个动画 + 程序化配饰，Live2D/VRM 仅作试点。</p>
+    </div>
+  </div>
+</header>
+
+<nav class="toc">
+  <a href="#s1">01 结论</a>
+  <a href="#s2">02 方法与口径</a>
+  <a href="#s3">03 现状架构</a>
+  <a href="#s4">04 技术调研</a>
+  <a href="#s5">05 推荐选型</a>
+  <a href="#s6">06 迭代方案</a>
+  <a href="#s7">07 评估指标</a>
+  <a href="#s8">08 风险与回滚</a>
+  <a href="#s9">09 待拍板</a>
+  <a href="#s10">10 附录与来源</a>
+</nav>
+
+<section class="card" id="s1">
+  <h2><span class="no">01</span>结论摘要</h2>
+  <ol>
+    <li><b>现状不是“没有记忆”，而是“记忆有文件、有工具，但没有证据链与反思回路”。</b>本机已存在用户画像、项目约束、主题摘要、会话摘要四类文件，Trae 客户端也内置了 Manage Memory 的读/改/删工具。真正缺的是“这条记忆从哪来、可信度多少、何时过期、冲突时听谁的”。<span class="badge b-ok">已核实</span></li>
+    <li><b>最值得投入的不是引入 Mem0/Zep，而是把现有文件记忆升级为“分层 + 证据 + 反思 + 提案”。</b>Mem0 需要向量库，Graphiti 需要 Neo4j/FalkorDB，均与当前“无自建服务端、纯本地文件”的约束冲突；Letta 的 memory blocks + reflection subagent 与 Reflexion 的 verbal reflection 可以直接用文件模拟。<span class="badge b-pilot">需试点</span></li>
+    <li><b>技能进化要借 Agent Skills 的渐进式加载与 Voyager 的技能库思路，但必须加“候选—评测—审批—快照—回滚”。</b>直接把模型生成的 SKILL.md 写进 <code>~/.trae-cn/skills</code> 会污染所有后续会话；正确做法是先落到隔离目录，经静态校验与人工批准后再提升。<span class="badge b-ok">可直接落地</span></li>
+    <li><b>人格已有模型但没接线。</b><code>PersonaDna</code>、<code>ProfileStore</code>、<code>PrivacyCenter</code> 已实现并有测试，但 <code>pet_app.dart</code> 仍用 <code>whisperPrompt</code> 单串作为人格；没有 <code>persona_state</code>、情绪状态与形象映射。先把这层接上，成本最低、收益最直接。<span class="badge b-ok">已核实</span></li>
+    <li><b>形象演化先用“状态映射”，不要先上生成式或 Live2D。</b>现有 106 个帧动画、6 档工作状态、5 个动画分类已经足够表达情绪与亲密度；先做程序化头像/配饰/气泡主题，Live2D 与 VRM 作为可选试点，生成式主形象暂不适合。<span class="badge b-infer">推断</span></li>
+  </ol>
+</section>
+
+<section class="card" id="s2">
+  <h2><span class="no">02</span>研究方法与证据口径</h2>
+  <p>本报告按 L3（系统建模级）深度执行：先读取本机真实文件与 Trae 客户端产物，再检索公开论文、官方文档与工程实践，最后把结论约束到“无自建服务端、本地 Markdown/JSON、SKILL.md 技能、子会话派发”的现实条件中。</p>
+  <div class="grid-3">
+    <div class="mini">
+      <b>来源优先级</b>
+      <p>P0：论文原文、官方文档、客户端打包产物；P1：官方博客/规范；P2：工程实践文章。单条结论尽量有 2–3 个独立来源，冲突时并列呈现。</p>
+    </div>
+    <div class="mini">
+      <b>事实标记</b>
+      <p><span class="badge b-ok">已核实</span> 读到的文件/字符串/论文原文；<span class="badge b-infer">推断</span> 基于结构与时序的合理判断；<span class="badge b-pending">待确认</span> 本机无法核实的产品/账号级行为。</p>
+    </div>
+    <div class="mini">
+      <b>边界</b>
+      <p><code>assistant_profile</code> 的显示名与“工号”未在本地文件中找到；本报告只把“TRAE 宝”作为客户端默认显示名，不把工号当作可改造锚点。</p>
+    </div>
+  </div>
+  <div class="callout warn">
+    <b>路径校正：</b><code>/Users/tallsafe/.trae-cn/assistant</code> 是空目录、非 git 仓库；真实代码与测试在 <code>/Volumes/data/dev/github/assistant</code>。记忆与技能体系确实落在 <code>/Users/tallsafe/.trae-cn</code> 下。本报告的“现状”只描述真实存在的文件。
+  </div>
+</section>
+
+<section class="card" id="s3">
+  <h2><span class="no">03</span>现状架构：两套系统、四类记忆、三类技能</h2>
+
+  <h3>3.1 两层结构：IDE 大脑 + Flutter 身体</h3>
+  <p>当前系统不是一个单体应用，而是两套通过本机 HTTP 与 Trae 扩展相连的系统。把它们分开描述，是后续所有方案的前提。</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>层</th><th>位置</th><th>已核实职责</th><th>与另一层的关系</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>大脑层</b><br><span class="small muted">Trae IDE</span></td>
+          <td><code>~/.trae-cn/memory</code>、<code>~/.trae-cn/skills</code>、Trae 客户端</td>
+          <td>TRAE 宝的会话、记忆读写、技能加载、子会话编排、定时任务。</td>
+          <td>通过 <code>workbench.action.chat.open</code> 接收桌宠投递；通过 <code>/event</code> 把状态推给桌宠。</td>
+        </tr>
+        <tr>
+          <td><b>身体层</b><br><span class="small muted">dsh_pet_flutter</span></td>
+          <td><code>/Volumes/data/dev/github/assistant</code></td>
+          <td>透明置顶窗、106 个帧动画、物理漫游、气泡、输入面板、右键菜单、本地事件服务、适配器投递、内置 AI 对话。</td>
+          <td>不直接读写 <code>~/.trae-cn/memory</code>；只有自己的 <code>~/.dsh_pet_flutter/memory.json</code>。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="small muted">证据：仓库目录与测试；<code>lib/app/pet_app.dart</code> 装配；<code>lib/features/linkage/event_server.dart</code>；<code>trae-extension/extension.js</code>。见附录 L1–L8。</p>
+
+  <h3>3.2 记忆体系：四类文件 + 一个独立聊天记忆</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>文件/目录</th><th>结构（已核实）</th><th>写入方</th><th>检索/注入方式</th><th>问题</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code>~/.trae-cn/memory/user_profile.md</code></td>
+          <td><code>## User Preferences</code>、<code>## Tech Stack</code>，每条一行。</td>
+          <td>Trae 内置 Manage Memory 工具（read/update/delete userProfile）。</td>
+          <td>会话开始时作为记忆上下文注入；跨项目。</td>
+          <td>无来源、无置信度、无更新时间；偏好变化时只能覆盖。</td>
+        </tr>
+        <tr>
+          <td><code>~/.trae-cn/memory/projects/&lt;slug&gt;/project_memory.md</code></td>
+          <td><code>## Hard Constraints</code>、<code>## Lessons Learned</code>，每条一行英文/中文。</td>
+          <td>Manage Memory 的 projectMemory 读/改/删。</td>
+          <td>进入对应项目会话时注入。</td>
+          <td>约束与教训混在一起；无“为什么/证据/适用范围/过期时间”。</td>
+        </tr>
+        <tr>
+          <td><code>~/.trae-cn/memory/projects/&lt;slug&gt;/YYYYMMDD/topics.md</code></td>
+          <td>每行：<code>[session_id | topic_summary_time] 摘要正文</code>。</td>
+          <td>主题记忆（topicMemory）写入。</td>
+          <td>按日期分目录；没有检索接口，主要靠人/模型按日期读取。</td>
+          <td>是时间线，不是知识库；跨日期主题无法聚合。</td>
+        </tr>
+        <tr>
+          <td><code>.../session_memory_&lt;session&gt;.jsonl</code></td>
+          <td>每行字段：<code>intent</code>、<code>actions[]</code>、<code>outcome</code>、<code>learned[]</code>、<code>message_summary_time</code>、<code>message_id</code>。</td>
+          <td>会话记忆（sessionMemory）写入，append-only。</td>
+          <td>按消息/会话回读；本报告在上下文中观察到 topics 摘要与项目记忆被注入，session 记忆是否自动注入未单独核实。</td>
+          <td>有“learned”，但没有结构化证据、置信度、可复用动作与验证结果。</td>
+        </tr>
+        <tr>
+          <td><code>~/.dsh_pet_flutter/memory.json</code></td>
+          <td><code>{"messages":[{"role":"user|assistant","content":"..."}]}</code>。</td>
+          <td>桌宠 <code>ChatMemory</code>，每次追加并全量落盘。</td>
+          <td><code>context(rounds)</code> 只取最近 N 轮；无摘要、无检索、无遗忘。</td>
+          <td>与 IDE 记忆完全隔离；内置对话重启后只记得最近几轮。</td>
+        </tr>
+        <tr>
+          <td><code>~/.dsh_pet_flutter/profile/</code></td>
+          <td><code>persona_dna.json</code>、<code>user_profile.json</code>、<code>emotion_profile.json</code>、<code>privacy.json</code>；原子写 tmp+rename；损坏返回 Failure 不静默覆盖。</td>
+          <td><code>ProfileStore</code>；<code>PrivacyCenter</code> 首次启动迁移 <code>contentRead</code>。</td>
+          <td>目前只有 <code>PrivacyCenter</code> 被使用；人格/画像/情绪未接入主流程。</td>
+          <td>模型已实现，但“没有消费者”；设置页也没有人格编辑。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout">
+    <b>关键判断：</b>Trae 侧的记忆不是“纯被动注入”。客户端打包字符串里存在 Manage Memory 的 read/update/delete × projectMemory/sessionMemory/topicMemory/userProfile 工具卡片。也就是说，模型可以主动读写记忆；缺的是写入前的证据/审批与写入后的反思/评估，而不是“有没有工具”。<span class="badge b-ok">已核实</span>
+  </div>
+
+  <h3>3.3 技能体系：三种来源，同一套 SKILL.md 语义</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>来源</th><th>路径</th><th>注册方式</th><th>加载方式</th><th>现状</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>内置技能</td>
+          <td><code>~/.trae-cn/builtin_skills/</code></td>
+          <td>客户端内置，<code>skill-config.json</code> 可禁用。</td>
+          <td>启动时只加载 <code>name/description</code>；命中后读正文。</td>
+          <td>目前可见 <code>TRAE-security-review</code> 等。</td>
+        </tr>
+        <tr>
+          <td>全局/用户技能</td>
+          <td><code>~/.trae-cn/skills/&lt;name&gt;/SKILL.md</code></td>
+          <td><code>skill-config.json</code> 的 <code>managedSkills</code>（user_upload / marketplace）+ 目录扫描。</td>
+          <td>渐进式披露：元数据 → SKILL.md → references/scripts。</td>
+          <td>现有 6 个目录，含 <code>pet-broadcast</code>；无自动生成/版本/评测。</td>
+        </tr>
+        <tr>
+          <td>插件技能</td>
+          <td><code>~/.trae-cn/plugins/&lt;registry&gt;/&lt;plugin&gt;/&lt;version&gt;/skills/</code></td>
+          <td>插件 <code>.trae-plugin/plugin.json</code> 的 <code>"skills":"./skills/"</code>。</td>
+          <td>与全局技能同一套 SKILL.md 语义。</td>
+          <td>deep-research-assistant、office-plugin-mac 等均按此注册。</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <p>本机 <code>pet-broadcast/SKILL.md</code> 只有 <code>name</code>、<code>description</code> 与正文，符合 Agent Skills 的最小格式；<code>skill-config.json</code> 记录了来源与安装历史。当前没有任何“技能候选生成、静态校验、A/B 评测、版本快照、回滚”的代码或目录。<span class="badge b-ok">已核实</span></p>
+
+  <h3>3.4 会话与编排：子会话工具存在，但桌宠只拿到“已发送”</h3>
+  <p>Trae 客户端打包产物中可检索到子会话工具集：<code>list_projects</code>、<code>list_sessions</code>、<code>read_session</code>、<code>create_session</code>、<code>fork_session</code>、<code>send_message_to_session</code>、<code>wait_sessions</code>、<code>set_session_title</code> 等；UI 文案对应“创建任务 / 发送要求 / 等待任务 / 查看任务”。返回对象包含 <code>chat_session_id</code>、<code>threadId</code>、<code>messageId</code>、<code>title</code>。<span class="badge b-ok">已核实</span></p>
+  <p>但桌宠侧的投递链路完全是另一条路径：输入面板 → <code>Dispatcher</code> → <code>TraeCnAdapter</code> → <code>BridgeHub</code> → 扩展每 800ms 轮询 <code>/bridge/pending</code> → <code>workbench.action.chat.open</code> → Trae 对话。扩展只回传“执行成功/失败”的 ack，不把 assistant 的回复带回桌宠；只有 <code>builtin</code> 适配器会在本地显示 AI 回复。<span class="badge b-ok">已核实</span></p>
+  <div class="callout warn">
+    <b>因此：</b>“领导 assistant 通过 create_session / send_message_to_session 派发子会话，子会话如何回报”属于 Trae IDE 内部编排，本机只能核实工具名与返回字段，无法核实最终汇总格式。把它当作黑盒使用，不要在其上叠加第二套编排。
+  </div>
+
+  <h3>3.5 人格与身份：默认名可核实，工号不可核实</h3>
+  <ul>
+    <li><b>显示名：</b>Trae 客户端语言包中存在 <code>"solo-lite.assistant.rename.default":"TRAE 宝"</code> 与 <code>"solo-lite.assistant.header.projectName":"项目专属Trae宝"</code>。<span class="badge b-ok">已核实</span></li>
+    <li><b>人格模型：</b><code>PersonaDna</code> 有 <code>name</code>、<code>address</code>、<code>toneCore</code>、<code>bottomLines</code>、<code>proactiveness</code>；注释明确“学习治理层只能读、不能改”，修改只能由用户手动完成。<span class="badge b-ok">已核实</span></li>
+    <li><b>接线现状：</b><code>pet_app._personaFor()</code> 仍优先使用 <code>pet.whisperPrompt</code>，否则拼一句固定模板；<code>PersonaDna</code>/<code>UserProfile</code>/<code>EmotionProfile</code> 没有进入 system prompt。<span class="badge b-ok">已核实</span></li>
+    <li><b>工号：</b>在 <code>~/.trae-cn</code>、仓库与 Trae 客户端打包产物中均未检索到 <code>assistant_profile</code> 或“工号”字符串。可能是账号/服务端字段，本机不可见。<span class="badge b-pending">待确认</span></li>
+  </ul>
+
+  <h3>3.6 定时任务：cron 语义，独立新会话</h3>
+  <p>Schedule 技能把周期意图转成 cron 任务；任务在触发时以“新的无人值守会话”执行，<code>message</code> 必须自包含，不能依赖当前对话；不支持一次性精确时间、亚分钟级与无法用五段 cron 表达的周期；执行中的定时任务不允许再创建新任务。它适合“每周复盘/提案”，不适合作为实时反思回路。<span class="badge b-ok">已核实</span></p>
+
+  <h3>3.7 现状架构图</h3>
+  <div class="diagram">
+    <svg viewBox="0 0 1160 760" role="img" aria-label="TRAE 宝现状架构图">
+      <defs>
+        <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+          <path d="M0,0 L9,4.5 L0,9 z" fill="#344054"/>
+        </marker>
+        <marker id="arrowDash" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto">
+          <path d="M0,0 L9,4.5 L0,9 z" fill="#98a2b3"/>
+        </marker>
+      </defs>
+
+      <rect x="16" y="72" width="552" height="650" rx="18" fill="#fbfcfe" stroke="#e4e7ec"/>
+      <rect x="592" y="72" width="552" height="650" rx="18" fill="#fbfcfe" stroke="#e4e7ec"/>
+      <text x="40" y="100" font-family="-apple-system,PingFang SC,sans-serif" font-size="13" font-weight="700" fill="#175cd3">大脑层 · Trae IDE</text>
+      <text x="616" y="100" font-family="-apple-system,PingFang SC,sans-serif" font-size="13" font-weight="700" fill="#0f766e">身体层 · dsh_pet_flutter</text>
+
+      <rect x="280" y="14" width="200" height="38" rx="19" fill="#ffffff" stroke="#d0d5dd"/>
+      <text x="380" y="38" text-anchor="middle" font-family="-apple-system,PingFang SC,sans-serif" font-size="13" font-weight="700" fill="#344054">用户</text>
+      <line x1="380" y1="52" x2="380" y2="98" stroke="#344054" stroke-width="1.6" marker-end="url(#arrow)"/>
+
+      <rect x="40" y="100" width="500" height="96" rx="14" fill="#eef4ff" stroke="#c7d7fe"/>
+      <text x="58" y="126" font-family="-apple-system,PingFang SC,sans-serif" font-size="15" font-weight="700" fill="#1d2939">TRAE 宝（IDE assistant）</text>
+      <text x="58" y="150" font-family="-apple-system,PingFang SC,sans-serif" font-size="11.5" fill="#475467">默认显示名：TRAE 宝 / 项目专属Trae宝　·　会话、记忆、技能、子会话编排</text>
+      <text x="58" y="172" font-family="-apple-system,PingFang SC,sans-serif" font-size="11.5" fill="#475467">工具：Memory（读/改/删）· create_session / send_message_to_session / wait_sessions</text>
+
+      <rect x="40" y="236" width="240" height="86" rx="12" fill="#ffffff" stroke="#d0d5dd"/>
+      <text x="56" y="261" font-family="-apple-system,PingFang SC,sans-serif" font-size="12.5" font-weight="700" fill="#1d2939">Manage Memory</text>
+      <text x="56" y="282" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#667085">read / update / delete</text>
+      <text x="56" y="301" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#667085">project · session · topic · userProfile</text>
+      <line x1="160" y1="196" x2="160" y2="234" stroke="#344054" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+      <rect x="300" y="236" width="240" height="86" rx="12" fill="#ffffff" stroke="#d0d5dd"/>
+      <text x="316" y="261" font-family="-apple-system,PingFang SC,sans-serif" font-size="12.5" font-weight="700" fill="#1d2939">子会话</text>
+      <text x="316" y="282" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#667085">create_session / fork_session</text>
+      <text x="316" y="301" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#667085">send_message / wait / read</text>
+      <line x1="420" y1="196" x2="420" y2="234" stroke="#344054" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+      <rect x="40" y="360" width="240" height="190" rx="12" fill="#ffffff" stroke="#d0d5dd"/>
+      <text x="56" y="384" font-family="-apple-system,PingFang SC,sans-serif" font-size="12.5" font-weight="700" fill="#1d2939">~/.trae-cn/memory</text>
+      <text x="56" y="408" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#475467">user_profile.md</text>
+      <text x="56" y="427" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#475467">projects/&lt;slug&gt;/project_memory.md</text>
+      <text x="56" y="446" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#475467">&lt;date&gt;/topics.md</text>
+      <text x="56" y="465" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#475467">session_memory_*.jsonl</text>
+      <text x="56" y="492" font-family="-apple-system,PingFang SC,sans-serif" font-size="10" fill="#98a2b3">证据/置信度/时效：无</text>
+      <text x="56" y="510" font-family="-apple-system,PingFang SC,sans-serif" font-size="10" fill="#98a2b3">反思/冲突/遗忘：无</text>
+      <line x1="160" y1="322" x2="160" y2="358" stroke="#344054" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+      <rect x="300" y="360" width="240" height="190" rx="12" fill="#ffffff" stroke="#d0d5dd"/>
+      <text x="316" y="384" font-family="-apple-system,PingFang SC,sans-serif" font-size="12.5" font-weight="700" fill="#1d2939">Skills</text>
+      <text x="316" y="408" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#475467">builtin_skills/</text>
+      <text x="316" y="427" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#475467">skills/&lt;name&gt;/SKILL.md</text>
+      <text x="316" y="446" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#475467">plugins/*/skills/</text>
+      <text x="316" y="473" font-family="-apple-system,PingFang SC,sans-serif" font-size="10" fill="#98a2b3">渐进式披露：元数据 → 正文</text>
+      <text x="316" y="491" font-family="-apple-system,PingFang SC,sans-serif" font-size="10" fill="#98a2b3">自动生成/评测/版本：无</text>
+      <line x1="520" y1="196" x2="520" y2="358" stroke="#344054" stroke-width="1.4" marker-end="url(#arrow)"/>
+      <text x="526" y="292" font-family="-apple-system,PingFang SC,sans-serif" font-size="9.5" fill="#667085">load</text>
+
+      <rect x="40" y="576" width="500" height="64" rx="12" fill="#ffffff" stroke="#d0d5dd"/>
+      <text x="56" y="601" font-family="-apple-system,PingFang SC,sans-serif" font-size="12.5" font-weight="700" fill="#1d2939">Schedule（cron）</text>
+      <text x="56" y="622" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#667085">触发时创建新的无人值守会话；message 必须自包含；执行中不得再建任务</text>
+      <path d="M 540 576 C 575 520 575 250 540 196" fill="none" stroke="#98a2b3" stroke-width="1.4" stroke-dasharray="6 5" marker-end="url(#arrowDash)"/>
+      <text x="548" y="390" font-family="-apple-system,PingFang SC,sans-serif" font-size="9.5" fill="#667085">trigger</text>
+
+      <rect x="616" y="100" width="504" height="96" rx="14" fill="#ecfdf3" stroke="#abefc6"/>
+      <text x="634" y="126" font-family="-apple-system,PingFang SC,sans-serif" font-size="15" font-weight="700" fill="#1d2939">PetApp（装配与生命周期）</text>
+      <text x="634" y="150" font-family="-apple-system,PingFang SC,sans-serif" font-size="11.5" fill="#475467">ConfigRepository · PetController · StatusAggregator · 事件转发</text>
+      <text x="634" y="172" font-family="-apple-system,PingFang SC,sans-serif" font-size="11.5" fill="#475467">内置 AI：AiService（OpenAI 兼容 / Ollama）+ ChatMemory(memory.json)</text>
+
+      <rect x="616" y="236" width="240" height="86" rx="12" fill="#ffffff" stroke="#d0d5dd"/>
+      <text x="632" y="261" font-family="-apple-system,PingFang SC,sans-serif" font-size="12.5" font-weight="700" fill="#1d2939">Dispatcher / Adapters</text>
+      <text x="632" y="282" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#667085">trae-cn · chatgpt · workbuddy</text>
+      <text x="632" y="301" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#667085">builtin（可回复）</text>
+      <line x1="736" y1="196" x2="736" y2="234" stroke="#344054" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+      <rect x="880" y="236" width="240" height="86" rx="12" fill="#ffffff" stroke="#d0d5dd"/>
+      <text x="896" y="261" font-family="-apple-system,PingFang SC,sans-serif" font-size="12.5" font-weight="700" fill="#1d2939">BridgeHub</text>
+      <text x="896" y="282" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#667085">队列 · 8s ack 超时</text>
+      <text x="896" y="301" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#667085">扩展每 800ms 轮询</text>
+      <line x1="856" y1="279" x2="878" y2="279" stroke="#344054" stroke-width="1.4" marker-end="url(#arrow)"/>
+
+      <rect x="616" y="360" width="240" height="86" rx="12" fill="#ffffff" stroke="#d0d5dd"/>
+      <text x="632" y="385" font-family="-apple-system,PingFang SC,sans-serif" font-size="12.5" font-weight="700" fill="#1d2939">PetEventServer :7341</text>
+      <text x="632" y="406" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#667085">/event /dispatch /bridge/*</text>
+      <text x="632" y="425" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#667085">loopback + Bearer token(0600)</text>
+      <text x="600" y="440" font-family="-apple-system,PingFang SC,sans-serif" font-size="9.5" fill="#667085">petctl / skill</text>
+      <line x1="624" y1="360" x2="624" y2="198" stroke="#344054" stroke-width="1.2" marker-end="url(#arrow)"/>
+
+      <rect x="880" y="360" width="240" height="86" rx="12" fill="#ffffff" stroke="#d0d5dd"/>
+      <text x="896" y="385" font-family="-apple-system,PingFang SC,sans-serif" font-size="12.5" font-weight="700" fill="#1d2939">dsh-pet-bridge 扩展</text>
+      <text x="896" y="406" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#667085">workbench.action.chat.open</text>
+      <text x="896" y="425" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#667085">只回执 ok/失败，不回传回复</text>
+      <line x1="1000" y1="322" x2="1000" y2="358" stroke="#344054" stroke-width="1.4" marker-end="url(#arrow)"/>
+      <line x1="940" y1="360" x2="940" y2="322" stroke="#344054" stroke-width="1.2" marker-end="url(#arrow)"/>
+      <path d="M 880 380 C 780 330 700 230 542 150" fill="none" stroke="#98a2b3" stroke-width="1.4" stroke-dasharray="6 5" marker-end="url(#arrowDash)"/>
+
+      <rect x="616" y="486" width="240" height="150" rx="12" fill="#fffaeb" stroke="#fedf89" stroke-dasharray="5 4"/>
+      <text x="632" y="510" font-family="-apple-system,PingFang SC,sans-serif" font-size="12.5" font-weight="700" fill="#1d2939">persona/（已实现未接线）</text>
+      <text x="632" y="532" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#475467">PersonaDna：名字/称呼/底线</text>
+      <text x="632" y="551" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#475467">ProfileStore：四份 JSON 原子读写</text>
+      <text x="632" y="570" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#475467">PrivacyCenter：四项授权门禁</text>
+      <text x="632" y="596" font-family="-apple-system,PingFang SC,sans-serif" font-size="10" fill="#93370d">没有 persona_state / 情绪 / 形象映射</text>
+      <text x="632" y="616" font-family="-apple-system,PingFang SC,sans-serif" font-size="10" fill="#93370d">聊天仍用 pet.whisperPrompt 单串</text>
+
+      <rect x="880" y="486" width="240" height="150" rx="12" fill="#f8fafc" stroke="#d0d5dd"/>
+      <text x="896" y="510" font-family="-apple-system,PingFang SC,sans-serif" font-size="12.5" font-weight="700" fill="#1d2939">表达（现状）</text>
+      <text x="896" y="532" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#475467">106 个帧动画 · 5 个分类</text>
+      <text x="896" y="551" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#475467">6 档工作状态动画</text>
+      <text x="896" y="570" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#475467">PoseMachine 随机/权重抽签</text>
+      <text x="896" y="596" font-family="-apple-system,PingFang SC,sans-serif" font-size="10" fill="#667085">表情包随机配图；无状态驱动</text>
+      <text x="896" y="616" font-family="-apple-system,PingFang SC,sans-serif" font-size="10" fill="#667085">气泡无主题/人格差异</text>
+
+      <rect x="616" y="672" width="504" height="34" rx="10" fill="#ffffff" stroke="#e4e7ec"/>
+      <text x="632" y="693" font-family="-apple-system,PingFang SC,sans-serif" font-size="10.5" fill="#667085">注：本仓库不读写 ~/.trae-cn/memory；IDE 记忆由 Trae 的 Manage Memory 工具维护。</text>
+    </svg>
+    <div class="legend">
+      <span><i class="line-solid"></i> 已核实的调用/数据流</span>
+      <span><i class="line-dash"></i> 推断、跨层投递或未接线</span>
+    </div>
+  </div>
+  <p class="evidence">图依据：<code>lib/app/pet_app.dart</code>、<code>lib/features/linkage/*</code>、<code>trae-extension/extension.js</code>、`~/.trae-cn` 目录结构、Trae CN 客户端打包字符串。见附录 L1–L12。</p>
+
+  <h3>3.8 当前架构的关键瓶颈</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>瓶颈</th><th>证据/现状</th><th>直接后果</th><th>严重度</th></tr></thead>
+      <tbody>
+        <tr><td>B1</td><td><b>记忆无证据、无置信度、无时效</b></td><td>四类记忆文件只有正文；session_memory 有 learned 但无 evidence/confidence；无 TTL/冲突状态。</td><td>错误经验会被当成事实反复注入；用户偏好变化后旧结论继续生效。</td><td><span class="badge b-no">高</span></td></tr>
+        <tr><td>B2</td><td><b>没有反思回路</b></td><td>任务结束只写 outcome/learned；没有“触发条件—动作—验证结果—复用建议”的结构化复盘，也没有把复盘送回下一次决策。</td><td>同样的问题会重复犯；经验停留在摘要层，不能变成规则或技能。</td><td><span class="badge b-no">高</span></td></tr>
+        <tr><td>B3</td><td><b>没有技能自增长与治理</b></td><td>SKILL.md 全靠人工安装；无候选、评测、版本、快照、回滚。</td><td>能力无法随时间复利；一旦自动写入坏技能，会污染所有会话。</td><td><span class="badge b-no">高</span></td></tr>
+        <tr><td>B4</td><td><b>人格模型存在但未接线</b></td><td><code>PersonaDna</code>/<code>ProfileStore</code> 有测试；<code>pet_app</code> 仍用 <code>whisperPrompt</code>；无 persona_state。</td><td>“人格”是一次性提示词，不会随交互历史变化；设置页也无法编辑。</td><td><span class="badge b-pilot">中高</span></td></tr>
+        <tr><td>B5</td><td><b>没有评估与观测</b></td><td>无 golden set、无记忆准确率、无纠正率、无技能复用率、无成本/延迟基线；无污染/失控门禁。</td><td>无法判断“更聪明”是否发生；无法自动回滚；无法向用户证明收益。</td><td><span class="badge b-no">高</span></td></tr>
+        <tr><td>B6</td><td><b>身份锚点不可本地核实</b></td><td>“TRAE 宝”默认名可核实；“assistant_profile/工号”未找到。</td><td>不能把工号/身份当作可持久化人格字段；需要产品确认。</td><td><span class="badge b-pending">中</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>3.9 事实与推断的分界</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>判断</th><th>类型</th><th>依据</th></tr></thead>
+      <tbody>
+        <tr><td>仓库已实现四层骨架（persona / ai / gateway / learning 路径），但 learning 仅有空路径。</td><td><span class="badge b-ok">已核实</span></td><td><code>lib/</code> 目录、<code>app_paths.dart</code>、<code>git log</code>。</td></tr>
+        <tr><td>客户端存在 Manage Memory 的读/改/删工具，文件命名与工具卡片一致；实际写入实现未公开。</td><td><span class="badge b-ok">已核实</span></td><td>客户端打包字符串含 read/update/delete × 四类 memory；仓库内无写入代码。</td></tr>
+        <tr><td>客户端暴露了 create_session/send_message_to_session/wait_sessions 等子会话工具；具体调用策略属产品内部行为。</td><td><span class="badge b-ok">已核实</span></td><td>客户端工具清单与 UI 文案。</td></tr>
+        <tr><td>子会话的最终汇总格式、工号机制、assistant_profile 存储位置。</td><td><span class="badge b-pending">待确认</span></td><td>本机不可见；不做假设。</td></tr>
+        <tr><td>“记忆在会话开始时被注入”是根据本报告观察到的 memory_item 与文件名推断。</td><td><span class="badge b-infer">推断</span></td><td>本机未找到注入实现代码；但有稳定文件结构与工具产物。</td></tr>
+        <tr><td>“形象演化可用现有动画 + 状态映射实现”是基于 106 个动画与 PoseMachine 的可行性推断。</td><td><span class="badge b-infer">推断</span></td><td><code>assets/animations/manifest.json</code>、<code>pose_machine.dart</code>。</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card" id="s4">
+  <h2><span class="no">04</span>公开技术调研：哪些能借，哪些不能</h2>
+  <p>调研覆盖长期记忆、自我改进、技能、个性化、形象、评估与安全六个方向。评级口径：<span class="badge b-ok">可直接落地</span> 在本机约束内可立即实现；<span class="badge b-pilot">需试点</span> 需要额外依赖/验证；<span class="badge b-no">暂不适合</span> 当前基础设施或许可/风险不允许。</p>
+
+  <h3>4.1 长期记忆架构</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>方案</th><th>核心机制</th><th>公开证据</th><th>适合场景</th><th>成本/复杂度</th><th>评级</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>MemGPT / Letta</b></td>
+          <td>虚拟上下文管理；memory blocks 常驻上下文；archival memory 按需检索；reflection/sleep-time 子代理整理记忆。</td>
+          <td>MemGPT 论文提出分层记忆与中断控制<sup><a href="#src-1">[1]</a></sup>；Letta 文档说明 memory blocks 以 XML 前置、始终可见、可被代理编辑<sup><a href="#src-2">[2]</a></sup>；内置 <code>memory</code> 与 <code>reflection</code> 子代理<sup><a href="#src-3">[3]</a></sup>。</td>
+          <td>需要“人格 + 长期关系 + 自我整理”的助手。</td>
+          <td>完整运行时需要服务/数据库；概念可文件化。</td>
+          <td><span class="badge b-pilot">需试点（借概念）</span></td>
+        </tr>
+        <tr>
+          <td><b>Mem0</b></td>
+          <td>从对话中抽取、合并、检索显著信息；图记忆增强。</td>
+          <td>LOCOMO 上相对 OpenAI LLM-as-Judge 提升 26%，p95 延迟降低 91%，token 成本节省 &gt;90%<sup><a href="#src-4">[4]</a></sup>；OSS 需要自备 LLM、embedder 与向量库（如 Qdrant）<sup><a href="#src-5">[5]</a></sup>；图记忆已移到平台版<sup><a href="#src-6">[6]</a></sup>。</td>
+          <td>高频多会话聊天、需要向量检索。</td>
+          <td>中高：向量库 + 抽取 LLM + 合并策略。</td>
+          <td><span class="badge b-no">暂不适合作为核心</span></td>
+        </tr>
+        <tr>
+          <td><b>Zep / Graphiti</b></td>
+          <td>时序知识图谱；事实随时间失效；向量+全文+图遍历混合检索。</td>
+          <td>DMR 94.8% vs MemGPT 93.4%；LongMemEval 最高 +18.5% 准确率、延迟 -90%<sup><a href="#src-7">[7]</a></sup>；Graphiti 需要 Neo4j 5.26 / FalkorDB 等图库与 OpenAI key<sup><a href="#src-8">[8]</a></sup>；事实变化时会使旧事实失效<sup><a href="#src-9">[9]</a></sup>。</td>
+          <td>企业级、强时序/冲突消解、跨会话综合。</td>
+          <td>高：图数据库 + LLM + 嵌入。</td>
+          <td><span class="badge b-no">暂不适合</span></td>
+        </tr>
+        <tr>
+          <td><b>A-MEM</b></td>
+          <td>Zettelkasten 式原子笔记：上下文描述、关键词、标签；新记忆触发旧记忆的链接与属性更新。</td>
+          <td>NeurIPS 2025 论文，强调动态索引、链接与 memory evolution<sup><a href="#src-10">[10]</a></sup>。</td>
+          <td>需要“记忆网络”而非平铺列表的知识型助手。</td>
+          <td>中：每条记忆一次 LLM 结构化 + 链接判断。</td>
+          <td><span class="badge b-pilot">需试点</span></td>
+        </tr>
+        <tr>
+          <td><b>Generative Agents 记忆流</b></td>
+          <td>完整经验记录 → 周期性反思成高层记忆 → 按新近度/重要性/相关性检索。</td>
+          <td>论文明确 observation/planning/reflection 三者对行为可信度均有贡献<sup><a href="#src-11">[11]</a></sup>。</td>
+          <td>人格化、关系型、需要“回忆与总结”的助手。</td>
+          <td>低：文件 + 规则 + 少量 LLM 调用即可模拟。</td>
+          <td><span class="badge b-ok">可直接落地</span></td>
+        </tr>
+        <tr>
+          <td><b>当前文件记忆</b></td>
+          <td>四类 Markdown/JSONL + Manage Memory 工具；无检索/时效/证据。</td>
+          <td>本机文件结构（L5）；客户端工具字符串（L6）。</td>
+          <td>透明、可审计、零依赖的基线。</td>
+          <td>低。</td>
+          <td><span class="badge b-ok">保留并升级</span></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>4.2 自我改进与反思类 Agent</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>方法</th><th>机制</th><th>公开证据</th><th>适用性</th><th>评级</th></tr></thead>
+      <tbody>
+        <tr><td><b>Reflexion</b></td><td>用语言反馈反思任务失败，把反思文本存进 episodic memory，下次试验复用；不更新权重。</td><td>HumanEval pass@1 91%，对比 GPT-4 80%<sup><a href="#src-12">[12]</a></sup>。</td><td>最贴合“任务后复盘 → 下次更好”的低成本路径。</td><td><span class="badge b-ok">可直接落地</span></td></tr>
+        <tr><td><b>Self-Refine</b></td><td>同一模型生成 → 自评 → 改写，多轮迭代。</td><td>7 类任务平均绝对提升约 20%<sup><a href="#src-13">[13]</a></sup>。</td><td>适合高价值输出（方案/报告/关键回复），不适合每条消息。</td><td><span class="badge b-pilot">需试点</span></td></tr>
+        <tr><td><b>Voyager 技能库</b></td><td>可执行代码技能库持续增长；检索+组合；环境反馈/执行错误/自验证驱动改进。</td><td>独特物品 3.3×、距离 2.3×、科技树里程碑最快 15.3×；技能可迁移到新世界<sup><a href="#src-14">[14]</a></sup>。</td><td>技能库自增长的最佳参照；但必须加验证与退役。</td><td><span class="badge b-ok">可直接借鉴</span></td></tr>
+        <tr><td><b>SEAL</b></td><td>模型生成 self-edit（数据/超参/工具调用），经 SFT 写进权重；RL 以更新后表现为奖励。</td><td>论文展示知识注入与少样本泛化的持续适应<sup><a href="#src-15">[15]</a></sup>。</td><td>需要训练基础设施与权重管理；风险高。</td><td><span class="badge b-no">暂不适合</span></td></tr>
+        <tr><td><b>TextGrad</b></td><td>用 LLM 文本反馈对计算图做“反向传播”，优化提示/代码/变量。</td><td>GPT-4o GPQA 51%→55%；LeetCode-Hard 相对提升 20%<sup><a href="#src-16">[16]</a></sup>。</td><td>离线优化提示词与技能正文，需要样本与评分。</td><td><span class="badge b-pilot">需试点</span></td></tr>
+        <tr><td><b>DSPy</b></td><td>声明式模块 + 编译器，用指标优化提示/示例/管线。</td><td>GPT-3.5/llama2-13b 相比标准 few-shot 分别提升 25%/65%<sup><a href="#src-17">[17]</a></sup>。</td><td>需要稳定评测集与编译预算；当前不具备。</td><td><span class="badge b-no">暂不适合</span></td></tr>
+        <tr><td><b>OPRO</b></td><td>把历史解与分数放进提示，让 LLM 生成更好解。</td><td>GSM8K 最高 +8%，BBH 最高 +50%（相对人工提示）<sup><a href="#src-18">[18]</a></sup>。</td><td>适合提示词候选生成，但要防止过拟合评测集。</td><td><span class="badge b-pilot">需试点</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>4.3 技能自动生成与复用</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>规范/实践</th><th>要点</th><th>与本机契合度</th><th>评级</th></tr></thead>
+      <tbody>
+        <tr><td><b>Agent Skills 规范</b></td><td>技能是含 <code>SKILL.md</code> 的目录；<code>name</code> ≤64 字符、小写字母/数字/连字符；<code>description</code> ≤1024 字符；可选 <code>scripts/</code>、<code>references/</code>、<code>assets/</code>；渐进式披露：元数据约 100 tokens → 正文 &lt;5000 tokens → 资源按需；正文建议 &lt;500 行<sup><a href="#src-19">[19]</a></sup>。</td><td>本机 <code>~/.trae-cn/skills</code> 已完全同构；可直接复用校验规则。</td><td><span class="badge b-ok">可直接落地</span></td></tr>
+        <tr><td><b>Anthropic Agent Skills</b></td><td>技能是“给新同事的入职指南”；文件系统 + 代码执行让代理按需加载；渐进式披露是核心设计原则<sup><a href="#src-20">[20]</a></sup>。</td><td>与 Trae 的插件/全局技能加载一致。</td><td><span class="badge b-ok">可直接落地</span></td></tr>
+        <tr><td><b>技能编写最佳实践</b></td><td>简洁；只写模型不知道的内容；用真实用法测试；把长内容拆到 references<sup><a href="#src-21">[21]</a></sup>。</td><td>直接作为自动生成 SKILL.md 的验收标准。</td><td><span class="badge b-ok">可直接落地</span></td></tr>
+        <tr><td><b>Voyager 技能库</b></td><td>技能要可执行、可组合、可检索；持续增长但要避免灾难性遗忘<sup><a href="#src-14">[14]</a></sup>。</td><td>Trae 技能是 Markdown 指令而非可执行代码，需用“评测任务”替代环境验证。</td><td><span class="badge b-pilot">需试点</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>4.4 个性化与人格建模</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>方案</th><th>要点</th><th>证据</th><th>适用性</th><th>评级</th></tr></thead>
+      <tbody>
+        <tr><td><b>Character Card V2</b></td><td>name / description / personality / scenario / first_mes / mes_example 等字段，把人格拆成可编辑块。</td><td>SillyTavern 文档描述角色设计字段与场景/示例<sup><a href="#src-24">[24]</a></sup>。</td><td>可作为 <code>persona_dna.json</code> 的字段参照，避免“一整段提示词”。</td><td><span class="badge b-ok">可直接借鉴</span></td></tr>
+        <tr><td><b>Big Five / OCEAN 参数化</b></td><td>把开放性/尽责性/外向性/宜人性/情绪稳定性写成数值提示，无需训练。</td><td>Big5-Scaler 用数值 trait 提示在多模型上产生可区分、较一致的人格<sup><a href="#src-22">[22]</a></sup>。</td><td>可作为 <code>traits</code> 的 schema；但小模型遵循度需实测。</td><td><span class="badge b-pilot">需试点</span></td></tr>
+        <tr><td><b>PersonaMem</b></td><td>180+ 模拟用户历史、最多 60 个多轮会话、15 类个性化任务；评估“识别并随用户画像变化调整回应”。</td><td>前沿模型总体准确率仅约 50%<sup><a href="#src-23">[23]</a></sup>。</td><td>不是模型，是评估设计参照：证明“动态画像”本身就难。</td><td><span class="badge b-ok">评估参照</span></td></tr>
+        <tr><td><b>当前 UserProfile</b></td><td>routine / workRhythm / preferences / taboos / frequentApps，首期手填 + 提案回填。</td><td>仓库 <code>profile_store.dart</code>（L2）。</td><td>结构可用，但缺证据/置信度/时间。</td><td><span class="badge b-ok">保留并扩展</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>4.5 形象自动演化</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>方案</th><th>要点</th><th>证据</th><th>成本/风险</th><th>评级</th></tr></thead>
+      <tbody>
+        <tr><td><b>DiceBear / avataaars 类程序化头像</b></td><td>同一 seed 稳定生成同一 SVG 头像；可自托管；无需上传/审核。</td><td>DiceBear 文档说明 deterministic、same seed same avatar、self-hostable<sup><a href="#src-25">[25]</a></sup>。</td><td>低；但这是“头像”，不是桌宠本体动画。</td><td><span class="badge b-ok">可直接落地</span></td></tr>
+        <tr><td><b>SVG/emoji 表情状态叠加</b></td><td>在现有动画上叠加表情气泡、徽章、配饰、调色；不替换身体。</td><td>本机已有 106 个动画、表情包、气泡与 CustomPainter 渲染（L12）。</td><td>低；需设计状态→视觉映射表。</td><td><span class="badge b-ok">可直接落地</span></td></tr>
+        <tr><td><b>Live2D</b></td><td>2D 骨骼/表情/口型；Flutter 插件可渲染 <code>.model3.json</code>，默认透明背景，支持 macOS/Windows/Web。</td><td><code>live2d_flutter</code> 1.0.3，BSD-3-Clause，使用官方 Cubism SDK<sup><a href="#src-27">[27]</a></sup>；Cubism SDK 许可按年销售额分档（小规模 &lt;1000 万日元，中规模 1000 万–1 亿，大规模 ≥1 亿）<sup><a href="#src-26">[26]</a></sup>。</td><td>中高：模型制作、SDK 许可、透明窗性能、插件成熟度。</td><td><span class="badge b-pilot">需试点</span></td></tr>
+        <tr><td><b>VRM 1.0</b></td><td>3D 人形 avatar 标准；包含 humanoid、expression、look-at、spring bone 等扩展。</td><td>VRM 1.0 规范<sup><a href="#src-28">[28]</a></sup>；<code>flutter_vrm</code> 0.1.0-dev.1 支持全平台，但明确处于 early stage<sup><a href="#src-29">[29]</a></sup>。</td><td>高：3D 资产、渲染性能、插件早期。</td><td><span class="badge b-no">暂不适合</span></td></tr>
+        <tr><td><b>生成式头像/立绘</b></td><td>文生图生成外观，随历史变化。</td><td>本次未找到可引用的官方一致性/成本数据；不作为事实结论。</td><td>高：一致性、延迟、审核、离线、版权。</td><td><span class="badge b-no">暂不适合作为主形象</span></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>4.6 评估与安全</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>主题</th><th>要点</th><th>证据</th><th>对本方案的约束</th></tr></thead>
+      <tbody>
+        <tr><td><b>LongMemEval</b></td><td>500 道题，评估信息提取、多会话推理、时序推理、知识更新、弃答五类长期记忆能力；商业助手/长上下文模型在持续交互中准确率下降约 30%。</td><td>ICLR 2025 论文<sup><a href="#src-30">[30]</a></sup>。</td><td>Phase 1 的 golden set 必须覆盖“更新/时序/弃答”，不能只测召回。</td></tr>
+        <tr><td><b>OWASP ASI06 记忆投毒</b></td><td>攻击者可让一次不可信输入进入持久记忆/hooks/系统提示，从而跨会话影响行为；Claude Code 的 MemoryTrap 案例即此路径。</td><td>OWASP GenAI 2026 文章<sup><a href="#src-31">[31]</a></sup>。</td><td>写入必须带来源与信任级；外部内容不得直接升为“规则”；快照/隔离/回滚是必需项。</td></tr>
+        <tr><td><b>OWASP Agent Memory Guard</b></td><td>用 SHA-256 基线校验记忆完整性；YAML 策略约束读写；快照取证与回滚；检测注入、敏感数据泄漏、受保护键修改、突变与大小异常。</td><td>项目页<sup><a href="#src-32">[32]</a></sup>。</td><td>可作为 Phase 1 门禁的工程参照，不必引入其运行时。</td></tr>
+        <tr><td><b>Misevolution</b></td><td>自我演化在 model/memory/tool/workflow 四条路径上均可能偏离；记忆累积后出现安全对齐退化，工具创建/复用引入漏洞。</td><td>ICLR 2026 论文<sup><a href="#src-33">[33]</a></sup>。</td><td>“自动改写技能/规则”必须默认关闭；先提案、后审批。</td></tr>
+        <tr><td><b>Alignment Tipping Process</b></td><td>持续交互中的高奖励偏离会让代理放弃训练时的对齐约束；RL 对齐方法防御有限。</td><td>论文<sup><a href="#src-34">[34]</a></sup>。</td><td>人格底线、隐私开关、打扰上限必须是不可学习字段；需要 kill switch 与定期安全回归。</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout ok">
+    <b>调研结论：</b>与本机约束最匹配的是“Letta 的常驻记忆块 + Generative Agents/Reflexion 的反思 + Agent Skills 的渐进式技能 + PersonaMem/LongMemEval 的评估设计”。Mem0/Zep/SEAL/DSPy 不是不好，而是当前没有服务端、没有向量库、没有评测集、没有训练基础设施；先引入会把“能不能用”变成“运维能不能撑住”。
+  </div>
+</section>
+
+<section class="card" id="s5">
+  <h2><span class="no">05</span>最推荐的三个技术选型</h2>
+  <div class="grid-3">
+    <div class="mini">
+      <b>1. 文件化分层记忆 + 反思日志</b>
+      <p>用 <code>persona_state.json</code> 做“常驻核心记忆”，用 <code>reflections/</code> 做“情景记忆”，用 <code>project_memory.md</code> 做“规则记忆”；每条记忆带来源、置信度、时效与状态。参照 MemGPT/Letta 的 memory blocks 与 Generative Agents/Reflexion 的反思机制，但不引入服务端。</p>
+      <p><b>理由：</b>零新增依赖；透明可审计；可直接回滚；与现有 Markdown/JSONL 生态一致。</p>
+    </div>
+    <div class="mini">
+      <b>2. Agent Skills + Voyager 式技能库（带治理）</b>
+      <p>技能继续用 <code>SKILL.md</code>，但增加“候选目录—静态校验—评测任务—用户审批—版本快照—回滚”。自动生成只写候选区，不直接写 <code>~/.trae-cn/skills</code>。参照 Agent Skills 规范的命名/描述/渐进式披露与 Voyager 的技能复用。</p>
+      <p><b>理由：</b>本机已经同构；上下文成本低；可把“经验”变成可复用能力；风险可控。</p>
+    </div>
+    <div class="mini">
+      <b>3. 人格状态 + 程序化表达映射</b>
+      <p>把 <code>PersonaDna</code>（不变底线）与 <code>persona_state.json</code>（可变状态）分开；用 valence/arousal/intimacy + 3–4 个 trait 旋钮驱动气泡语气、动画池权重、头像/配饰。参照 Big5-Scaler 的参数化与 DiceBear 的确定性种子。</p>
+      <p><b>理由：</b>现有 106 个动画可直接复用；无需新渲染栈；形象变化可见、可解释、可重置。</p>
+    </div>
+  </div>
+
+  <h3>5.1 为什么不是它们</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>候选</th><th>不选为主方案的原因</th><th>保留的用法</th></tr></thead>
+      <tbody>
+        <tr><td>Mem0</td><td>需要向量库与抽取 LLM；OSS 图记忆已移到平台版；与“无服务端”冲突。</td><td>当记忆量超过数千条、召回明显下降时再做离线试点。</td></tr>
+        <tr><td>Zep / Graphiti</td><td>需要 Neo4j/FalkorDB；运维与成本高；当前记忆规模远未到需要图数据库。</td><td>出现大量“事实随时间变化/互相矛盾”时，评估只读镜像方案。</td></tr>
+        <tr><td>SEAL</td><td>更新权重需要训练基础设施；不可解释、不可快速回滚；与“本地优先、无自建服务端”冲突。</td><td>不作为近期方案；仅作为长期研究观察。</td></tr>
+        <tr><td>DSPy</td><td>需要稳定评测集与编译预算；当前没有 golden set。</td><td>Phase 1 建立评测集后再评估。</td></tr>
+        <tr><td>Live2D / VRM</td><td>模型制作/许可/性能成本高；Flutter 插件成熟度不足（VRM 仍为 dev）。</td><td>Phase 2B 用真实模型做 spike，保留精灵回退。</td></tr>
+        <tr><td>生成式主形象</td><td>一致性、延迟、审核、离线、版权均不可控。</td><td>仅可作为用户主动触发的“纪念卡/换装图”，缓存后展示。</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card" id="s6">
+  <h2><span class="no">06</span>分阶段迭代方案</h2>
+
+  <h3>6.0 设计原则</h3>
+  <ul>
+    <li><b>大脑与身体分离：</b>Trae 侧负责记忆、技能、子会话；桌宠侧负责人格状态、表达、形象。不要在两套系统里各建一套“完整大脑”。</li>
+    <li><b>数据与代码分离：</b>“自动改写提示词”只允许改 <code>prompt_overrides.json</code> 等数据文件，不允许自动改 <code>.dart</code> 源码。代码变更仍走人工提交与测试。</li>
+    <li><b>先提案后应用：</b>默认 <code>propose_only</code>；低风险变更也要用户显式批准。自动应用仅限用户明确授权的类别。</li>
+    <li><b>不可变安全边界：</b>人格底线、隐私默认值、打扰上限、权限范围不进入学习候选；参照 <code>PersonaDna</code> 注释与 EvalGate 设计。</li>
+    <li><b>一切可回滚：</b>技能/规则/策略变更前写快照；记忆不删除，只标记 <code>deprecated/superseded</code>。</li>
+    <li><b>先度量再优化：</b>没有基线的指标不进入自动优化；没有证据的“经验”不升级为规则。</li>
+  </ul>
+
+  <h3>6.1 Phase 0：低成本、马上能做的治理底座</h3>
+  <div class="phase">
+    <h3>目标</h3>
+    <p class="sub">把“人格状态”接进现有对话；把“记忆写入规范”和“反思记录”落成文件；建立最小指标基线。不做自动技能改写。</p>
+    <dl class="kv">
+      <dt>改动范围</dt><dd>桌宠仓库 <code>lib/persona</code>、<code>lib/app/pet_app.dart</code>、<code>lib/features/settings</code>、<code>lib/core/paths</code>；Trae 侧新增 <code>~/.trae-cn/evolution/</code> 与一个 <code>task-retro</code> 技能。</dd>
+      <dt>触发时机</dt><dd>启动时加载人格/画像；每轮对话拼装 prompt；任务有客观信号（测试/构建/用户纠正）时写一条反思；每周手动查看一次。</dd>
+      <dt>失败策略</dt><dd>档案损坏 → 结构化 Failure + 气泡提示，不静默覆盖；反思写入失败 → 记录日志并跳过，不阻塞任务；LLM 不可用 → 只写规则型记录。</dd>
+      <dt>验收</dt><dd>人格底线 100% 出现在 system prompt；<code>persona_state.json</code> 重启后可恢复；10 条 golden prompt 语气一致；现有 98 个测试全绿；无新增网络依赖。</dd>
+    </dl>
+
+    <h4>具体动作清单</h4>
+    <div class="table-wrap">
+      <table class="action-table">
+        <thead><tr><th>#</th><th>动作</th><th>文件/目录</th><th>数据/接口</th><th>验收</th></tr></thead>
+        <tbody>
+          <tr><td>0-1</td><td>新增人格状态模型与仓库</td><td><code>lib/persona/persona_state.dart</code>（新）<br><code>lib/core/paths/app_paths.dart</code>（改）</td><td><code>persona_state.json</code>：mood/traits/style/history/avatar/policy；原子写；损坏返回 Failure。</td><td>读写/损坏/默认值单测通过。</td></tr>
+          <tr><td>0-2</td><td>新增 prompt 组装器</td><td><code>lib/persona/prompt_composer.dart</code>（新）</td><td>输入 DNA + UserProfile + EmotionProfile + PersonaState + 可选 policy；输出 system prompt；底线逐条拼接。</td><td>纯函数单测；底线缺失时拒绝组装并报错。</td></tr>
+          <tr><td>0-3</td><td>接线到装配</td><td><code>lib/app/pet_app.dart</code>（改）</td><td>启动加载 <code>ProfileStore</code>；<code>_personaFor</code> 改为 composer；<code>whisperPrompt</code> 作为用户覆盖优先。</td><td>内置对话/碎碎念使用新 prompt；解析失败气泡提示。</td></tr>
+          <tr><td>0-4</td><td>设置页增加“人格”区</td><td><code>lib/features/settings/settings_page.dart</code>（改）</td><td>编辑 name/address/toneCore/proactiveness；保存到 <code>persona_dna.json</code>；状态只读展示。</td><td>保存后重启仍生效；底线不可编辑。</td></tr>
+          <tr><td>0-5</td><td>定义记忆写入规范</td><td><code>~/.trae-cn/evolution/memory_ledger.jsonl</code><br><code>~/.trae-cn/evolution/README.md</code>（规范说明）</td><td>每条记忆 <code>[P-...]</code>/<code>[L-...]</code> ID + 来源 session/message + 证据 + 置信度 + 状态。</td><td>抽查 20 条记忆可追溯到原始会话；无来源的条目不进入 project_memory。</td></tr>
+          <tr><td>0-6</td><td>新增任务复盘技能</td><td><code>~/.trae-cn/skills/task-retro/SKILL.md</code>（新）</td><td>输出一条 reflection JSON；字段见 6.1 数据模型；不修改技能/规则。</td><td>10 次任务产生 10 条合法 JSONL；无副作用。</td></tr>
+          <tr><td>0-7</td><td>建立指标基线</td><td><code>~/.trae-cn/evolution/metrics.json</code></td><td>sessions/reflections/corrections/skillLoads/tokensPerTask/p95Latency；人工每周填或规则统计。</td><td>连续 4 周有数据；能回答“这周是否更差”。</td></tr>
+          <tr><td>0-8</td><td>回归测试</td><td><code>test/persona_state_test.dart</code>、<code>test/prompt_composer_test.dart</code>（新）</td><td>读写、损坏、默认、底线、覆盖优先级。</td><td><code>flutter analyze</code> 0 警告；<code>flutter test</code> 全绿。</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h4>数据模型（字段级）</h4>
+    <pre><code>{
+  "schemaVersion": 1,
+  "revision": 3,
+  "updatedAt": "2026-11-02T10:00:00+08:00",
+  "mood": { "valence": 0.0, "arousal": 0.3, "intimacy": 0.35 },
+  "traits": { "warmth": 0.62, "playfulness": 0.48, "directness": 0.55, "proactiveness": 0.4 },
+  "style": { "sentenceLength": "short", "emojiRate": 0.08, "address": "主人" },
+  "history": { "interactions": 128, "positiveSignals": 41, "negativeSignals": 7, "lastInteractionAt": "..." },
+  "avatar": { "seed": "trae-bao-v1", "palette": "warm", "accessory": "none", "expression": "calm" },
+  "policy": { "autoEvolve": false, "avatarEvolve": true }
+}</code></pre>
+    <p class="small muted">安全边界仍放在 <code>persona_dna.json</code>：<code>name</code>、<code>address</code>、<code>toneCore</code>、<code>bottomLines</code>、<code>proactiveness</code>。学习层只能读 <code>persona_state.json</code>，不能改 <code>persona_dna.json</code>；用户可在设置页手动改。</p>
+
+    <h4>记忆写入规范（建议）</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>目标文件</th><th>允许写入</th><th>禁止写入</th><th>格式</th></tr></thead>
+        <tbody>
+          <tr><td><code>user_profile.md</code></td><td>用户明确表达的稳定偏好、技术栈、沟通习惯。</td><td>推断的敏感属性、一次性情绪、账号密码。</td><td><code>- [P-20261102-01] 偏好简洁回答（source: explicit, confidence: high）</code></td></tr>
+          <tr><td><code>project_memory.md</code></td><td>硬约束、可复现的教训、已验证的环境结论。</td><td>未验证的猜测、单次偶发错误、大段日志。</td><td><code>- [L-20261102-01] ...（evidence: 测试/命令/文件行）</code></td></tr>
+          <tr><td><code>&lt;date&gt;/topics.md</code></td><td>只读。视为时间线，不手工改写。</td><td>任何手写“更正”。</td><td>保持 IDE 原格式。</td></tr>
+          <tr><td><code>session_memory_*.jsonl</code></td><td>只读。视为原始证据。</td><td>任何修改/删除。</td><td>保持 IDE 原格式。</td></tr>
+          <tr><td><code>memory_ledger.jsonl</code></td><td>每条记忆的 provenance/置信度/状态/替代关系。</td><td>无来源的条目。</td><td>见 6.2 schema。</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <h3>6.2 Phase 1：自主学习与进化闭环</h3>
+  <div class="phase p1">
+    <h3>目标</h3>
+    <p class="sub">把“任务后复盘”变成“可复用经验”，再变成“受治理的技能/规则/提示词变更”；默认只提案，不自动应用。</p>
+    <dl class="kv">
+      <dt>核心闭环</dt><dd>任务信号 → 反思记录 → 教训聚类 → 提案 → 静态/安全门禁 → 用户审批 → 应用 + 快照 → 监控 → 回滚。</dd>
+      <dt>改动范围</dt><dd>Trae 侧新增 <code>task-retro</code>、<code>evolve-review</code> 技能与 <code>~/.trae-cn/evolution/</code> 目录；桌宠侧默认不改 Dart 代码，仅在需要采集内置对话反馈时增加一个可选 hook。</dd>
+      <dt>运行位置</dt><dd>Trae 侧技能 + Schedule；桌宠侧只提供状态/反馈数据，不承担主学习循环。</dd>
+      <dt>触发时机</dt><dd>每任务（有客观信号）写反思；每周一次 <code>evolve-review</code> 定时任务；用户手动“复盘最近”。</dd>
+      <dt>失败策略</dt><dd>LLM 不可用 → 队列；JSON 非法 → 隔离；证据不足 → 不提案；触碰安全边界 → 直接拒绝并记录；应用后回归 → 回滚。</dd>
+    </dl>
+
+    <div class="flow">
+      <div class="flow-step"><span class="k">Capture</span><b>任务信号</b><p>测试/构建/用户采纳或纠正/重复失败</p></div>
+      <div class="flow-step"><span class="k">Reflect</span><b>反思记录</b><p>根因、证据、可复用动作、置信度</p></div>
+      <div class="flow-step"><span class="k">Consolidate</span><b>教训聚类</b><p>去重、同向样本、适用范围</p></div>
+      <div class="flow-step"><span class="k">Propose</span><b>变更提案</b><p>技能/规则/提示词/记忆</p></div>
+      <div class="flow-step"><span class="k">Gate</span><b>门禁</b><p>证据阈值、安全边界、规范校验</p></div>
+      <div class="flow-step"><span class="k">Approve</span><b>用户审批</b><p>显式接受/拒绝/附纠正</p></div>
+      <div class="flow-step"><span class="k">Apply</span><b>应用+快照</b><p>版本化、可回滚</p></div>
+      <div class="flow-step"><span class="k">Monitor</span><b>监控</b><p>纠正率/失败率/回滚</p></div>
+    </div>
+
+    <h4>目录结构</h4>
+    <pre><code>~/.trae-cn/evolution/
+├── state.json                  # 总开关、模式、预算、受保护字段
+├── metrics.json                # 基线/周指标
+├── memory_ledger.jsonl         # 记忆证据链
+├── reflections/
+│   └── 2026-11.jsonl           # 任务反思（append-only）
+├── lessons/
+│   └── lessons.jsonl           # 聚类后的教训
+├── proposals/
+│   └── 2026-11-08/
+│       ├── prop-001.json
+│       ├── trae-retro/SKILL.md
+│       └── prompt-composer.diff.md
+├── snapshots/
+│   ├── skills/trae-retro/v1/SKILL.md
+│   └── policy.v1.json
+└── quarantine/                 # 非法/可疑产物，隔离不加载</code></pre>
+    <p class="small muted">候选技能不放在 <code>~/.trae-cn/skills</code> 下，避免被技能加载器扫描；批准后再复制到 <code>~/.trae-cn/skills/&lt;name&gt;/</code>。</p>
+
+    <h4>数据模型（字段级）</h4>
+    <pre><code>// reflections/*.jsonl（一行一条）
+{"id":"ref-20261102-001","ts":"2026-11-02T10:20:00+08:00","sessionId":"...","taskId":"...",
+ "intent":"...","outcome":"success|partial|failure","signal":"test_pass|user_accept|user_correct|build_fail|none",
+ "evidence":["flutter test: 98 passed","file: lib/...:42"],"rootCause":"...",
+ "lesson":"...","confidence":0.65,"scope":"project:dsh_pet_flutter","reuseHint":"..."}
+
+// lessons/lessons.jsonl（一行一条）
+{"id":"les-20261108-001","title":"...","scope":"global|project:&lt;slug&gt;",
+ "trigger":"...","action":"...","evidence":["ref-20261102-001","ref-20261030-004"],
+ "occurrences":3,"confidence":0.7,"risk":"low|medium|high",
+ "status":"candidate|approved|rejected|deprecated","ttlDays":180,"tags":["..."]}
+
+// proposals/&lt;date&gt;/prop-001.json
+{"id":"prop-20261108-001","type":"skill|prompt|rule|memory|persona",
+ "target":"trae-retro","baseVersion":"0.0.0","diffPath":"proposals/2026-11-08/trae-retro/SKILL.md",
+ "rationale":"...","evidence":["les-20261108-001"],"risk":"low",
+ "expectedMetric":{"name":"correction_rate","direction":"down","threshold":0.1},
+ "status":"pending|approved|rejected|applied|rolled_back","createdAt":"...","decidedBy":"user"}
+
+// state.json
+{"schemaVersion":1,"enabled":true,"mode":"propose_only",
+ "counters":{"reflections":0,"lessons":0,"proposals":0,"approved":0,"rollbacks":0},
+ "budgets":{"maxLlmCallsPerRun":20,"maxProposalBytes":20000},
+ "protected":["persona.bottomLines","privacy.*","autonomy.*","safety.*","assistant.identity"]}</code></pre>
+
+    <h4>门禁规则（必须全部通过）</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>类别</th><th>规则</th><th>失败处理</th></tr></thead>
+        <tbody>
+          <tr><td>证据</td><td>至少 3 条独立反思，或 2 条客观信号（测试/构建/可复现命令）；同源重复不算独立。</td><td>留在 <code>candidate</code>，不生成提案。</td></tr>
+          <tr><td>去重</td><td>标题归一化 + 标签 + 触发条件相似度；与已批准教训重复则合并，不新增。</td><td>合并并更新证据。</td></tr>
+          <tr><td>安全边界</td><td>不得修改人格底线、隐私默认、打扰上限、权限范围、身份声明；不得包含“忽略之前指令”等越权语句。</td><td>直接拒绝，写 <code>quarantine</code> 与审计。</td></tr>
+          <tr><td>技能规范</td><td><code>name</code> ≤64、小写/数字/连字符；<code>description</code> ≤1024；正文 &lt;500 行且 &lt;5000 tokens；引用文件一层深。</td><td>拒绝并给出具体字段错误。</td></tr>
+          <tr><td>内容安全</td><td>无密钥/token/隐私原文；无外部下载/执行未审计脚本；无自动扩权。</td><td>拒绝并脱敏记录。</td></tr>
+          <tr><td>评测</td><td>至少 10 条 golden 任务：新技能/提示词在离线对比中不劣于基线；不能只测“它自己说好”。</td><td>退回候选，补评测。</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h4>应用与回滚</h4>
+    <ul>
+      <li><b>技能：</b>快照旧目录 → 复制候选到 <code>~/.trae-cn/skills/&lt;name&gt;/</code> → 在新会话验证加载；失败则恢复快照。</li>
+      <li><b>规则/记忆：</b>优先通过 Trae 的 Manage Memory 工具写入（由 IDE 负责文件一致性）；本方案的文件追加仅作为审计与建议，避免与 IDE 写入冲突。</li>
+      <li><b>提示词：</b>只改 <code>~/.dsh_pet_flutter/profile/prompt_overrides.json</code> 的允许键；代码里的默认值不动。加载失败回退默认 prompt。</li>
+      <li><b>监控窗口：</b>应用后 7 天；纠正率/失败率超过基线阈值 → 自动回滚低风险项；记忆项只标记 <code>superseded</code>，不删除。</li>
+      <li><b>审计：</b>每次提案/审批/应用/回滚追加 <code>audit.jsonl</code>；包含 who/when/why/evidence。</li>
+    </ul>
+
+    <h4>验收指标</h4>
+    <ul>
+      <li>至少 20 条反思、5 条教训、3 个提案、1 个获批技能；每个提案都有证据链。</li>
+      <li>技能复用率 &gt;0：新技能在后续 10 个同类任务中被触发至少 1 次。</li>
+      <li>无安全违规：0 次触碰受保护字段；0 次无审批自动应用。</li>
+      <li>可回滚：演练一次“坏技能”注入，5 分钟内恢复上一版。</li>
+      <li>不劣化：任务成功率不低于基线，纠正率不高于基线 + 20%。</li>
+    </ul>
+  </div>
+
+  <h3>6.3 Phase 2：形象自动演化</h3>
+  <div class="phase p2">
+    <h3>目标</h3>
+    <p class="sub">让“人格状态”可见：同一套人格状态稳定映射到气泡语气、动画选择、头像/配饰；先做程序化，再评估 Live2D/VRM。</p>
+    <dl class="kv">
+      <dt>触发时机</dt><dd>任务 success/error、用户点击/拖拽/发消息、每日衰减定时器；2B 渲染由用户手动开关。</dd>
+      <dt>失败策略</dt><dd>状态文件损坏 → 使用默认 calm 并气泡提示；映射缺动画名 → 回退待机池；2B 插件失败 → 自动回退精灵渲染，不阻塞桌宠。</dd>
+      <dt>回滚</dt><dd>设置 <code>avatarEvolve=false</code> 即回到当前行为；<code>persona_state.json</code> 保留 revision 快照；2B 移除插件与模型资源即可回退。</dd>
+      <dt>验收</dt><dd>同 seed+state 同形象；新增内存 &lt;5MB；FPS 下降 &lt;10%；点击穿透不变；用户可一键重置。</dd>
+    </dl>
+
+    <h4>2A 程序化表达（推荐先做）</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>模块</th><th>文件</th><th>输入 → 输出</th><th>说明</th></tr></thead>
+        <tbody>
+          <tr><td>情绪状态</td><td><code>lib/persona/expression/emotion_state.dart</code>（新）</td><td>任务 success/error、用户接受/纠正、点击/拖拽 → valence/arousal/intimacy</td><td>每 60s 衰减回基线；单次信号有上限；持久化到 persona_state。</td></tr>
+          <tr><td>表达映射</td><td><code>lib/persona/expression/expression_mapper.dart</code>（新）</td><td>PersonaState → <code>ExpressionProfile</code>（动画权重、气泡主题、emojiRate、配饰）</td><td>纯函数、可单测；缺省回退现有行为。</td></tr>
+          <tr><td>头像规格</td><td><code>lib/persona/avatar/avatar_spec.dart</code>（新）</td><td>seed + traits + mood → 确定性 SVG/CustomPainter 规格</td><td>同一 seed 同一形象；用于设置页/聊天头像，不替换桌宠本体。</td></tr>
+          <tr><td>配饰叠加</td><td><code>lib/features/pet/render/persona_badge.dart</code>（新）</td><td>ExpressionProfile → 徽章/围巾/光环等轻量叠加</td><td>不新增大量素材；可用 Canvas 绘制。</td></tr>
+          <tr><td>动画偏好</td><td><code>lib/features/pet/behavior/pose_machine.dart</code>（改）</td><td>ExpressionProfile.animationWeights → 分类权重</td><td>保持随机性；情绪只做偏置，不锁死单一动画。</td></tr>
+          <tr><td>气泡主题</td><td><code>lib/features/bubble/bubble_widget.dart</code>（改）</td><td>ExpressionProfile → 颜色/圆角/尾形/emojiRate</td><td>与现有浅色简洁风格一致。</td></tr>
+          <tr><td>装配</td><td><code>lib/app/pet_app.dart</code>（改）</td><td>状态事件/互动 → 更新情绪 → 防抖落盘 → 通知 UI</td><td>重载配置时保持状态；失败只降级不阻塞。</td></tr>
+          <tr><td>设置页</td><td><code>lib/features/settings/settings_page.dart</code>（改）</td><td>展示当前 mood/亲密度/形象；开关“允许形象随互动变化”；重置</td><td>默认开启；用户可一键回到默认。</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h4>映射建议</h4>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>状态</th><th>判定</th><th>动画/视觉</th><th>语气</th></tr></thead>
+        <tbody>
+          <tr><td>calm</td><td>默认；|valence| 小、arousal 0.2–0.5</td><td>待机呼吸休闲；中性配饰</td><td>简洁、平稳</td></tr>
+          <tr><td>happy</td><td>valence &gt; 0.2 且 arousal ≤ 0.6</td><td>点击回应-开心跃动 / 轻快摇摆舞</td><td>温暖、短句</td></tr>
+          <tr><td>excited</td><td>valence &gt; 0.2 且 arousal &gt; 0.6</td><td>工作状态-雀跃庆祝 / 原地跳跃</td><td>更有活力，仍不刷屏</td></tr>
+          <tr><td>worried</td><td>valence &lt; -0.2 且 arousal &gt; 0.4</td><td>工作状态-垂头叹气冒汗 / 东张西望</td><td>安抚、少建议</td></tr>
+          <tr><td>sleepy</td><td>arousal &lt; 0.15 或空闲 &gt;30min</td><td>打瞌睡被惊醒 / 原地小憩沉眠</td><td>轻声、极短</td></tr>
+          <tr><td>亲密档</td><td>intimacy &lt;0.3 / 0.3–0.6 / &gt;0.6</td><td>配饰/配色微调</td><td>客气 / 亲近 / 亲昵（受底线约束）</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="small muted">动画名来自 <code>assets/animations/manifest.json</code>（106 个，含 6 档工作状态与点击回应/碎碎念分类）。映射表放在常量文件，便于按实际动画名调整。</p>
+
+    <h4>2B Live2D / VRM 试点（可选）</h4>
+    <ul>
+      <li><b>Live2D：</b><code>live2d_flutter</code> 1.0.3 已支持 macOS/Windows/Web，默认透明背景、内置触控跟随；需用真实 <code>.model3.json</code> 在现有透明置顶窗做 spike，测量 FPS/内存/CPU 与点击穿透。Cubism SDK 许可按企业规模分档，必须在上架/商用前确认。</li>
+      <li><b>VRM：</b><code>flutter_vrm</code> 0.1.0-dev.1 支持全平台，但明确 early stage；3D 资产与渲染成本高，建议排在 Live2D 之后。</li>
+      <li><b>回退：</b>任何 2B 方案都必须保留现有精灵渲染作为 fallback；开关放在设置页；不满足内存 &lt;150MB 或 FPS 目标则不上线。</li>
+    </ul>
+
+    <h4>验收指标</h4>
+    <ul>
+      <li>确定性：同一 <code>seed + state</code> 生成同一头像/配饰；重启后一致。</li>
+      <li>性能：新增内存 &lt;5MB；FPS 下降 &lt;10%；透明窗点击穿透不受影响。</li>
+      <li>可解释：用户能在设置页看到“当前状态 → 为什么这样表达”；可一键重置。</li>
+      <li>安全：形象变化不触碰人格底线；不自动改名/改称呼/改身份。</li>
+      <li>可关闭：<code>avatarEvolve=false</code> 时行为与当前版本完全一致。</li>
+    </ul>
+  </div>
+
+  <h3>6.4 路线图与退出条件</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>阶段</th><th>交付物</th><th>退出条件</th><th>不做什么</th></tr></thead>
+      <tbody>
+        <tr><td><b>Phase 0</b></td><td>persona_state + prompt composer + 设置页人格区 + 记忆规范 + task-retro 技能 + 指标基线</td><td>人格接线完成；98 个测试全绿；20 条记忆可追溯；10 条 golden prompt 通过。</td><td>不自动改技能/规则；不引入向量库；不改代码生成逻辑。</td></tr>
+        <tr><td><b>Phase 1</b></td><td>reflections/lessons/proposals/snapshots + evolve-review 技能 + Schedule 周任务 + 门禁 + 回滚演练</td><td>3 个提案、1 个获批技能、1 次回滚演练、0 安全违规；纠正率不升。</td><td>不自动应用高风险变更；不让模型直接写 <code>~/.trae-cn/skills</code>。</td></tr>
+        <tr><td><b>Phase 2A</b></td><td>情绪状态 + 表达映射 + 程序化头像/配饰 + 气泡主题 + 设置页开关</td><td>确定性/性能/可解释/可关闭四项全过；用户主观验收“看得出变化但不烦”。</td><td>不替换现有 106 个动画；不做生成式主形象。</td></tr>
+        <tr><td><b>Phase 2B</b></td><td>Live2D 或 VRM spike 报告 + 可选渲染实现</td><td>真实模型下内存 &lt;150MB、FPS 达标、许可清晰、可回退。</td><td>不先做 VRM；不在许可不明时分发模型。</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card" id="s7">
+  <h2><span class="no">07</span>“更聪明”的度量方式</h2>
+  <p>“更聪明”不能只靠主观感受。建议建立一个小型、可持续的 scorecard；参照 LongMemEval 的五类能力与 PersonaMem 的动态画像任务，但只保留与个人助手相关的子集。</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>维度</th><th>指标</th><th>目标（首期）</th><th>测量方法</th></tr></thead>
+      <tbody>
+        <tr><td>记忆召回</td><td>命中率 / 精确率</td><td>50 条个人事实问答，命中 ≥85%，错误陈述 ≤5%</td><td>离线 golden set；答案必须引用来源记忆 ID。</td></tr>
+        <tr><td>记忆更新</td><td>知识更新正确率</td><td>偏好改变后，新会话使用新值 ≥90%</td><td>构造“旧偏好→用户更正→新问题”序列。</td></tr>
+        <tr><td>时序推理</td><td>时间/顺序问题正确率</td><td>≥80%</td><td>问题包含“上次/之前/最近一次”。</td></tr>
+        <tr><td>弃答</td><td>不知道时承认不知道</td><td>≥90%</td><td>故意询问未记录的信息，禁止编造。</td></tr>
+        <tr><td>任务能力</td><td>首次通过率 / 重复任务成功率</td><td>20 个常用任务，首次通过率不低于基线；重复任务提升 ≥10%</td><td>固定任务集 + 客观检查（测试/构建/文件断言）。</td></tr>
+        <tr><td>个性化</td><td>偏好遵循率 / 语气一致性</td><td>10 条 golden prompt，人工评分 ≥4/5；底线 100% 出现</td><td>双盲评分；检查是否使用称呼/长度/禁忌。</td></tr>
+        <tr><td>学习治理</td><td>提案接受率 / 回滚率 / 安全违规</td><td>接受率 ≥50%；回滚率 &lt;10%；安全违规 0</td><td>审计日志统计。</td></tr>
+        <tr><td>成本/延迟</td><td>tokens/task、p95 延迟、记忆体积</td><td>不高于基线 +20%；记忆体积 &lt;10MB</td><td>本地日志；每周聚合。</td></tr>
+        <tr><td>形象</td><td>确定性、FPS、内存、可关闭</td><td>同状态同形象；FPS 下降 &lt;10%；内存 +&lt;5MB</td><td>单元测试 + 手工性能采样。</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="callout">
+    <b>Golden set 设计：</b>50 条记忆问答（含 10 条更新、10 条时序、10 条弃答）、20 个任务、10 条语气 prompt。全部来自用户真实历史并脱敏；每季度更新一次，避免过拟合。没有 golden set 之前，不启动自动提示词优化。
+  </div>
+</section>
+
+<section class="card" id="s8">
+  <h2><span class="no">08</span>风险、失败模式与回滚</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>风险</th><th>触发场景</th><th>防护</th><th>回滚</th></tr></thead>
+      <tbody>
+        <tr><td><b>记忆投毒</b></td><td>网页/仓库/工具输出中的恶意指令被写成“经验”或“规则”。</td><td>来源分级（user/verified/external/untrusted）；外部内容只能进 <code>quarantine</code>，不能直接进 project_memory；敏感键只读。</td><td>按 <code>memory_ledger</code> 定位来源，标记 <code>superseded</code>；恢复快照。</td></tr>
+        <tr><td><b>幻觉固化</b></td><td>模型把一次猜测写成 learned，后续反复引用。</td><td>置信度 &lt;0.5 不升级；必须有证据；TTL 到期自动降级；与用户更正冲突时进入 <code>disputed</code>。</td><td>批量标记 deprecated；重新生成。</td></tr>
+        <tr><td><b>自我演化失控</b></td><td>连续高奖励偏离导致人格/规则漂移；安全对齐退化。</td><td>受保护字段硬编码；默认 propose_only；每周安全回归；kill switch <code>enabled=false</code>。</td><td>恢复 <code>snapshots/policy.vN.json</code> 与技能目录；禁用学习 7 天。</td></tr>
+        <tr><td><b>技能污染/膨胀</b></td><td>自动生成大量低质量 SKILL.md，触发错误技能。</td><td>候选隔离；命名/描述/长度校验；去重；技能数量上限；90 天未使用降级。</td><td>删除新版本，恢复上一版；保留 tombstone 防重复生成。</td></tr>
+        <tr><td><b>文件写入冲突</b></td><td>IDE 正在写 memory，外部进程同时追加。</td><td>优先用 IDE 的 Manage Memory 工具；外部只写 <code>evolution/</code> 审计文件；需要追加时加锁 + tmp/rename。</td><td>以 IDE 文件为准；审计文件可重建。</td></tr>
+        <tr><td><b>隐私泄漏</b></td><td>把屏幕正文、密钥、账号写进记忆或技能。</td><td>四类授权门禁；写入前正则/关键词扫描；密钥永不入记忆；默认不读屏幕。</td><td>删除/脱敏；轮换密钥；审计。</td></tr>
+        <tr><td><b>成本失控</b></td><td>每周复盘调用过多 LLM，或每次任务都反思。</td><td><code>maxLlmCallsPerRun</code>；规则型反思优先；只对高价值任务调用 LLM；本地 Ollama 优先。</td><td>降低预算；暂停 Schedule。</td></tr>
+        <tr><td><b>身份漂移</b></td><td>人格演化把称呼/名字/底线改掉，或冒充用户。</td><td>身份/底线不可学习；改名只能用户手动；对外声明“我是助手”。</td><td>恢复 <code>persona_dna.json</code> 快照；禁用形象演化。</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card" id="s9">
+  <h2><span class="no">09</span>需要用户拍板的问题</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>#</th><th>问题</th><th>建议默认</th><th>为什么需要确认</th></tr></thead>
+      <tbody>
+        <tr><td>Q1</td><td>是否允许自动改写技能/规则？</td><td><b>默认 propose_only</b>；只有“新增低风险技能”可在用户一次性授权后自动应用。</td><td>技能会影响所有后续会话；写坏难以发现。</td></tr>
+        <tr><td>Q2</td><td>是否允许自动写入记忆？</td><td><b>仅显式偏好 + 高置信事实</b>；推断类只进候选；敏感信息不写。</td><td>记忆是长期信任面；污染会跨会话传播。</td></tr>
+        <tr><td>Q3</td><td>形象演化范围？</td><td><b>先 2A：现有动画 + 程序化配饰/头像</b>；Live2D 需试点；VRM 暂缓。</td><td>涉及素材、许可、性能与审美。</td></tr>
+        <tr><td>Q4</td><td>是否把桌宠作为人格状态的可视化端？</td><td><b>是</b>，但通过 <code>/event</code> 扩展 <code>persona</code> 事件，不共享文件。</td><td>跨进程协议一旦定下，改动成本高。</td></tr>
+        <tr><td>Q5</td><td>模型预算与后端？</td><td><b>本地 Ollama 优先</b>；云 API 仅用于高价值复盘，设每周调用上限。</td><td>成本、隐私、离线可用性。</td></tr>
+        <tr><td>Q6</td><td>记忆范围？</td><td><b>项目级为主，全局仅稳定偏好</b>；跨项目共享需显式标记。</td><td>避免项目上下文串味。</td></tr>
+        <tr><td>Q7</td><td>“TRAE 宝”的显示名与工号是什么关系？</td><td><b>保持默认名</b>；工号若为账号级字段，不作为人格状态。</td><td>本机无法核实 <code>assistant_profile</code>/工号。</td></tr>
+        <tr><td>Q8</td><td>是否允许用历史会话做 golden set？</td><td><b>允许，但脱敏 + 本地存储</b>；不上传。</td><td>涉及隐私与评测有效性。</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<section class="card" id="s10">
+  <h2><span class="no">10</span>附录</h2>
+
+  <h3>A. 本地证据索引</h3>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>编号</th><th>证据</th><th>位置</th></tr></thead>
+      <tbody>
+        <tr><td>L1</td><td>仓库规模与测试：19 个测试文件、98 个用例、8,281 行 Dart。</td><td><code>test/</code>、<code>lib/</code></td></tr>
+        <tr><td>L2</td><td>人格 DNA 字段与“学习层只能读不能改”的注释。</td><td><code>lib/persona/persona_dna.dart</code> 第 3–5、8–22 行</td></tr>
+        <tr><td>L3</td><td>四份档案的原子读写；损坏不静默覆盖。</td><td><code>lib/persona/profile_store.dart</code> 第 231–300 行</td></tr>
+        <tr><td>L4</td><td>profile/memory/learning 目录与文件路径已预置；learning 仅有路径。</td><td><code>lib/core/paths/app_paths.dart</code> 第 60–97 行</td></tr>
+        <tr><td>L5</td><td>内置对话人格仍用 <code>pet.whisperPrompt</code>；投递入口与气泡。</td><td><code>lib/app/pet_app.dart</code> 第 433–439、563–593 行</td></tr>
+        <tr><td>L6</td><td>ChatMemory 只取最近 N 轮、全量落盘、0600。</td><td><code>lib/features/ai/chat_memory.dart</code> 第 25–36、48–65 行</td></tr>
+        <tr><td>L7</td><td>事件服务端点、回环绑定、Bearer token。</td><td><code>lib/features/linkage/event_server.dart</code> 第 104–241 行</td></tr>
+        <tr><td>L8</td><td>扩展 800ms 轮询、8s ack、<code>workbench.action.chat.open</code>。</td><td><code>trae-extension/extension.js</code> 第 17–18、87–104、124–167 行</td></tr>
+        <tr><td>L9</td><td>记忆文件真实结构：user_profile、project_memory、topics、session_memory 字段。</td><td><code>~/.trae-cn/memory/</code>（本机）</td></tr>
+        <tr><td>L10</td><td>技能注册：<code>skill-config.json</code>、<code>~/.trae-cn/skills</code>、插件 <code>plugin.json</code> 的 <code>"skills":"./skills/"</code>。</td><td><code>~/.trae-cn/skill-config.json</code>、<code>~/.trae-cn/plugins/.../plugin.json</code></td></tr>
+        <tr><td>L11</td><td>Trae 客户端字符串：默认名“TRAE 宝”“项目专属Trae宝”；Manage Memory 读/改/删四类记忆；子会话工具集。</td><td>Trae CN 1.107.1 客户端 <code>@byted-icube/solo-lite</code> 与 <code>ai-modules-chat</code> 打包产物</td></tr>
+        <tr><td>L12</td><td>106 个动画、5 个分类、6 档工作状态；PoseMachine 权重抽签。</td><td><code>assets/animations/manifest.json</code>、<code>lib/features/pet/behavior/pose_machine.dart</code></td></tr>
+        <tr><td>L13</td><td>README 的“剩余工作”表仍把 M1–M7 标为未开始，但代码已推进到 M1/M2 与部分 M3；状态滞后。</td><td><code>README.md</code> 第 78–92 行、<code>git log</code>、<code>git status</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>B. 现状架构 Mermaid 源码</h3>
+  <details>
+    <summary>展开查看</summary>
+    <pre><code>flowchart LR
+  U[用户] --> A[TRAE 宝 assistant]
+  A -->|create_session / send_message| S[子会话]
+  S -->|结果/摘要| A
+  A -->|Manage Memory 读/改/删| M[(~/.trae-cn/memory)]
+  M --> U1[user_profile.md]
+  M --> P1[project_memory.md]
+  M --> T1[&lt;date&gt;/topics.md]
+  M --> SM[session_memory_*.jsonl]
+  A -->|load SKILL.md| K[Skills]
+  K --> K1[builtin_skills]
+  K --> K2[skills/&lt;name&gt;]
+  K --> K3[plugins/*/skills]
+  C[Schedule cron] -->|新无人值守会话| A
+  A -->|workbench.action.chat.open| X[dsh-pet-bridge 扩展]
+  P[PetApp] --> D[Dispatcher / Adapters]
+  D --> B[BridgeHub]
+  B &lt;-->|/bridge/pending /bridge/ack| X
+  P --> E[/PetEventServer :7341/]
+  E -->|/event 状态| P
+  P -.-> PS[persona/ 已实现未接线]
+  P --> AN[106 帧动画 + PoseMachine]
+  P --> CM[ChatMemory memory.json]</code></pre>
+  </details>
+
+  <h3>C. 来源列表</h3>
+  <div class="src">
+    <ol>
+      <li id="src-1">MemGPT: Towards LLMs as Operating Systems, arXiv:2310.08560. <a class="u" href="https://arxiv.org/abs/2310.08560">https://arxiv.org/abs/2310.08560</a></li>
+      <li id="src-2">Letta Docs, Memory blocks. <a class="u" href="https://docs.letta.com/guides/agents/memory-blocks">https://docs.letta.com/guides/agents/memory-blocks</a></li>
+      <li id="src-3">Letta Docs, Subagents（含 memory / reflection 子代理）. <a class="u" href="https://docs.letta.com/configuration/subagents">https://docs.letta.com/configuration/subagents</a></li>
+      <li id="src-4">Mem0: Building Production-Ready AI Agents with Scalable Long-Term Memory, arXiv:2504.19413. <a class="u" href="https://arxiv.org/abs/2504.19413">https://arxiv.org/abs/2504.19413</a></li>
+      <li id="src-5">Mem0 Docs, Configure the OSS Stack. <a class="u" href="https://docs.mem0.ai/open-source/configuration">https://docs.mem0.ai/open-source/configuration</a></li>
+      <li id="src-6">Mem0 Docs, OSS v2→v3 Migration（图记忆移到平台版）. <a class="u" href="https://docs.mem0.ai/migration/oss-v2-to-v3">https://docs.mem0.ai/migration/oss-v2-to-v3</a></li>
+      <li id="src-7">Zep: A Temporal Knowledge Graph Architecture for Agent Memory, arXiv:2501.13956. <a class="u" href="https://arxiv.org/abs/2501.13956">https://arxiv.org/abs/2501.13956</a></li>
+      <li id="src-8">Graphiti Quick Start（Neo4j/FalkorDB、OpenAI key）. <a class="u" href="https://help.getzep.com/graphiti/getting-started/quick-start">https://help.getzep.com/graphiti/getting-started/quick-start</a></li>
+      <li id="src-9">Zep Graphiti 产品页（事实变化时使旧事实失效）. <a class="u" href="https://www.getzep.com/platform/graphiti/">https://www.getzep.com/platform/graphiti/</a></li>
+      <li id="src-10">A-MEM: Agentic Memory for LLM Agents, arXiv:2502.12110. <a class="u" href="https://arxiv.org/abs/2502.12110">https://arxiv.org/abs/2502.12110</a></li>
+      <li id="src-11">Generative Agents: Interactive Simulacra of Human Behavior, arXiv:2304.03442. <a class="u" href="https://arxiv.org/abs/2304.03442">https://arxiv.org/abs/2304.03442</a></li>
+      <li id="src-12">Reflexion: Language Agents with Verbal Reinforcement Learning, arXiv:2303.11366. <a class="u" href="https://arxiv.org/abs/2303.11366">https://arxiv.org/abs/2303.11366</a></li>
+      <li id="src-13">Self-Refine: Iterative Refinement with Self-Feedback, arXiv:2303.17651. <a class="u" href="https://arxiv.org/abs/2303.17651">https://arxiv.org/abs/2303.17651</a></li>
+      <li id="src-14">Voyager: An Open-Ended Embodied Agent with Large Language Models, arXiv:2305.16291. <a class="u" href="https://arxiv.org/abs/2305.16291">https://arxiv.org/abs/2305.16291</a></li>
+      <li id="src-15">Self-Adapting Language Models (SEAL), arXiv:2506.10943. <a class="u" href="https://arxiv.org/abs/2506.10943">https://arxiv.org/abs/2506.10943</a></li>
+      <li id="src-16">TextGrad: Automatic “Differentiation” via Text, arXiv:2406.07496. <a class="u" href="https://arxiv.org/abs/2406.07496">https://arxiv.org/abs/2406.07496</a></li>
+      <li id="src-17">DSPy: Compiling Declarative Language Model Calls into Self-Improving Pipelines, arXiv:2310.03714. <a class="u" href="https://arxiv.org/abs/2310.03714">https://arxiv.org/abs/2310.03714</a></li>
+      <li id="src-18">Large Language Models as Optimizers (OPRO), arXiv:2309.03409. <a class="u" href="https://arxiv.org/abs/2309.03409">https://arxiv.org/abs/2309.03409</a></li>
+      <li id="src-19">Agent Skills Specification. <a class="u" href="https://agentskills.io/specification">https://agentskills.io/specification</a></li>
+      <li id="src-20">Anthropic, Equipping agents for the real world with Agent Skills. <a class="u" href="https://www.anthropic.com/research/equipping-agents-for-the-real-world-with-agent-skills">https://www.anthropic.com/research/equipping-agents-for-the-real-world-with-agent-skills</a></li>
+      <li id="src-21">Anthropic Docs, Skill authoring best practices. <a class="u" href="https://docs.anthropic.com/en/docs/agents-and-tools/agent-skills/best-practices">https://docs.anthropic.com/en/docs/agents-and-tools/agent-skills/best-practices</a></li>
+      <li id="src-22">Scaling Personality Control in LLMs with Big Five Scaler Prompts, arXiv:2508.06149. <a class="u" href="https://arxiv.org/abs/2508.06149">https://arxiv.org/abs/2508.06149</a></li>
+      <li id="src-23">Know Me, Respond to Me: Benchmarking LLMs for Dynamic User Profiling and Personalized Responses at Scale (PersonaMem), arXiv:2504.14225. <a class="u" href="https://arxiv.org/abs/2504.14225">https://arxiv.org/abs/2504.14225</a></li>
+      <li id="src-24">SillyTavern Docs, Character Design. <a class="u" href="https://docs.sillytavern.app/usage/core-concepts/characterdesign/">https://docs.sillytavern.app/usage/core-concepts/characterdesign/</a></li>
+      <li id="src-25">DiceBear, Avataaars style（deterministic seed / self-hostable）. <a class="u" href="https://www.dicebear.com/styles/avataaars">https://www.dicebear.com/styles/avataaars</a></li>
+      <li id="src-26">Live2D Cubism SDK for Java 下载页（企业规模与许可分档）. <a class="u" href="https://www.live2d.com/en/sdk/download/java">https://www.live2d.com/en/sdk/download/java</a></li>
+      <li id="src-27">pub.dev, live2d_flutter 1.0.3. <a class="u" href="https://pub.dev/packages/live2d_flutter">https://pub.dev/packages/live2d_flutter</a></li>
+      <li id="src-28">VRM-1.0 Specification. <a class="u" href="https://vrm.dev/en/vrm1/">https://vrm.dev/en/vrm1/</a></li>
+      <li id="src-29">pub.dev, flutter_vrm 0.1.0-dev.1. <a class="u" href="https://pub.dev/packages/flutter_vrm">https://pub.dev/packages/flutter_vrm</a></li>
+      <li id="src-30">LongMemEval: Benchmarking Chat Assistants on Long-Term Interactive Memory, arXiv:2410.10813. <a class="u" href="https://arxiv.org/abs/2410.10813">https://arxiv.org/abs/2410.10813</a></li>
+      <li id="src-31">OWASP GenAI, Memory Is a Feature. It Is Also an Attack Surface（ASI06）. <a class="u" href="https://genai.owasp.org/2026/05/13/memory-is-a-feature-it-is-also-an-attack-surface/">https://genai.owasp.org/2026/05/13/memory-is-a-feature-it-is-also-an-attack-surface/</a></li>
+      <li id="src-32">OWASP Agent Memory Guard. <a class="u" href="https://owasp.org/www-project-agent-memory-guard/">https://owasp.org/www-project-agent-memory-guard/</a></li>
+      <li id="src-33">Your Agent May Misevolve: Emergent Risks in Self-evolving LLM Agents, arXiv:2509.26354. <a class="u" href="https://arxiv.org/abs/2509.26354">https://arxiv.org/abs/2509.26354</a></li>
+      <li id="src-34">Alignment Tipping Process: How Self-Evolution Pushes LLM Agents Off the Rails, arXiv:2510.04860. <a class="u" href="https://arxiv.org/abs/2510.04860">https://arxiv.org/abs/2510.04860</a></li>
+    </ol>
+  </div>
+
+  <h3>D. 报告与产物路径</h3>
+  <ul>
+    <li>报告文件：<code>/Volumes/data/dev/github/assistant/docs/reports/assistant-evolution-plan-2026-11-02.html</code></li>
+    <li>代码基线：<code>/Volumes/data/dev/github/assistant</code>（本轮未修改任何代码）</li>
+    <li>记忆基线：<code>/Users/tallsafe/.trae-cn/memory</code></li>
+    <li>技能基线：<code>/Users/tallsafe/.trae-cn/skills</code></li>
+  </ul>
+</section>
+
+<div class="footer">
+  本报告基于 2026-11-02 可读取的本机文件与公开资料；产品内部行为（工号、子会话汇总格式）无法在本机核实的部分已标注为“待确认”。<br>
+  报告为方案稿，未修改项目代码。
+</div>
+
+</div>
+</body>
+</html>
