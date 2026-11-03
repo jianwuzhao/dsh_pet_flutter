@@ -18,6 +18,7 @@ import 'package:flutter/foundation.dart';
 
 import '../ai/conversation.dart';
 import '../ai/llm_provider.dart';
+import '../ai/thinking_tier.dart';
 import '../core/result.dart';
 import '../features/ai/chat_memory.dart';
 import '../features/linkage/assistant_adapters.dart';
@@ -125,6 +126,43 @@ class AssistantKernel {
       clock: _clock,
       rounds: conversationRounds,
     );
+    // P0-5 会话摘要：裁剪丢弃的旧对话折叠成滚动摘要。
+    // provider 随路由现取（热切换生效）；任何失败路径返回 null，
+    // ChatMemory 保留旧摘要，等价于回退到纯丢弃的现状。
+    final history = conversationHistory;
+    if (history != null) {
+      history.summarizer = (dropped, current) async {
+        try {
+          final provider = (await _gateway.router.resolve())?.provider;
+          if (provider == null || !provider.supportsReply) return null;
+          if (!await provider.isReady) return null;
+          final transcript = [
+            for (final message in dropped)
+              '${message.role == 'user' ? '用户' : '助手'}：${message.content}',
+          ].join('\n');
+          final result = await provider
+              .chat(
+                LlmRequest(
+                  system: '你是会话摘要器。把新增对话合并进现有摘要，输出一段不超过 '
+                      '200 字的中文摘要：保留用户的稳定偏好、关键事实与未完结事项，'
+                      '丢弃寒暄与重复。只输出摘要正文，不要解释或提问。',
+                  messages: [
+                    if (current.trim().isNotEmpty)
+                      LlmMessage.user('现有摘要：\n${current.trim()}'),
+                    LlmMessage.user('新增对话：\n$transcript\n\n请输出合并后的完整摘要。'),
+                  ],
+                  thinkingTier: ThinkingTier.fast,
+                ),
+              )
+              .timeout(const Duration(seconds: 30));
+          if (result is Failure<LlmReply>) return null;
+          final content = (result as Success<LlmReply>).value.content;
+          return content.isEmpty ? null : content;
+        } on Object {
+          return null;
+        }
+      };
+    }
   }
 
   final InteractionGateway _gateway;

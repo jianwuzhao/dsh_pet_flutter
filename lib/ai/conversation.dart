@@ -90,6 +90,12 @@ class ConversationService {
       guidelines: _guidelineLoader?.call(prompt) ?? const [],
       policyHint: _policyHintLoader?.call(),
     );
+    // 滚动摘要拼在 system 段之后：被裁剪的早期对话以摘要形态保留。
+    final summary = _history?.rollingSummary.trim() ?? '';
+    final systemPrompt = summary.isEmpty
+        ? system
+        : '$system\n\n更早对话的滚动摘要（原文已按上限裁剪，作背景参考，'
+            '不要主动复述）：$summary';
     final messages = [
       for (final message in _history?.context(rounds) ?? const <AiMessage>[])
         LlmMessage(role: message.role, content: message.content),
@@ -97,7 +103,7 @@ class ConversationService {
     ];
 
     switch (await provider.chat(
-      LlmRequest(messages: messages, system: system),
+      LlmRequest(messages: messages, system: systemPrompt),
     )) {
       case Success(value: final reply):
         final cleaned = _absorb(prompt, reply.content);

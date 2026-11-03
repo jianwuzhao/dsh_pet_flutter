@@ -163,6 +163,26 @@ void main() {
     expect(messages.last.content, '新问题');
   });
 
+  test('滚动摘要拼在 system 段之后：被裁剪的早期对话以摘要保留', () async {
+    history.summarizer = (dropped, current) async => '用户早期偏好表格少用。';
+    for (var i = 0; i < chatMemoryMaxMessages ~/ 2 + 2; i++) {
+      history.appendRound('旧问$i', '旧答$i');
+    }
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    expect(history.rollingSummary, isNotEmpty);
+
+    provider.script = '[[sentiment:neutral]]\n好。';
+    final service = buildService();
+    await service.handle('新问题');
+
+    final system = provider.requests.single.system;
+    expect(system, contains('滚动摘要'));
+    expect(system, contains('用户早期偏好表格少用。'));
+    // 摘要追加在 system 末尾，人格底线仍在主体段落里。
+    expect(system.indexOf('硬性底线'), lessThan(system.indexOf('滚动摘要')));
+  });
+
   test('成功后历史落盘一轮（剥标记后的正文）', () async {
     provider.script = '[[sentiment:positive]]\n正文。[[memory:fact|x]]';
     final service = buildService();
