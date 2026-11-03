@@ -177,11 +177,14 @@ class _PetStageState extends State<PetStage> {
 
   Widget _petLayer() {
     final controller = widget.controller;
-    return ValueListenableBuilder<Offset>(
-      valueListenable: controller.position,
-      builder: (context, position, child) => Positioned(
-        left: position.dx,
-        top: position.dy,
+    return ListenableBuilder(
+      listenable: Listenable.merge([
+        controller.position,
+        controller.bodyScaleNotifier,
+      ]),
+      builder: (context, child) => Positioned(
+        left: controller.position.value.dx,
+        top: controller.position.value.dy,
         width: controller.petSize.width,
         height: controller.petSize.height,
         child: child!,
@@ -241,7 +244,11 @@ class _PetStageState extends State<PetStage> {
   Widget _bubbleLayer() {
     final controller = widget.controller;
     return AnimatedBuilder(
-      animation: Listenable.merge([controller.bubble, controller.position]),
+      animation: Listenable.merge([
+        controller.bubble,
+        controller.position,
+        controller.bodyScaleNotifier,
+      ]),
       builder: (context, _) {
         final state = controller.bubble.value;
         if (state == null) return const SizedBox.shrink();

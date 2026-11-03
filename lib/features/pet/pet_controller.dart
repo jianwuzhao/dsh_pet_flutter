@@ -14,6 +14,7 @@ import 'package:flutter/scheduler.dart';
 
 import '../../core/config/animation_manifest.dart';
 import '../../core/config/app_config.dart';
+import '../../persona/appearance/appearance_state.dart';
 import '../../platform/pet_platform.dart';
 import '../linkage/status/assistant_event.dart';
 import 'behavior/physics.dart';
@@ -54,10 +55,20 @@ class PetController {
     required this.manifest,
     required this.platform,
     this.initialPosition,
+    double bodyScale = 1.0,
   }) : _poses = PoseMachine(manifest),
-       petSize = Size(pet.size, pet.size * manifest.height / manifest.width),
+       _basePetSize = Size(
+         pet.size,
+         pet.size * manifest.height / manifest.width,
+       ),
+       _bodyScale = AppearanceState.clampBodyScale(bodyScale),
        position = ValueNotifier<Offset>(Offset.zero) {
-    _body = PetBody(position: Offset.zero, size: petSize, params: physics);
+    _petSize = Size(
+      _basePetSize.width * _bodyScale,
+      _basePetSize.height * _bodyScale,
+    );
+    _body = PetBody(position: Offset.zero, size: _petSize, params: physics);
+    bodyScaleNotifier = ValueNotifier<double>(_bodyScale);
     _ticker = Ticker(_onTick);
   }
 
@@ -65,7 +76,18 @@ class PetController {
   final PhysicsParams physics;
   final AnimationManifest manifest;
   final PetPlatform platform;
-  final Size petSize;
+
+  /// 动画素材的原始尺寸（缩放前）。
+  final Size _basePetSize;
+
+  late Size _petSize;
+  double _bodyScale;
+
+  /// 当前绘制/命中尺寸；体型缩放后与 [_basePetSize] 成比例。
+  Size get petSize => _petSize;
+
+  /// 体型缩放（可监听）：UI 需要跟着它重建布局盒。
+  late final ValueNotifier<double> bodyScaleNotifier;
 
   /// 上次退出时的落点（窗口本地坐标）；为 null 时出生在当前屏右下角。
   final Offset? initialPosition;
@@ -334,6 +356,43 @@ class PetController {
     position.value = _body.position;
   }
 
+  /// 应用体型缩放：以**底边中心**为锚点，脚不动，避免缩放时宠物跳位。
+  ///
+  /// 缩放同时更新绘制尺寸、物理包围盒与命中区——只改视觉会让点击区域错位。
+  /// 缩放幅度由 [AppearanceState] 硬边界限制，这里再做一次防御性夹取。
+  void setBodyScale(double value) {
+    final next = AppearanceState.clampBodyScale(value);
+    if ((next - _bodyScale).abs() < 1e-6) return;
+    final previous = _petSize;
+    _bodyScale = next;
+    _petSize = Size(
+      _basePetSize.width * next,
+      _basePetSize.height * next,
+    );
+    final anchor = Offset(
+      _body.position.dx + previous.width / 2,
+      _body.position.dy + previous.height,
+    );
+    _body.size = _petSize;
+    _body.position = Offset(
+      anchor.dx - _petSize.width / 2,
+      anchor.dy - _petSize.height,
+    );
+    bodyScaleNotifier.value = next;
+    // 出生前（视口还没测到）先不动位置，等第一帧布局再摆到屏内。
+    if (_viewport == null) {
+      position.value = _body.position;
+      return;
+    }
+    if (_body.dragging) {
+      _clampDragBody();
+    } else {
+      _clampBody();
+    }
+    _syncInteractive();
+    repaint.value++;
+  }
+
   /// 拖拽定位：左右最多允许半个身体探出屏幕（可以放到屏幕侧边），
   /// 上下仍完整留在屏幕内。比“整只必须完整在屏内”自由，又不会整只丢出屏外。
   Offset _clampPlacement(Offset target, Rect screen) {
@@ -489,7 +548,7 @@ class PetController {
         direction = -1;
       }
       _poses.facing = direction;
-      _movePlan = planMove(params, petSize: pet.size, facing: direction);
+      _movePlan = planMove(params, petSize: petSize.width, facing: direction);
       _moveStartX = _body.position.dx;
     }
 
@@ -843,7 +902,7 @@ class PetController {
         direction = -1;
       }
       _poses.facing = direction;
-      _movePlan = planMove(move.params, petSize: pet.size, facing: direction);
+      _movePlan = planMove(move.params, petSize: petSize.width, facing: direction);
       _moveStartX = _body.position.dx;
     }
 
@@ -1173,6 +1232,7 @@ class PetController {
     repaint.dispose();
     dragging.dispose();
     squash.dispose();
+    bodyScaleNotifier.dispose();
   }
 
   void _timersAndStreamsCleanup() {

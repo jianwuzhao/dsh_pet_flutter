@@ -87,7 +87,9 @@ class PetBody {
 
   /// 宠物身体左上角（相对窗口）。
   Offset position;
-  final Size size;
+
+  /// 绘制/命中尺寸：形象体型缩放会改这里，物理参数不随之改变。
+  Size size;
   PhysicsParams params;
 
   Offset velocity = Offset.zero;

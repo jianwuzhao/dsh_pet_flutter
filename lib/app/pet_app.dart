@@ -74,6 +74,10 @@ class _PetAppState extends State<PetApp> {
   CapabilityRegistry? _capabilities;
   final RunEventThrottle _runThrottle = RunEventThrottle();
 
+  /// 形象体型缩放同步：形象变化要即时作用到宠物本体（尺寸/命中区/气泡锚点）。
+  ValueNotifier<AppearanceState>? _appearanceSource;
+  VoidCallback? _appearanceListener;
+
   /// Trae 扩展桥：事件服务与适配器注册表共用同一个实例。
   final BridgeHub _bridgeHub = BridgeHub();
 
@@ -107,6 +111,7 @@ class _PetAppState extends State<PetApp> {
     final router = _router;
     if (router != null) _disposeRouter(router);
     unawaited(_hotkey?.unregister());
+    _unwatchAppearance();
     _kernel?.dispose();
     _kernel = null;
     _statusSubscription?.cancel();
@@ -250,6 +255,8 @@ class _PetAppState extends State<PetApp> {
         conversationRounds: config.ai.memoryRounds,
       );
       kernel.start();
+      // 形象体型缩放要在第一帧布局前就应用，否则会先按默认尺寸出生再跳一下。
+      _watchAppearance(controller, kernel.appearance);
       // 互操作能力层：注册三个只读探测适配器，启动后异步探测一次。
       // invoke 等写操作在 M1 一律返回“未开放”，不会向外部软件发任务。
       final capabilities = CapabilityRegistry(
@@ -305,6 +312,7 @@ class _PetAppState extends State<PetApp> {
         unawaited(server.stop());
         controller.dispose();
         aggregator.dispose();
+        _unwatchAppearance();
         kernel.dispose();
         _disposeRouter(router);
         return;
@@ -432,6 +440,7 @@ class _PetAppState extends State<PetApp> {
     unawaited(_hotkey?.unregister());
     _hotkey = null;
     _privacy = null;
+    _unwatchAppearance();
     _kernel?.dispose();
     _kernel = null;
     _capabilities = null;
@@ -815,6 +824,28 @@ class _PetAppState extends State<PetApp> {
       return const Failure('kernel.not-ready', '内核还没准备好，稍后再试');
     }
     return kernel.saveEmotionProfile(value);
+  }
+
+  /// 订阅形象变化：体型缩放交给控制器重算尺寸/位置/命中区。
+  /// 只同步 bodyScale；配色由 PetStage 的渲染监听处理。
+  void _watchAppearance(
+    PetController controller,
+    ValueNotifier<AppearanceState> source,
+  ) {
+    _unwatchAppearance();
+    void apply() => controller.setBodyScale(source.value.bodyScale);
+    apply();
+    source.addListener(apply);
+    _appearanceSource = source;
+    _appearanceListener = apply;
+  }
+
+  void _unwatchAppearance() {
+    final source = _appearanceSource;
+    final listener = _appearanceListener;
+    if (source != null && listener != null) source.removeListener(listener);
+    _appearanceSource = null;
+    _appearanceListener = null;
   }
 
   /// 设置页“重新探测”：忽略缓存并重建（探测结果是异步的，回来后再刷新 UI）。

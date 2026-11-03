@@ -74,6 +74,35 @@ PetController _controller(_FakePlatform platform) =>
       ..updateViewport(const Size(1512, 845));
 
 void main() {
+  testWidgets('体型缩放以底边中心为锚，尺寸与命中区同步更新', (tester) async {
+    final platform = _FakePlatform();
+    final controller = _controller(platform);
+    controller.start();
+    await tester.pump();
+
+    final before = controller.petRect;
+    final anchor = before.bottomCenter;
+    controller.setBodyScale(1.15);
+    await tester.pump();
+
+    expect(controller.bodyScaleNotifier.value, 1.15);
+    expect(controller.petSize.width, closeTo(220 * 1.15, 0.01));
+    expect(
+      controller.petSize.height,
+      closeTo(220 * 1.15 * 135 / 240, 0.01),
+    );
+    expect(controller.petRect.bottomCenter.dx, closeTo(anchor.dx, 0.01));
+    expect(controller.petRect.bottomCenter.dy, closeTo(anchor.dy, 0.01));
+    // 右下角摆放放大后仍在屏内（上边向上长，不会顶出屏幕）。
+    expect(controller.petRect.top, greaterThanOrEqualTo(0));
+    expect(controller.petRect.right, lessThanOrEqualTo(_primary.right));
+
+    // 越界缩放被硬边界夹取。
+    controller.setBodyScale(9);
+    expect(controller.bodyScaleNotifier.value, 1.15);
+    controller.dispose();
+  });
+
   testWidgets('拖拽可到屏幕顶部，左右最多半个身体探出屏幕', (tester) async {
     final platform = _FakePlatform();
     final controller = _controller(platform);
