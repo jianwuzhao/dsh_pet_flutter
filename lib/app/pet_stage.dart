@@ -383,11 +383,16 @@ class _PetStageState extends State<PetStage> {
                     padding: 14,
                     gap: 14,
                   ),
-                  // 对话页用自己的输入框 autofocus；设置页没有输入焦点，
-                  // 这里补一个 Focus，Esc 才能从设置页冒泡到快捷键。
-                  child: panel == PetPanel.settings
-                      ? Focus(autofocus: true, child: content)
-                      : content,
+                  // 面板直接挂在透明桌宠窗口上，没有 Scaffold：补一层透明
+                  // Material，DropdownButton / TextField 等 Material 组件才合法。
+                  child: Material(
+                    type: MaterialType.transparency,
+                    // 对话页用自己的输入框 autofocus；设置页没有输入焦点，
+                    // 这里补一个 Focus，Esc 才能从设置页冒泡到快捷键。
+                    child: panel == PetPanel.settings
+                        ? Focus(autofocus: true, child: content)
+                        : content,
+                  ),
                 ),
               ),
             ],
