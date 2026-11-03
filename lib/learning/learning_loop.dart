@@ -5,9 +5,12 @@
 /// 都只是取舍行为——没有 👍/👎 评分，沉默（自然过期）记中性不计样本。
 library;
 
+import 'dart:async';
+
 import '../core/result.dart';
 import '../persona/expression/expression_layer.dart';
 import '../persona/memory/memory_store.dart';
+import 'correction_parser.dart';
 import 'eval_gate.dart';
 import 'feedback_collector.dart';
 import 'policy_store.dart';
@@ -22,18 +25,28 @@ class LearningLoop {
     required PolicyStore policy,
     required ExpressionHost host,
     EvalGate gate = const EvalGate(),
+    CorrectionParser? correctionParser,
     DateTime Function()? clock,
   }) : _collector = collector,
        _policy = policy,
        _host = host,
        _gate = gate,
+       _correctionParser = correctionParser,
        _clock = clock ?? DateTime.now;
 
   final FeedbackCollector _collector;
   final PolicyStore _policy;
   final ExpressionHost _host;
   final EvalGate _gate;
+
+  /// 二级（LLM）纠正解析器：null = 只有规则解析（现状行为）。
+  final CorrectionParser? _correctionParser;
+
   final DateTime Function() _clock;
+
+  /// 触发 LLM 二级解析的最低近期纠正次数：第一次纠正先不花调用，
+  /// 重复纠正说明用户确实在意这件事，才值得让模型补一次归类。
+  static const int llmParseMinCorrections = 2;
 
   static int _sequence = 0;
 
@@ -107,16 +120,52 @@ class LearningLoop {
   /// 反馈驱动的候选提案：纠正语句 → 策略字段 → 过门禁 → 入待确认队列。
   /// 返回 null 表示没有可提案的增量（纠正语句不含策略线索）。
   PolicyProposal? proposeFromCorrection(String correction) {
-    final now = _clock();
     final candidate = parseCorrection(correction);
     if (candidate == null) return null;
-    final (field, value) = candidate;
-    final supporting = _collector.count(
+    return _proposeCandidate(candidate.$1, candidate.$2, correction);
+  }
+
+  /// 规则未命中后的二级解析：近期同类纠正达到阈值才花这一次 LLM 调用。
+  /// 异步执行，不阻塞反馈链路；解析不出就保持现状（不提案）。
+  Future<void> _maybeParseWithLlm(String correction) async {
+    final parser = _correctionParser;
+    if (parser == null) return;
+    final now = _clock();
+    // 只统计落在 reply: 目标上的纠正：规则命中的会落在 policy: 字段目标，
+    // 这里要看的正是“规则解析不出来的那类纠正”的重复度。
+    final recent = _collector.count(
       FeedbackVerdict.corrected,
-      target: '$feedbackTargetPolicy:$field',
+      target: 'reply',
       window: autoRollbackWindow,
       now: now,
     );
+    if (recent < llmParseMinCorrections) return;
+    final parsed = await parser.parse(correction);
+    if (parsed == null) return;
+    // 解析结果仍要过同一道门禁：白名单之外 EvalGate 兜底。
+    _proposeCandidate(parsed.field, parsed.value, correction, byDetail: true);
+  }
+
+  /// 候选落队：门禁 → 提案。规则与 LLM 两条路径共用。
+  ///
+  /// [byDetail] 为 true 时（LLM 路径），同向样本除字段目标事件外
+  /// 还累计“同文本纠正”事件——这类纠正规则解析不出来，事件只能落在
+  /// reply: 目标上，不补这个口径它们永远凑不齐门禁的同向样本。
+  PolicyProposal? _proposeCandidate(
+    String field,
+    String value,
+    String correction, {
+    bool byDetail = false,
+  }) {
+    final now = _clock();
+    final supporting = byDetail
+        ? _countSupportingByDetail(field, correction, now)
+        : _collector.count(
+            FeedbackVerdict.corrected,
+            target: '$feedbackTargetPolicy:$field',
+            window: autoRollbackWindow,
+            now: now,
+          );
     final opposing = _collector.count(
       FeedbackVerdict.accepted,
       target: '$feedbackTargetPolicy:$field',
@@ -140,6 +189,29 @@ class LearningLoop {
     );
     _policy.propose(proposal);
     return proposal;
+  }
+
+  /// LLM 路径的同向样本：字段目标事件 + 同文本纠正事件（窗口内）。
+  /// 两类事件天然不重叠：规则命中时事件落在字段目标上且不会再走 LLM。
+  int _countSupportingByDetail(String field, String detail, DateTime now) {
+    final windowStart = now.subtract(autoRollbackWindow);
+    final normalized = detail.trim();
+    final sameDetail = _collector
+        .load()
+        .where(
+          (event) =>
+              event.verdict == FeedbackVerdict.corrected &&
+              event.at.isAfter(windowStart) &&
+              event.detail.trim() == normalized,
+        )
+        .length;
+    return _collector.count(
+          FeedbackVerdict.corrected,
+          target: '$feedbackTargetPolicy:$field',
+          window: autoRollbackWindow,
+          now: now,
+        ) +
+        sameDetail;
   }
 
   /// 自动回滚监控：新版本应用后 24h 内累计 ≥2 次拒绝/纠正 → 回滚上一版。
@@ -229,7 +301,12 @@ class LearningLoop {
       detail: detail,
     );
     if (result is Failure<void>) return result;
-    proposeFromCorrection(detail);
+    if (candidate != null) {
+      proposeFromCorrection(detail);
+    } else {
+      // 规则未命中 → LLM 二级解析（含次数门槛，异步不阻塞）。
+      unawaited(_maybeParseWithLlm(detail));
+    }
     checkAutoRollback();
     return const Success(null);
   }

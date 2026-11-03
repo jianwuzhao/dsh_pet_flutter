@@ -121,7 +121,10 @@ class LlmReflectionSynthesizer {
         final title = (item['title'] as String? ?? '').trim();
         final content = (item['content'] as String? ?? '').trim();
         if (title.isEmpty || content.isEmpty) continue;
-        if (_unsafe.hasMatch(title) || _unsafe.hasMatch(content)) continue;
+        if (unsafePattern.hasMatch(title) ||
+            unsafePattern.hasMatch(content)) {
+          continue;
+        }
         final trigger = _shorten((item['trigger'] as String? ?? '').trim(), 40);
         // 事实一致性：经验必须与输入反思有交集（正文共现或 trigger 命中），
         // 挡住“正确但与本次任务无关的废话”。
@@ -185,7 +188,8 @@ class LlmReflectionSynthesizer {
       text.length <= max ? text : '${text.substring(0, max)}…';
 
   /// 只挡明显的越权/泄密表述；正常经验不会被误杀。
-  static final RegExp _unsafe = RegExp(
+  /// 公开给其它学习组件复用（如纠正解析器），保持同一套越权判定口径。
+  static final RegExp unsafePattern = RegExp(
     r'忽略(之前|以上)|系统提示|system prompt|泄露|密钥|密码|token',
     caseSensitive: false,
   );

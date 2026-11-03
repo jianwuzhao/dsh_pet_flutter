@@ -24,6 +24,7 @@ import '../features/linkage/assistant_adapters.dart';
 import '../features/linkage/status/assistant_event.dart';
 import '../gateway/interaction_gateway.dart';
 import '../gateway/privacy_center.dart';
+import '../learning/correction_parser.dart';
 import '../learning/eval_gate.dart';
 import '../learning/evolution_engine.dart';
 import '../learning/feedback_collector.dart';
@@ -93,6 +94,10 @@ class AssistantKernel {
              policy: PolicyStore(clock: clock),
              host: host,
              gate: const EvalGate(),
+             // 二级纠正解析：随路由现取 provider；解析失败自动回到纯规则。
+             correctionParser: CorrectionParser(
+               () async => (await gateway.router.resolve())?.provider,
+             ),
              clock: clock,
            ),
        emotion = ValueNotifier(
