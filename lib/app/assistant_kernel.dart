@@ -149,6 +149,9 @@ class AssistantKernel {
   /// 不等凑满 3 条反思——高代价失败的经验不该被普通样本稀释。
   final Map<String, int> _consecutiveFailuresBySource = {};
 
+  /// 最近一次“日终复盘”的日期（天粒度）：跨天补复盘的节流闸。
+  DateTime? _lastDailyReviewDay;
+
   /// UI 可监听的情绪快照（三维数值，供画像/调试展示用）。
   final ValueNotifier<EmotionView> emotion;
 
@@ -193,6 +196,11 @@ class AssistantKernel {
 
   Result<void> archiveGuideline(String id) =>
       _guidelines?.archiveActive(id) ??
+      const Failure('guideline.offline', '经验准则还没准备好');
+
+  /// 恢复已停用准则：误停用可逆，历史记 reactivated。
+  Result<Guideline> reactivateGuideline(String id) =>
+      _guidelines?.reactivate(id) ??
       const Failure('guideline.offline', '经验准则还没准备好');
 
   /// 当前人格 DNA（设置页展示与保存用）。
@@ -440,8 +448,23 @@ class AssistantKernel {
         unawaited(_maybeSynthesizeTaskLessons(force: true));
         return;
       }
+      _maybeRunDailyReview();
       unawaited(_maybeSynthesizeTaskLessons());
     }
+  }
+
+  /// 日终复盘：新一天的第一条任务终态时，若前一天留下了 ≥2 条
+  /// 未总结的任务反思（没凑满 3 条门槛或被冷却挡住），补一次总结。
+  /// 当天首个终态即记账（无论是否触发），保证每天最多判断一次；
+  /// 依然只提案、不自动生效，10 分钟冷却照常兜底。
+  void _maybeRunDailyReview() {
+    final now = _clock();
+    final today = DateTime(now.year, now.month, now.day);
+    if (_lastDailyReviewDay == today) return;
+    _lastDailyReviewDay = today;
+    final uncovered = _taskReflectionCount - _lastTaskSynthesisCount;
+    if (uncovered < 2) return;
+    unawaited(_maybeSynthesizeTaskLessons(force: true));
   }
 
   /// 点击（面板关闭时）/拖拽开始的互动信号入口。

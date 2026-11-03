@@ -55,6 +55,7 @@ class SettingsPage extends StatefulWidget {
     this.onAcceptGuideline,
     this.onRejectGuideline,
     this.onArchiveGuideline,
+    this.onReactivateGuideline,
     this.appearanceProposal,
     this.onAcceptFormProposal,
     this.onRejectFormProposal,
@@ -109,6 +110,9 @@ class SettingsPage extends StatefulWidget {
   final Result<Guideline> Function(String id)? onAcceptGuideline;
   final Result<void> Function(String id)? onRejectGuideline;
   final Result<void> Function(String id)? onArchiveGuideline;
+
+  /// 恢复已停用准则：误停用可逆。
+  final Result<Guideline> Function(String id)? onReactivateGuideline;
 
   /// 能力注册表（只读）：联动分区底部展示各外部软件的探测结果。
   final CapabilityRegistry? capabilities;
@@ -562,6 +566,18 @@ class _SettingsPageState extends State<SettingsPage>
     });
   }
 
+  void _reactivateGuideline(String id) {
+    final result =
+        widget.onReactivateGuideline?.call(id) ??
+        const Failure<Guideline>('guideline.offline', '进化引擎还没准备好');
+    setState(() {
+      _evolutionHint = switch (result) {
+        Success() => '已恢复这条准则，下一次对话生效',
+        Failure(:final reason) => reason,
+      };
+    });
+  }
+
   // ---------------------------------------------------------------------------
   // 形象：推演 / 回滚 / 冻结（护栏都在内核与纯函数里，这里只同步展示）
   // ---------------------------------------------------------------------------
@@ -915,6 +931,7 @@ class _SettingsPageState extends State<SettingsPage>
                       onAccept: _acceptGuideline,
                       onReject: _rejectGuideline,
                       onArchive: _archiveGuideline,
+                      onReactivate: _reactivateGuideline,
                       hint: _evolutionHint,
                     ),
                     PersonaSection(

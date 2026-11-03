@@ -245,4 +245,43 @@ void main() {
     expect(guidelines.activeFor('这个用表格展示'), hasLength(1));
     expect(guidelines.activeFor('随便聊聊'), isEmpty);
   });
+
+  test('准则接受/停用/恢复全程写历史，恢复后回到 active 且版本递增', () {
+    guidelines.propose(
+      Guideline(id: 'g1', title: '回答风格', content: '回答前先给结论', createdAt: now),
+    );
+    guidelines.accept('g1');
+    guidelines.archiveActive('g1');
+    expect(guidelines.archived, hasLength(1));
+
+    final revived = guidelines.reactivate('g1');
+    expect(revived, isA<Success<Guideline>>());
+    expect(guidelines.active, hasLength(1));
+    expect(guidelines.archived, isEmpty);
+
+    final item = guidelines.active.single;
+    // 接受 +1、停用不变、恢复 +1。
+    expect(item.version, 2);
+    expect(item.history.map((revision) => revision.event).toList(), [
+      'accepted',
+      'archived',
+      'reactivated',
+    ]);
+
+    // JSON 往返历史不丢，内容快照完整。
+    final restored = Guideline.fromJson(
+      Map<String, dynamic>.from(item.toJson()),
+    );
+    expect(restored.history, hasLength(3));
+    expect(restored.history.last.content, '回答前先给结论');
+    expect(restored.history.last.version, 2);
+  });
+
+  test('恢复只对已停用准则生效', () {
+    guidelines.propose(
+      Guideline(id: 'g2', title: '风格', content: '保持简洁', createdAt: now),
+    );
+    guidelines.accept('g2');
+    expect(guidelines.reactivate('g2'), isA<Failure<Guideline>>());
+  });
 }

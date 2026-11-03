@@ -49,6 +49,7 @@ class PetStage extends StatefulWidget {
     this.onAcceptGuideline,
     this.onRejectGuideline,
     this.onArchiveGuideline,
+    this.onReactivateGuideline,
     required this.onSend,
     required this.onSaveConfig,
     required this.onSaveEmotion,
@@ -114,6 +115,9 @@ class PetStage extends StatefulWidget {
   final Result<Guideline> Function(String id)? onAcceptGuideline;
   final Result<void> Function(String id)? onRejectGuideline;
   final Result<void> Function(String id)? onArchiveGuideline;
+
+  /// 恢复已停用准则：误停用可逆。
+  final Result<Guideline> Function(String id)? onReactivateGuideline;
 
   final Future<Result<DispatchOutcome>> Function(String prompt) onSend;
 
@@ -379,6 +383,7 @@ class _PetStageState extends State<PetStage> {
             onAcceptGuideline: widget.onAcceptGuideline,
             onRejectGuideline: widget.onRejectGuideline,
             onArchiveGuideline: widget.onArchiveGuideline,
+            onReactivateGuideline: widget.onReactivateGuideline,
             onSave: widget.onSaveConfig,
             onSaveEmotion: widget.onSaveEmotion,
             onEvolveAppearance: widget.onEvolveAppearance,

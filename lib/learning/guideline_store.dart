@@ -15,6 +15,47 @@ import '../core/result.dart';
 
 enum GuidelineStatus { pending, active, archived }
 
+/// 准则变更历史：接受/停用/恢复都追加一条，支撑审计与“恢复到此版”。
+class GuidelineRevision {
+  const GuidelineRevision({
+    required this.version,
+    required this.event,
+    required this.at,
+    this.content = '',
+    this.trigger = '',
+  });
+
+  /// 该事件后的版本号；archived 不变版本、其余 +1。
+  final int version;
+
+  /// accepted / archived / reactivated。
+  final String event;
+  final DateTime at;
+
+  /// 事件发生时的内容快照：恢复与审计的依据。
+  final String content;
+  final String trigger;
+
+  factory GuidelineRevision.fromJson(Map<String, dynamic> json) =>
+      GuidelineRevision(
+        version: (json['version'] as num?)?.toInt() ?? 0,
+        event: json['event'] as String? ?? '',
+        at:
+            DateTime.tryParse(json['at'] as String? ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0),
+        content: json['content'] as String? ?? '',
+        trigger: json['trigger'] as String? ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {
+    'version': version,
+    'event': event,
+    'at': at.toIso8601String(),
+    if (content.isNotEmpty) 'content': content,
+    if (trigger.isNotEmpty) 'trigger': trigger,
+  };
+}
+
 class Guideline {
   const Guideline({
     required this.id,
@@ -28,6 +69,7 @@ class Guideline {
     this.useCount = 0,
     this.lastUsedAtMs = 0,
     this.evidence = const [],
+    this.history = const [],
     this.approvedAt,
   });
 
@@ -55,6 +97,9 @@ class Guideline {
   final DateTime createdAt;
   final DateTime? approvedAt;
 
+  /// 变更留痕：接受/停用/恢复各一条，按时间追加。
+  final List<GuidelineRevision> history;
+
   factory Guideline.fromJson(Map<String, dynamic> json) => Guideline(
     id: json['id'] as String? ?? '',
     title: json['title'] as String? ?? '',
@@ -70,6 +115,7 @@ class Guideline {
     useCount: (json['useCount'] as num?)?.toInt() ?? 0,
     lastUsedAtMs: (json['lastUsedAtMs'] as num?)?.toInt() ?? 0,
     evidence: _stringsOf(json['evidence']),
+    history: _revisionsOf(json['history']),
     createdAt:
         DateTime.tryParse(json['createdAt'] as String? ?? '') ??
         DateTime.fromMillisecondsSinceEpoch(0),
@@ -89,6 +135,8 @@ class Guideline {
     'useCount': useCount,
     'lastUsedAtMs': lastUsedAtMs,
     if (evidence.isNotEmpty) 'evidence': evidence,
+    if (history.isNotEmpty)
+      'history': [for (final revision in history) revision.toJson()],
     'createdAt': createdAt.toIso8601String(),
     if (approvedAt != null) 'approvedAt': approvedAt!.toIso8601String(),
   };
@@ -98,6 +146,7 @@ class Guideline {
     int? version,
     int? useCount,
     int? lastUsedAtMs,
+    List<GuidelineRevision>? history,
     DateTime? approvedAt,
   }) => Guideline(
     id: id,
@@ -110,6 +159,7 @@ class Guideline {
     useCount: useCount ?? this.useCount,
     lastUsedAtMs: lastUsedAtMs ?? this.lastUsedAtMs,
     evidence: evidence,
+    history: history ?? this.history,
     createdAt: createdAt,
     approvedAt: approvedAt ?? this.approvedAt,
   );
@@ -119,6 +169,14 @@ class Guideline {
     return [
       for (final item in raw)
         if (item is String && item.trim().isNotEmpty) item.trim(),
+    ];
+  }
+
+  static List<GuidelineRevision> _revisionsOf(Object? raw) {
+    if (raw is! List) return const [];
+    return [
+      for (final item in raw)
+        if (item is Map<String, dynamic>) GuidelineRevision.fromJson(item),
     ];
   }
 }
@@ -138,6 +196,7 @@ class GuidelineStore {
 
   List<Guideline> get pending => _filter(GuidelineStatus.pending);
   List<Guideline> get active => _filter(GuidelineStatus.active);
+  List<Guideline> get archived => _filter(GuidelineStatus.archived);
 
   /// 当前 prompt 适用的准则：关键词命中的排前面（相关度），
   /// 其次是“始终适用”项；组内新的优先，最多 [max] 条。
@@ -212,10 +271,56 @@ class GuidelineStore {
       return const Failure('guideline.not-found', '这条准则已经不在队列里了');
     }
     final previous = _items[index];
+    final at = DateTime.now();
     final next = previous.copyWith(
       status: GuidelineStatus.active,
       version: previous.version + 1,
-      approvedAt: DateTime.now(),
+      approvedAt: at,
+      history: [
+        ...previous.history,
+        GuidelineRevision(
+          version: previous.version + 1,
+          event: 'accepted',
+          at: at,
+          content: previous.content,
+          trigger: previous.trigger,
+        ),
+      ],
+    );
+    _items[index] = next;
+    final saved = _save();
+    if (saved is Failure<void>) {
+      _items[index] = previous;
+      return Failure(saved.code, saved.reason);
+    }
+    return Success(next);
+  }
+
+  /// 恢复已停用准则：archived → active，版本 +1，历史记 reactivated。
+  /// 误停用是可逆操作；恢复同样只回到“注入 prompt”，不自动做别的。
+  Result<Guideline> reactivate(String id) {
+    final index = _items.indexWhere(
+      (item) => item.id == id && item.status == GuidelineStatus.archived,
+    );
+    if (index < 0) {
+      return const Failure('guideline.not-found', '这条准则不在已停用列表里');
+    }
+    final previous = _items[index];
+    final at = DateTime.now();
+    final next = previous.copyWith(
+      status: GuidelineStatus.active,
+      version: previous.version + 1,
+      approvedAt: at,
+      history: [
+        ...previous.history,
+        GuidelineRevision(
+          version: previous.version + 1,
+          event: 'reactivated',
+          at: at,
+          content: previous.content,
+          trigger: previous.trigger,
+        ),
+      ],
     );
     _items[index] = next;
     final saved = _save();
@@ -236,7 +341,24 @@ class GuidelineStore {
       return const Failure('guideline.not-found', '这条准则已经不存在了');
     }
     final previous = _items[index];
-    _items[index] = previous.copyWith(status: GuidelineStatus.archived);
+    if (previous.status == GuidelineStatus.archived) {
+      return const Success(null);
+    }
+    final at = DateTime.now();
+    final next = previous.copyWith(
+      status: GuidelineStatus.archived,
+      history: [
+        ...previous.history,
+        GuidelineRevision(
+          version: previous.version,
+          event: 'archived',
+          at: at,
+          content: previous.content,
+          trigger: previous.trigger,
+        ),
+      ],
+    );
+    _items[index] = next;
     final saved = _save();
     if (saved is Failure<void>) {
       _items[index] = previous;

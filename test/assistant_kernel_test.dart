@@ -6,6 +6,7 @@ library;
 
 import 'dart:io';
 
+import 'package:dsh_pet_flutter/ai/llm_provider.dart';
 import 'package:dsh_pet_flutter/ai/llm_router.dart';
 import 'package:dsh_pet_flutter/app/assistant_kernel.dart';
 import 'package:dsh_pet_flutter/core/result.dart';
@@ -15,8 +16,10 @@ import 'package:dsh_pet_flutter/features/linkage/status/assistant_event.dart';
 import 'package:dsh_pet_flutter/gateway/interaction_gateway.dart';
 import 'package:dsh_pet_flutter/gateway/privacy_center.dart';
 import 'package:dsh_pet_flutter/learning/feedback_collector.dart';
+import 'package:dsh_pet_flutter/learning/guideline_store.dart';
 import 'package:dsh_pet_flutter/learning/learning_loop.dart';
 import 'package:dsh_pet_flutter/learning/policy_store.dart';
+import 'package:dsh_pet_flutter/learning/reflection_store.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_state.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_store.dart';
 import 'package:dsh_pet_flutter/persona/emotion/emotion_machine.dart';
@@ -38,6 +41,32 @@ class _FakeHost extends ExpressionHost {
   @override
   void showBubble(String text, {String? meme, bool dismissible = false}) =>
       bubbles.add(text);
+}
+
+/// 可回复的假提供者：日终复盘测试用，chat 永远返回固定 JSON。
+class _ReplyProvider implements LlmProvider {
+  _ReplyProvider(this.reply);
+
+  final String reply;
+
+  @override
+  String get id => 'fake';
+
+  @override
+  String get displayName => 'Fake';
+
+  @override
+  bool get supportsReply => true;
+
+  @override
+  Future<bool> get isReady async => true;
+
+  @override
+  Future<Result<LlmReply>> chat(LlmRequest request) async =>
+      Success(LlmReply(content: reply));
+
+  @override
+  void dispose() {}
 }
 
 void main() {
@@ -163,10 +192,7 @@ void main() {
       now = now.add(const Duration(seconds: 185));
       kernel.checkProactiveCare();
       expect(host.bubbles, hasLength(1));
-      expect(
-        host.bubbles.single,
-        anyOf(EmotionProfile.defaultComfortPhrases),
-      );
+      expect(host.bubbles.single, anyOf(EmotionProfile.defaultComfortPhrases));
 
       // 额度已消耗：档案计数 +1 且落盘。
       expect(kernel.emotionProfile.careCount, 1);
@@ -214,7 +240,9 @@ void main() {
       expect(kernel.emotion.value.intimacy, view.intimacy);
 
       // 关闭引擎：状态机复位到 calm，后续信号全部丢弃。
-      kernel.saveEmotionProfile(kernel.emotionProfile.copyWith(focusMode: true));
+      kernel.saveEmotionProfile(
+        kernel.emotionProfile.copyWith(focusMode: true),
+      );
       kernel.applySignal(EmotionSignal.positiveFeedback);
       final frozen = kernel.emotion.value.valence;
       kernel.saveEmotionProfile(
@@ -300,7 +328,10 @@ void main() {
 
     test('启动读取形象档案；缺失时用默认值', () {
       final kernel = buildKernel()..start();
-      expect(kernel.appearanceState.signature, const AppearanceState().signature);
+      expect(
+        kernel.appearanceState.signature,
+        const AppearanceState().signature,
+      );
       expect(host.bubbles, isEmpty);
     });
 
@@ -312,9 +343,15 @@ void main() {
       final outcome = kernel.evolveAppearance();
       expect(outcome.changed, isTrue);
       expect(outcome.reason, contains('→'));
-      expect(kernel.appearanceState.expressionSet, AppearanceExpressionSet.bright);
+      expect(
+        kernel.appearanceState.expressionSet,
+        AppearanceExpressionSet.bright,
+      );
       expect(kernel.appearanceState.revision, 1);
-      expect(File('${tmpDir.path}/profile/appearance.json').existsSync(), isTrue);
+      expect(
+        File('${tmpDir.path}/profile/appearance.json').existsSync(),
+        isTrue,
+      );
 
       final again = kernel.evolveAppearance();
       expect(again.changed, isFalse);
@@ -350,10 +387,15 @@ void main() {
 
     test('形象档案损坏时明确报错并保持默认，不静默替换', () {
       Directory('${tmpDir.path}/profile').createSync(recursive: true);
-      File('${tmpDir.path}/profile/appearance.json').writeAsStringSync('{ broken');
+      File(
+        '${tmpDir.path}/profile/appearance.json',
+      ).writeAsStringSync('{ broken');
       final kernel = buildKernel()..start();
 
-      expect(kernel.appearanceState.signature, const AppearanceState().signature);
+      expect(
+        kernel.appearanceState.signature,
+        const AppearanceState().signature,
+      );
       expect(host.bubbles.single, contains('形象档案读取失败'));
     });
 
@@ -401,6 +443,72 @@ void main() {
         File('${tmpDir.path}/profile/appearance_proposal.json').existsSync(),
         isFalse,
       );
+    });
+  });
+
+  group('日终复盘', () {
+    test('前一天没凑满门槛的反思，跨天后补一次总结', () async {
+      final provider = _ReplyProvider(
+        '{"lessons":[{"title":"先看日志","content":"任务失败时先读错误日志再重试","trigger":"失败","confidence":0.8}]}',
+      );
+      final gateway = InteractionGateway(
+        dispatcher: Dispatcher(
+          registry: AdapterRegistry(const {}),
+          activeId: '',
+        ),
+        router: LlmRouter(providers: [provider], activeId: 'fake'),
+      );
+      final guidelines = GuidelineStore(
+        directory: Directory('${tmpDir.path}/learning2'),
+      )..load();
+      final kernel = AssistantKernel(
+        gateway: gateway,
+        store: ProfileStore(directory: tmpDir),
+        host: host,
+        privacy: PrivacyCenter(directory: tmpDir),
+        memory: MemoryStore(directory: Directory('${tmpDir.path}/memory')),
+        learning: LearningLoop(
+          collector: FeedbackCollector(
+            file: File('${tmpDir.path}/feedback.jsonl'),
+            clock: () => now,
+          ),
+          policy: PolicyStore(
+            directory: Directory('${tmpDir.path}/learning'),
+            clock: () => now,
+          ),
+          host: host,
+          clock: () => now,
+        ),
+        appearanceStore: AppearanceStore(
+          directory: Directory('${tmpDir.path}/profile'),
+        ),
+        reflections: ReflectionStore(
+          file: File('${tmpDir.path}/reflections.jsonl'),
+        ),
+        guidelines: guidelines,
+        clock: () => now,
+      )..start();
+
+      void terminal(String text) => kernel.onStatusSnapshot(
+        StatusSnapshot(
+          state: AssistantStatus.success,
+          text: text,
+          source: 'test',
+          updatedAt: now,
+        ),
+      );
+
+      // 第一天：两条终态既没凑满 3 条门槛，也不触发日终复盘（同天只判断一次）。
+      terminal('任务一构建完成');
+      terminal('任务二构建完成');
+      await pumpEventQueue();
+      expect(guidelines.pending, isEmpty);
+
+      // 跨天：留下的 2 条未总结反思触发补总结，产出待确认提案。
+      now = DateTime(2026, 1, 2, 9, 0);
+      terminal('任务三构建完成');
+      await pumpEventQueue();
+      expect(guidelines.pending, hasLength(1));
     });
   });
 }

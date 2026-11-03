@@ -699,7 +699,7 @@
   <h3>8B.1 当前进化链路</h3>
   <div class="flow">
     <div class="flow-step"><span class="k">Capture</span><b>任务终态</b><p>success/error 写入 reflections.jsonl，含 intent/rootCause/verification</p></div>
-    <div class="flow-step"><span class="k">Trigger</span><b>3 条新反思 + 10 分钟</b><p>同 source 连续 2 次失败立即触发（失败专用通道）</p></div>
+    <div class="flow-step"><span class="k">Trigger</span><b>3 条新反思 + 10 分钟</b><p>连续 2 次失败立即触发；跨天补一次日终复盘</p></div>
     <div class="flow-step"><span class="k">Synthesize</span><b>模型总结</b><p>严格 JSON，越权 + 事实一致性双重过滤，输入截断 4000 字符</p></div>
     <div class="flow-step"><span class="k">Propose</span><b>待确认准则</b><p>pending 上限 20，归一化 + bigram 语义双重去重</p></div>
     <div class="flow-step"><span class="k">Approve</span><b>用户接受</b><p>设置页「进化」Tab</p></div>
@@ -712,15 +712,15 @@
       <thead><tr><th>指标</th><th>当前实现值</th><th>当前运行值</th><th>说明</th></tr></thead>
       <tbody>
         <tr><td>反思写入</td><td>每个任务终态 1 条，JSONL append-only</td><td>0 条（<code>reflections.jsonl</code> 尚未生成）</td><td>受 <code>memoryRecording</code> 隐私门禁控制</td></tr>
-        <tr><td>模型总结触发</td><td>累计 3 条新任务反思且距上次 ≥10 分钟；或同一 source 连续 2 次 failure 立即触发（跳过 3 条门槛、保留冷却）</td><td>尚未触发</td><td>只在有可回复 provider 时执行，使用 <code>ThinkingTier.fast</code></td></tr>
+        <tr><td>模型总结触发</td><td>累计 3 条新任务反思且距上次 ≥10 分钟；同一 source 连续 2 次 failure 立即触发；跨天首个终态若有 ≥2 条未总结反思补一次日终复盘</td><td>尚未触发</td><td>三条通道共用 10 分钟冷却与并发闸；只在有可回复 provider 时执行</td></tr>
         <tr><td>单次总结产出</td><td>最多 3 条经验草案；输入超 4000 字符截断保尾部</td><td>0</td><td>JSON 解析失败/越权内容/与输入无交集的“废话”直接丢弃</td></tr>
         <tr><td>准则提案</td><td>pending 上限 20；归一化精确匹配 + bigram Jaccard ≥0.6 语义去重</td><td>0 条（<code>guidelines.json</code> 尚未生成）</td><td>模型总结与重复纠正共用同一队列</td></tr>
         <tr><td>重复纠正触发</td><td>同一纠正 30 天内 ≥2 次</td><td>0</td><td>确定性聚类，不调用模型</td></tr>
         <tr><td>已生效准则注入</td><td>每次最多 2 条；关键词命中的排在“始终适用”之前；注入即 useCount+1</td><td>0 条</td><td>准则内容是 prompt 文本，不是可执行技能</td></tr>
-        <tr><td>准则生命周期</td><td>pending / active / archived；<code>useCount</code>/<code>lastUsedAtMs</code> 记录使用</td><td>0</td><td>支持接受、拒绝、停用；暂无版本历史恢复</td></tr>
+        <tr><td>准则生命周期</td><td>pending / active / archived；接受/停用/恢复全程写 history（含内容快照与版本）；<code>useCount</code>/<code>lastUsedAtMs</code> 记录使用</td><td>0</td><td>误停用可“恢复”（版本 +1，历史记 reactivated）</td></tr>
         <tr><td>安全过滤</td><td>越权表述过滤 + 事实一致性门禁（正文 bigram 共现或 trigger 命中）</td><td>单测覆盖</td><td>只挡明显越权/泄密与无依据内容，不做语义审核</td></tr>
         <tr><td>反馈流水</td><td>append-only JSONL</td><td>1 条 accepted</td><td>来自此前对话的采纳样本</td></tr>
-        <tr><td>工程健康</td><td>analyze 0；303 测试通过</td><td>303 passed</td><td>进化测试累计 9 条（本轮 +3：事实过滤/字段往返/输入截断）</td></tr>
+        <tr><td>工程健康</td><td>analyze 0；306 测试通过</td><td>306 passed</td><td>进化测试累计 11 条、内核日终复盘 1 条（第三轮 +3：历史往返/恢复限制/日终复盘）</td></tr>
       </tbody>
     </table>
   </div>
@@ -739,7 +739,7 @@
         <tr><td>准则有效性</td><td>N/A</td><td>采纳后同类纠正下降 ≥20%</td><td>按 trigger 统计纠正前后窗口</td></tr>
         <tr><td>安全违规</td><td>0</td><td>0</td><td>越权/泄密准则进入 active 的数量</td></tr>
         <tr><td>成本/延迟</td><td>未计量</td><td>每 3 个任务 ≤1 次总结调用；超时返回结构化失败</td><td>provider 调用计数 + p95 延迟</td></tr>
-        <tr><td>回归</td><td>303 passed</td><td>保持全绿 + analyze 0</td><td><code>flutter analyze && flutter test --concurrency=1</code></td></tr>
+        <tr><td>回归</td><td>306 passed</td><td>保持全绿 + analyze 0</td><td><code>flutter analyze && flutter test --concurrency=1</code></td></tr>
       </tbody>
     </table>
   </div>
@@ -750,7 +750,7 @@
 
   <h3>8B.4 待优化点（按优先级）</h3>
   <div class="callout ok">
-    <b>实施进展（2026-11-03 第二轮）：</b>P0 全部三项与 P1 前四项已落地：反思字段扩展（intent/rootCause/verification）、失败专用触发（同 source 连续 2 次 failure 立即复盘）、总结质量门禁（越权 + 事实一致性双重过滤，golden set 仍待建）、准则检索排序（关键词命中优先）、语义去重（bigram Jaccard ≥0.6）、使用次数追踪（useCount/lastUsedAtMs，注入即记账）、输入截断（4000 字符）。回归 303 passed、analyze 0。剩余 P2 三项（版本恢复、日程/空闲复盘、软规则边界标注）进入下一轮。
+    <b>实施进展（2026-11-03 第三轮，P2 收尾）：</b>P2 三项已全部落地——准则版本恢复（接受/停用/恢复全程写 <code>history</code> 含内容快照，设置页已停用列表提供“恢复”入口，版本 +1、事件 reactivated）、按天聚合日终复盘（跨天首个任务终态时若有 ≥2 条未总结反思补一次总结，每天最多判断一次，与失败专用通道共用 10 分钟冷却）、软规则边界标注（system prompt 措辞改为“软准则/倾向性建议/不是可执行动作”，设置页进化分区同步说明）。至此 08-B 十项待优化点中 P0×3 + P1×4 + P2×3 全部处理完毕（P0-3 的 golden set 部分仍待建）。回归 306 passed、analyze 0。
   </div>
   <div class="table-wrap">
     <table>
@@ -763,9 +763,9 @@
         <tr><td><span class="badge b-part">P1</span></td><td><span class="badge b-ok">已实施</span></td><td><b>语义去重不足</b>：仅按归一化文本去重，模型换一种说法就会重复提案。</td><td>pending 队列会被同义准则占据，增加用户审阅负担。</td><td>✅ bigram Jaccard ≥0.6 二次去重已上线（归一化精确匹配之外）。</td></tr>
         <tr><td><span class="badge b-part">P1</span></td><td><span class="badge b-ok">已实施</span></td><td><b>没有有效性追踪</b>：接受/停用只改状态，没有记录“采纳后是否减少同类纠正/失败”。</td><td>无法判断准则是否真的让助手更聪明，也无法自动淘汰无效准则。</td><td>✅ <code>useCount</code>/<code>lastUsedAtMs</code> 已上线（注入即记账，设置页可见）；采纳前后纠正率对照与自动建议停用留待数据积累。</td></tr>
         <tr><td><span class="badge b-part">P1</span></td><td><span class="badge b-ok">已实施</span></td><td><b>隐私与成本控制不足</b>：任务摘要会发给当前 provider；无输入截断、token 预算或取消机制。</td><td>长任务摘要可能包含敏感信息；总结调用增加成本与延迟。</td><td>✅ 输入截断 4000 字符（保最近反思）已上线；<code>memoryRecording</code> 门禁维持；脱敏与 maxTokens/取消留待后续。</td></tr>
-        <tr><td><span class="badge b-pending">P2</span></td><td><span class="badge b-pending">待实施</span></td><td><b>准则没有版本恢复</b>：只能停用，不能恢复到上一版 active 或查看变更历史。</td><td>误接受/误停用后缺少可逆操作。</td><td>给 Guideline 增加 version/history，支持“恢复到此版”；停用与恢复都写 audit。</td></tr>
-        <tr><td><span class="badge b-pending">P2</span></td><td><span class="badge b-pending">待实施</span></td><td><b>只有任务终态驱动</b>：没有日程/空闲时的主动复盘，也没有跨会话聚合。</td><td>没有任务时不会学习；长期经验只能被动积累。</td><td>后续增加 Schedule/空闲触发，按天聚合反思；仍保持“只提案、不自动应用”。</td></tr>
-        <tr><td><span class="badge b-pending">P2</span></td><td><span class="badge b-pending">待实施</span></td><td><b>prompt 级准则的边界</b>：没有可执行步骤，无法验证准则是否被遵守。</td><td>这是当前有意选择；但需要明确告知用户“软规则”，避免误以为它能执行动作。</td><td>保持 prompt 级；在设置页与报告中明确标注；未来若要做技能库，再引入 SKILL.md 与评测。</td></tr>
+        <tr><td><span class="badge b-pending">P2</span></td><td><span class="badge b-ok">已实施</span></td><td><b>准则没有版本恢复</b>：只能停用，不能恢复到上一版 active 或查看变更历史。</td><td>误接受/误停用后缺少可逆操作。</td><td>✅ <code>Guideline.history</code>（accepted/archived/reactivated + 内容快照 + 版本）已上线；<code>reactivate()</code> 恢复已停用准则（版本 +1），设置页已停用列表提供“恢复”入口。</td></tr>
+        <tr><td><span class="badge b-pending">P2</span></td><td><span class="badge b-ok">已实施</span></td><td><b>只有任务终态驱动</b>：没有日程/空闲时的主动复盘，也没有跨会话聚合。</td><td>没有任务时不会学习；长期经验只能被动积累。</td><td>✅ 日终复盘已上线：跨天首个任务终态若有 ≥2 条未总结反思（没凑满 3 条门槛的遗留）补一次总结，每天最多判断一次；仍“只提案、不自动应用”。真正的空闲定时触发待 Schedule 接入。</td></tr>
+        <tr><td><span class="badge b-pending">P2</span></td><td><span class="badge b-ok">已实施</span></td><td><b>prompt 级准则的边界</b>：没有可执行步骤，无法验证准则是否被遵守。</td><td>这是当前有意选择；但需要明确告知用户“软规则”，避免误以为它能执行动作。</td><td>✅ system prompt 注入段已明确标注“软准则/倾向性建议/不是可执行动作”；设置页进化分区同步说明；未来若做技能库再引入 SKILL.md 与评测。</td></tr>
       </tbody>
     </table>
   </div>

@@ -137,7 +137,10 @@ class ConversationService {
     }
     if (guidelines.isNotEmpty) {
       buffer
-        ..writeln('从既往经验学到的准则（已由用户确认，按此调整做法）：')
+        ..writeln(
+          '从既往经验学到的软准则（已由用户确认；是对回复做法的倾向性建议，'
+          '不是可执行动作，按此调整做法）：',
+        )
         ..writeAll([for (final item in guidelines) '- ${item.content}\n'])
         ..writeln();
     }

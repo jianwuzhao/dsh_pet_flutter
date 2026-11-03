@@ -17,6 +17,7 @@ class EvolutionSection extends StatelessWidget {
     required this.onAccept,
     required this.onReject,
     required this.onArchive,
+    required this.onReactivate,
     required this.hint,
   });
 
@@ -25,6 +26,7 @@ class EvolutionSection extends StatelessWidget {
   final void Function(String id) onAccept;
   final void Function(String id) onReject;
   final void Function(String id) onArchive;
+  final void Function(String id) onReactivate;
   final String hint;
 
   @override
@@ -157,10 +159,52 @@ class EvolutionSection extends StatelessWidget {
                 ],
               ),
             ),
+        if (store.archived.isNotEmpty) ...[
+          SettingsDivider('已停用准则（${store.archived.length} 条）'),
+          for (final item in store.archived)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          item.content,
+                          style: const TextStyle(
+                            color: Color(0xB3FFFFFF),
+                            fontSize: 11.5,
+                          ),
+                        ),
+                        Text(
+                          'v${item.version}'
+                          '${item.history.isEmpty ? '' : ' · ${item.history.length} 次变更'}',
+                          style: const TextStyle(
+                            color: Color(0x59FFFFFF),
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => onReactivate(item.id),
+                    child: const Text(
+                      '恢复',
+                      style: TextStyle(color: Color(0xFF69F0AE), fontSize: 11),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
         const SizedBox(height: 6),
         const Text(
-          '准则由用户确认后才生效，不能改身份、隐私、权限、打扰上限或人格底线；'
-          '接受/拒绝/停用都会保留记录，方便回滚与审计。',
+          '准则是注入对话的软规则（倾向性建议），不会替你执行动作或修改代码。'
+          '由用户确认后才生效，不能改身份、隐私、权限、打扰上限或人格底线；'
+          '接受/拒绝/停用/恢复都会写历史，误停用可随时恢复。',
           style: TextStyle(
             color: Color(0x66FFFFFF),
             fontSize: 10.5,
