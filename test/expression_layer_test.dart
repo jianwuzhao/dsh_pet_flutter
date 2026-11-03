@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:dsh_pet_flutter/persona/appearance/appearance_state.dart';
 import 'package:dsh_pet_flutter/persona/emotion/emotion_machine.dart';
 import 'package:dsh_pet_flutter/persona/emotion/response_strategy.dart';
 import 'package:dsh_pet_flutter/persona/expression/expression_layer.dart';
@@ -101,6 +102,43 @@ void main() {
       expect(emotionAnimations[EmotionPhase.excited], '工作状态-雀跃庆祝');
       expect(emotionAnimations[EmotionPhase.worried], '东张西望');
       expect(emotionAnimations[EmotionPhase.sleepy], '打瞌睡被惊醒');
+    });
+
+    test('表情集选择同一情绪态的替代动画，soft 保持默认', () {
+      expect(
+        animationFor(EmotionPhase.happy, AppearanceExpressionSet.soft),
+        '工作状态-雀跃庆祝',
+      );
+      expect(
+        animationFor(EmotionPhase.happy, AppearanceExpressionSet.bright),
+        '点击回应-元气挥手',
+      );
+      expect(
+        animationFor(EmotionPhase.happy, AppearanceExpressionSet.cool),
+        '轻快记录',
+      );
+      expect(
+        animationFor(EmotionPhase.sleepy, AppearanceExpressionSet.shy),
+        '原地小憩沉眠',
+      );
+      expect(
+        animationFor(EmotionPhase.worried, AppearanceExpressionSet.bright),
+        '工作状态-原地踱步张望',
+      );
+    });
+
+    test('passive 按表情集落点，默认行为不变', () {
+      final strategy = ResponseStrategy(random: _FixedRandom());
+      expect(strategy.passive(EmotionPhase.happy).animation, '工作状态-雀跃庆祝');
+      expect(
+        strategy
+            .passive(
+              EmotionPhase.happy,
+              expressionSet: AppearanceExpressionSet.bright,
+            )
+            .animation,
+        '点击回应-元气挥手',
+      );
     });
 
     test('care 从默认话术池挑一条并带语气', () {

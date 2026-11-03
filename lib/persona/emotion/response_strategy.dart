@@ -6,6 +6,7 @@ library;
 
 import 'dart:math' as math;
 
+import '../appearance/appearance_state.dart';
 import '../profile_store.dart';
 import 'emotion_machine.dart';
 
@@ -26,6 +27,39 @@ const Map<EmotionPhase, String> emotionAnimations = {
   EmotionPhase.worried: '东张西望',
   EmotionPhase.sleepy: '打瞌睡被惊醒',
 };
+
+/// 表情集 → 同一情绪态的替代动画（soft 不覆盖，保持原映射）。
+///
+/// 只改「怎么演」，不改情绪判定；所有名字都取自 manifest，缺名由宿主静默跳过。
+const Map<AppearanceExpressionSet, Map<EmotionPhase, String>>
+expressionAnimations = {
+  AppearanceExpressionSet.bright: {
+    EmotionPhase.calm: '轻快摇摆舞',
+    EmotionPhase.happy: '点击回应-元气挥手',
+    EmotionPhase.excited: '点击回应-开心跃动',
+    EmotionPhase.worried: '工作状态-原地踱步张望',
+  },
+  AppearanceExpressionSet.cool: {
+    EmotionPhase.calm: '工作状态-思考冒泡',
+    EmotionPhase.happy: '轻快记录',
+    EmotionPhase.excited: '小幅度原地360度旋转展示',
+    EmotionPhase.worried: '工作状态-垂头叹气冒汗',
+    EmotionPhase.sleepy: '碎碎念-发呆碎碎念',
+  },
+  AppearanceExpressionSet.shy: {
+    EmotionPhase.calm: '点击回应-害羞惊讶',
+    EmotionPhase.happy: '点击回应-害羞惊讶',
+    EmotionPhase.excited: '点击回应-害羞惊讶',
+    EmotionPhase.worried: '碎碎念-发呆碎碎念',
+    EmotionPhase.sleepy: '原地小憩沉眠',
+  },
+};
+
+/// 按表情集取动画名；没有偏好时回落到默认表。
+String animationFor(EmotionPhase phase, AppearanceExpressionSet expressionSet) =>
+    expressionAnimations[expressionSet]?[phase] ??
+    emotionAnimations[phase] ??
+    emotionAnimations[EmotionPhase.calm]!;
 
 /// 语气三档：M5 会话服务拼 system prompt 时取用，受人格 DNA 语气核心约束。
 const Map<IntimacyTier, String> tierTones = {
@@ -62,8 +96,12 @@ class ResponseStrategy {
   String toneFor(IntimacyTier tier) => tierTones[tier]!;
 
   /// 被动表达（情绪态切换时的动画/语气）：不说话，不耗打扰预算。
-  ExpressionDecision passive(EmotionPhase phase) => ExpressionDecision(
-    animation: emotionAnimations[phase] ?? emotionAnimations[EmotionPhase.calm]!,
+  /// [expressionSet] 只影响动画选择，soft 与历史行为完全一致。
+  ExpressionDecision passive(
+    EmotionPhase phase, {
+    AppearanceExpressionSet expressionSet = AppearanceExpressionSet.soft,
+  }) => ExpressionDecision(
+    animation: animationFor(phase, expressionSet),
     tone: '',
   );
 
@@ -73,12 +111,12 @@ class ResponseStrategy {
     EmotionProfile profile, {
     required EmotionPhase phase,
     required IntimacyTier tier,
+    AppearanceExpressionSet expressionSet = AppearanceExpressionSet.soft,
   }) {
     final pool = _comfortPool(profile);
     if (pool.isEmpty) return null;
     return ExpressionDecision(
-      animation:
-          emotionAnimations[phase] ?? emotionAnimations[EmotionPhase.calm]!,
+      animation: animationFor(phase, expressionSet),
       bubbleText: pool[_random.nextInt(pool.length)],
       tone: tierTones[tier]!,
       // 主动关心是唯一允许“提前关闭”的表达：用户点掉 = 拒绝样本。

@@ -18,6 +18,7 @@ import '../../gateway/hotkey_source.dart';
 import '../../interop/capability_registry.dart';
 import '../../learning/learning_loop.dart';
 import '../../persona/appearance/appearance_evolution.dart';
+import '../../persona/appearance/appearance_proposal.dart';
 import '../../persona/appearance/appearance_state.dart';
 import '../../persona/memory/memory_entry.dart';
 import '../../persona/memory/memory_store.dart';
@@ -43,6 +44,9 @@ class SettingsPage extends StatefulWidget {
     required this.learning,
     required this.onSave,
     required this.onSaveEmotion,
+    this.appearanceProposal,
+    this.onAcceptFormProposal,
+    this.onRejectFormProposal,
     this.onEvolveAppearance,
     this.onRollbackAppearance,
     this.onFreezeAppearance,
@@ -63,6 +67,11 @@ class SettingsPage extends StatefulWidget {
   /// 形象当前值（来自内核，推演/回滚/冻结后由页面同步更新预览）。
   final AppearanceState appearance;
   final String appearanceReason;
+
+  /// 待确认的形态提案（null = 没有）。
+  final AppearanceProposal? appearanceProposal;
+  final Result<AppearanceState> Function()? onAcceptFormProposal;
+  final Result<void> Function()? onRejectFormProposal;
 
   /// 推演一次（返回带理由的结果；冻结/冷却/信号不足时 changed=false）。
   final EvolutionOutcome Function()? onEvolveAppearance;
@@ -134,6 +143,7 @@ class _SettingsPageState extends State<SettingsPage>
   // ---- 形象：页面内快照，操作后以内核返回值同步（预览立即可见） ----
   late AppearanceState _appearance = widget.appearance;
   late String _appearanceReason = widget.appearanceReason;
+  late AppearanceProposal? _proposal = widget.appearanceProposal;
   String _appearanceHint = '';
   late final TextEditingController _quietStart;
   late final TextEditingController _quietEnd;
@@ -495,7 +505,10 @@ class _SettingsPageState extends State<SettingsPage>
     setState(() {
       _appearance = outcome.state;
       _appearanceReason = outcome.reason;
-      _appearanceHint = outcome.changed ? '已应用这次推演' : '';
+      _proposal = outcome.proposal ?? _proposal;
+      _appearanceHint = outcome.proposal != null
+          ? '形态变化需要你确认'
+          : (outcome.changed ? '已应用这次推演' : '');
     });
   }
 
@@ -507,11 +520,12 @@ class _SettingsPageState extends State<SettingsPage>
       switch (result) {
         case Success(value: final state):
           _appearance = state;
+          _appearanceReason = '已回滚到上一版（修订 v${state.revision}）';
           _appearanceHint = '已回滚到修订 v${state.revision}';
         case Failure(:final reason):
+          _appearanceReason = reason;
           _appearanceHint = reason;
       }
-      _appearanceReason = widget.appearanceReason;
     });
   }
 
@@ -523,11 +537,47 @@ class _SettingsPageState extends State<SettingsPage>
       switch (result) {
         case Success():
           _appearance = _appearance.copyWith(frozen: frozen);
+          _appearanceReason = frozen ? '已冻结：自动演化暂停' : '已解冻：下次推演恢复';
           _appearanceHint = frozen ? '已冻结自动演化' : '已解冻自动演化';
         case Failure(:final reason):
+          _appearanceReason = reason;
           _appearanceHint = reason;
       }
-      _appearanceReason = widget.appearanceReason;
+    });
+  }
+
+  void _acceptFormProposal() {
+    final accept = widget.onAcceptFormProposal;
+    if (accept == null) return;
+    final result = accept();
+    setState(() {
+      switch (result) {
+        case Success(value: final state):
+          _appearance = state;
+          _proposal = null;
+          _appearanceReason = '已采纳形态提案';
+          _appearanceHint = '已采纳，形态现在生效';
+        case Failure(:final reason):
+          _appearanceReason = reason;
+          _appearanceHint = reason;
+      }
+    });
+  }
+
+  void _rejectFormProposal() {
+    final reject = widget.onRejectFormProposal;
+    if (reject == null) return;
+    final result = reject();
+    setState(() {
+      switch (result) {
+        case Success():
+          _proposal = null;
+          _appearanceReason = '已拒绝形态提案，保持当前形态';
+          _appearanceHint = '已拒绝，形态保持不变';
+        case Failure(:final reason):
+          _appearanceReason = reason;
+          _appearanceHint = reason;
+      }
     });
   }
 
@@ -736,6 +786,13 @@ class _SettingsPageState extends State<SettingsPage>
                       state: _appearance,
                       reason: _appearanceReason,
                       hint: _appearanceHint,
+                      proposal: _proposal,
+                      onAcceptProposal: widget.onAcceptFormProposal == null
+                          ? null
+                          : _acceptFormProposal,
+                      onRejectProposal: widget.onRejectFormProposal == null
+                          ? null
+                          : _rejectFormProposal,
                       onEvolve: widget.onEvolveAppearance == null
                           ? null
                           : _evolveAppearance,

@@ -5,6 +5,7 @@
 /// 不再用“整窗并集”的宽高硬算（多屏时会把菜单/面板送到另一块屏或屏缝里）。
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -20,6 +21,7 @@ import '../features/settings/settings_page.dart';
 import '../interop/capability_registry.dart';
 import '../learning/learning_loop.dart';
 import '../persona/appearance/appearance_evolution.dart';
+import '../persona/appearance/appearance_proposal.dart';
 import '../persona/appearance/appearance_state.dart';
 import '../persona/memory/memory_store.dart';
 import '../persona/profile_store.dart';
@@ -46,6 +48,10 @@ class PetStage extends StatefulWidget {
     this.onEvolveAppearance,
     this.onRollbackAppearance,
     this.onFreezeAppearance,
+    this.appearanceChanges,
+    this.appearanceProposal,
+    this.onAcceptFormProposal,
+    this.onRejectFormProposal,
     this.onOpenApp,
     this.onReloadConfig,
     this.onWhisper,
@@ -70,10 +76,18 @@ class PetStage extends StatefulWidget {
   final AppearanceState appearance;
   final String appearanceReason;
 
+  /// 形象变化流（内核 ValueNotifier）：配色要立刻反映到宠物本体。
+  final ValueListenable<AppearanceState>? appearanceChanges;
+
   /// 推演 / 回滚 / 冻结入口（由内核提供，页面只同步展示结果）。
   final EvolutionOutcome Function()? onEvolveAppearance;
   final Result<AppearanceState> Function()? onRollbackAppearance;
   final Result<void> Function(bool frozen)? onFreezeAppearance;
+
+  /// 形态提案：最显眼的变化需用户接受才生效。
+  final AppearanceProposal? appearanceProposal;
+  final Result<AppearanceState> Function()? onAcceptFormProposal;
+  final Result<void> Function()? onRejectFormProposal;
 
   /// 记忆库（内核同一实例）：设置页的查看/纠正/遗忘/导出即时生效。
   final MemoryStore? memory;
@@ -199,12 +213,28 @@ class _PetStageState extends State<PetStage> {
               child: Transform(
                 alignment: Alignment.bottomCenter,
                 transform: Matrix4.diagonal3Values(scale.dx, scale.dy, 1),
-                child: PetView(controller: controller),
+                child: _petView(controller),
               ),
             );
           },
         ),
       ),
+    );
+  }
+
+  /// 配色随形象变化即时重绘；没有变化流时退回当前快照。
+  Widget _petView(PetController controller) {
+    final changes = widget.appearanceChanges;
+    if (changes == null) {
+      return PetView(
+        controller: controller,
+        palette: widget.appearance.palette,
+      );
+    }
+    return ValueListenableBuilder<AppearanceState>(
+      valueListenable: changes,
+      builder: (context, appearance, _) =>
+          PetView(controller: controller, palette: appearance.palette),
     );
   }
 
@@ -305,6 +335,9 @@ class _PetStageState extends State<PetStage> {
             emotion: widget.emotion,
             appearance: widget.appearance,
             appearanceReason: widget.appearanceReason,
+            appearanceProposal: widget.appearanceProposal,
+            onAcceptFormProposal: widget.onAcceptFormProposal,
+            onRejectFormProposal: widget.onRejectFormProposal,
             memory: widget.memory,
             learning: widget.learning,
             onSave: widget.onSaveConfig,

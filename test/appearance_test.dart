@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:dsh_pet_flutter/core/result.dart';
 import 'package:dsh_pet_flutter/features/settings/sections/appearance_section.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_evolution.dart';
+import 'package:dsh_pet_flutter/persona/appearance/appearance_proposal.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_state.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_store.dart';
 import 'package:flutter/material.dart';
@@ -153,6 +154,32 @@ void main() {
       final result = store.rollback();
       expect(result.failureOrNull!.code, 'appearance.no-history');
     });
+
+    test('形态提案可保存、读回与清除', () {
+      expect(store.loadProposal().valueOrNull, isNull);
+
+      final proposal = AppearanceProposal(
+        id: 'form-round-chubby-1',
+        targetForm: AppearanceForm.chubby,
+        reason: '长期正反馈',
+        createdAtMs: DateTime(2026, 11, 2, 10).millisecondsSinceEpoch,
+      );
+      expect(store.saveProposal(proposal), isA<Success<void>>());
+      final loaded = store.loadProposal().valueOrNull!;
+      expect(loaded.id, proposal.id);
+      expect(loaded.targetForm, AppearanceForm.chubby);
+      expect(loaded.createdAtMs, proposal.createdAtMs);
+
+      expect(store.clearProposal(), isA<Success<void>>());
+      expect(store.loadProposal().valueOrNull, isNull);
+    });
+
+    test('损坏的提案文件返回 Failure', () {
+      File('${tmpDir.path}/appearance_proposal.json').writeAsStringSync('{ oops');
+      final result = store.loadProposal();
+      expect(result, isA<Failure<AppearanceProposal?>>());
+      expect(result.failureOrNull!.code, 'appearance.proposal-malformed');
+    });
   });
 
   group('AppearanceEvolution', () {
@@ -268,6 +295,60 @@ void main() {
       expect(a.state.signature, b.state.signature);
       expect(a.reason, b.reason);
     });
+
+    test('形态不再自动改变，只产出待确认提案', () {
+      final outline = AppearanceState(
+        form: AppearanceForm.round,
+        motionSet: AppearanceMotionSet.lively,
+        expressionSet: AppearanceExpressionSet.bright,
+        accessory: AppearanceAccessory.hat,
+        bodyScale: appearanceMaxBodyScale,
+        revision: 1,
+        updatedAtMs: now.subtract(const Duration(hours: 13)).millisecondsSinceEpoch,
+      );
+      final outcome = evolution.evolve(
+        outline,
+        signals(
+          accepted: 4,
+          rejected: 1,
+          arousal: 0.8,
+          valence: 0.5,
+          intimacy: 0.7,
+          proactiveness: 0.9,
+        ),
+      );
+      expect(outcome.changed, isFalse);
+      expect(outcome.state.form, AppearanceForm.round);
+      expect(outcome.proposal, isNotNull);
+      expect(outcome.proposal!.targetForm, AppearanceForm.chubby);
+      expect(outcome.reason, contains('确认'));
+    });
+
+    test('形态已到末档时不再提案', () {
+      final lastForm = AppearanceState(
+        form: AppearanceForm.tall,
+        motionSet: AppearanceMotionSet.lively,
+        expressionSet: AppearanceExpressionSet.bright,
+        accessory: AppearanceAccessory.hat,
+        bodyScale: appearanceMaxBodyScale,
+        revision: 1,
+        updatedAtMs: now.subtract(const Duration(hours: 13)).millisecondsSinceEpoch,
+      );
+      final outcome = evolution.evolve(
+        lastForm,
+        signals(
+          accepted: 4,
+          rejected: 1,
+          arousal: 0.8,
+          valence: 0.5,
+          intimacy: 0.7,
+          proactiveness: 0.9,
+        ),
+      );
+      expect(outcome.changed, isFalse);
+      expect(outcome.proposal, isNull);
+      expect(outcome.reason, contains('边界'));
+    });
   });
 
   group('AppearanceSection', () {
@@ -332,6 +413,40 @@ void main() {
       );
       expect(find.text('解冻'), findsOneWidget);
       expect(find.text('已冻结自动演化'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+    testWidgets('有形态提案时展示接受/拒绝入口', (tester) async {
+      var accepted = 0;
+      var rejected = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: ThemeData.dark(useMaterial3: true),
+          home: Scaffold(
+            body: AppearanceSection(
+              state: const AppearanceState(revision: 1),
+              reason: '形态建议：round → chubby（依据：长期正反馈；确认后才生效）',
+              hint: '',
+              proposal: AppearanceProposal(
+                id: 'form-round-chubby-1',
+                targetForm: AppearanceForm.chubby,
+                reason: '长期正反馈、唤醒度较高',
+                createdAtMs: DateTime(2026, 11, 2).millisecondsSinceEpoch,
+              ),
+              onAcceptProposal: () => accepted++,
+              onRejectProposal: () => rejected++,
+              onEvolve: () {},
+              onRollback: () {},
+              onFreeze: (_) {},
+            ),
+          ),
+        ),
+      );
+
+      expect(find.textContaining('形态提案：圆润 → 敦实'), findsOneWidget);
+      await tester.tap(find.text('接受'));
+      await tester.tap(find.text('拒绝'));
+      expect(accepted, 1);
+      expect(rejected, 1);
       expect(tester.takeException(), isNull);
     });
   });

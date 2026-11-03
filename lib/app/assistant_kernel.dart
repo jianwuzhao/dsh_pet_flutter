@@ -28,6 +28,7 @@ import '../learning/feedback_collector.dart';
 import '../learning/learning_loop.dart';
 import '../learning/policy_store.dart';
 import '../persona/appearance/appearance_evolution.dart';
+import '../persona/appearance/appearance_proposal.dart';
 import '../persona/appearance/appearance_state.dart';
 import '../persona/appearance/appearance_store.dart';
 import '../persona/emotion/emotion_machine.dart';
@@ -123,6 +124,9 @@ class AssistantKernel {
   /// 最近一次推演/回滚的可读理由（设置页原样展示「为什么变了」）。
   String _appearanceReason = '';
 
+  /// 待确认的形态提案：最显眼的变化必须用户接受才生效。
+  AppearanceProposal? _formProposal;
+
   Timer? _decayTimer;
   Timer? _careTimer;
 
@@ -140,6 +144,9 @@ class AssistantKernel {
 
   /// 最近一次推演的可读理由。
   String get appearanceReason => _appearanceReason;
+
+  /// 待确认的形态提案（null = 没有）。
+  AppearanceProposal? get formProposal => _formProposal;
 
   /// 回复被采纳：用户把建议落地了（记正样本，参与自动回滚监控）。
   void acceptReply() => _learning.acceptReply();
@@ -175,6 +182,12 @@ class AssistantKernel {
       case Failure(:final reason):
         // 形象直接影响渲染：读不出来就先用默认值，并明确告知不是「宠物变异了」。
         _host.showBubble('形象档案读取失败，先用默认形象：$reason');
+    }
+    switch (_appearanceStore.loadProposal()) {
+      case Success(value: final proposal):
+        _formProposal = proposal;
+      case Failure(:final reason):
+        _host.showBubble('形态提案读取失败：$reason');
     }
     if (!_profile.emotionEnabled) _machine.reset(now: _clock());
     _lastActivityAt = _clock();
@@ -263,6 +276,7 @@ class AssistantKernel {
       profile,
       phase: EmotionPhase.worried,
       tier: tierOf(_emotion.intimacy),
+      expressionSet: appearance.value.expressionSet,
     );
     // 话术全被回避话题过滤：宁可不表达（踩雷区比沉默糟糕）。
     if (decision == null) return;
@@ -298,6 +312,16 @@ class AssistantKernel {
   /// 四道护栏都在 [AppearanceEvolution] 内：冻结优先、12h 冷却、
   /// 单次只改一维、信号不足不动。这里只负责汇总信号与落盘。
   EvolutionOutcome evolveAppearance() {
+    final pending = _formProposal;
+    if (pending != null) {
+      _appearanceReason = '已有一条待确认的形态提案，先处理它再继续推演';
+      return EvolutionOutcome(
+        state: appearance.value,
+        changed: false,
+        reason: _appearanceReason,
+        proposal: pending,
+      );
+    }
     final now = _clock();
     final outcome = _appearanceEvolution.evolve(
       appearance.value,
@@ -313,6 +337,20 @@ class AssistantKernel {
       ),
     );
     _appearanceReason = outcome.reason;
+    if (outcome.proposal != null) {
+      final saved = _appearanceStore.saveProposal(outcome.proposal!);
+      if (saved is Failure<void>) {
+        _host.showBubble('形态提案保存失败：${saved.reason}');
+        _appearanceReason = saved.reason;
+        return EvolutionOutcome(
+          state: appearance.value,
+          changed: false,
+          reason: saved.reason,
+        );
+      }
+      _formProposal = outcome.proposal;
+      return outcome;
+    }
     if (!outcome.changed) return outcome;
     if (_appearanceStore.history().isEmpty) {
       // 首次演化：先把「演化前」的形象留档，回滚才有上一版可回。
@@ -356,6 +394,52 @@ class AssistantKernel {
     return result;
   }
 
+  /// 接受形态提案：以「当前形象 + 目标形态」生成新版本，接受本身也留痕。
+  Result<AppearanceState> acceptFormProposal() {
+    final proposal = _formProposal;
+    if (proposal == null) {
+      return const Failure('appearance.no-proposal', '没有待确认的形态提案');
+    }
+    final next = appearance.value.copyWith(
+      form: proposal.targetForm,
+      revision: appearance.value.revision + 1,
+      updatedAtMs: _clock().millisecondsSinceEpoch,
+    );
+    if (_appearanceStore.history().isEmpty) {
+      // 提案生效是第一次真实变化时，同样把「变更前」留档供回滚。
+      _appearanceStore.save(appearance.value);
+    }
+    final saved = _appearanceStore.save(next);
+    if (saved is Failure<void>) {
+      _appearanceReason = saved.reason;
+      return AppearanceStore.failureAs<AppearanceState>(saved);
+    }
+    final cleared = _appearanceStore.clearProposal();
+    if (cleared is Failure<void>) {
+      _host.showBubble('形态提案已生效，但提案文件没清掉：${cleared.reason}');
+    }
+    _formProposal = null;
+    appearance.value = next;
+    _appearanceReason = '已采纳形态提案：${proposal.targetForm.name}';
+    return Success(next);
+  }
+
+  /// 拒绝形态提案：只删提案文件，不动当前形象，也不产生反馈样本。
+  Result<void> rejectFormProposal() {
+    if (_formProposal == null) {
+      return const Failure('appearance.no-proposal', '没有待确认的形态提案');
+    }
+    final result = _appearanceStore.clearProposal();
+    switch (result) {
+      case Success():
+        _formProposal = null;
+        _appearanceReason = '已拒绝形态提案，保持当前形态';
+      case Failure(:final reason):
+        _appearanceReason = reason;
+    }
+    return result;
+  }
+
   /// 24h 内的某类反馈条数：只读学习流水，不产生新样本。
   int _feedbackCount(FeedbackVerdict verdict, DateTime now) {
     final since = now.subtract(const Duration(hours: 24));
@@ -378,7 +462,13 @@ class AssistantKernel {
     final phase = _machine.update(_emotion, impulse: impulse, now: _clock());
     emotion.value = _emotion.view;
     if (phase != previous) {
-      _expression.perform(_strategy.passive(phase), now: _clock());
+      _expression.perform(
+        _strategy.passive(
+          phase,
+          expressionSet: appearance.value.expressionSet,
+        ),
+        now: _clock(),
+      );
     }
   }
 }

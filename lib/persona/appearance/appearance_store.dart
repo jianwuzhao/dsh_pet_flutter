@@ -9,6 +9,7 @@ import 'dart:io';
 
 import '../../core/paths/app_paths.dart';
 import '../../core/result.dart';
+import 'appearance_proposal.dart';
 import 'appearance_state.dart';
 
 /// 历史最多保留的版本数（够回滚与追责，不无限膨胀）。
@@ -25,6 +26,11 @@ class AppearanceStore {
 
   File get _historyFile => File(
     '${_directory.path}${Platform.pathSeparator}appearance_history.json',
+  );
+
+  /// 待确认的形态提案（与当前形象分开存：拒绝即删，不污染历史）。
+  File get _proposalFile => File(
+    '${_directory.path}${Platform.pathSeparator}appearance_proposal.json',
   );
 
   /// 读取当前形象；文件不存在返回默认值（首次运行不是错误）。
@@ -102,6 +108,40 @@ class AppearanceStore {
 
   /// 历史版本（旧 → 新）。
   List<AppearanceState> history() => _loadHistory();
+
+  /// 读取待确认的形态提案；不存在返回 null（不是错误）。
+  Result<AppearanceProposal?> loadProposal() {
+    try {
+      final file = _proposalFile;
+      if (!file.existsSync()) return const Success(null);
+      final raw = jsonDecode(file.readAsStringSync());
+      if (raw is! Map<String, dynamic>) {
+        return Failure(
+          'appearance.proposal-malformed',
+          '形态提案不是 JSON 对象：${file.path}',
+        );
+      }
+      return Success(AppearanceProposal.fromJson(raw));
+    } on FormatException catch (error) {
+      return Failure('appearance.proposal-malformed', '形态提案损坏：${error.message}');
+    } on Object catch (error) {
+      return Failure('appearance.proposal-read-failed', '形态提案读取失败：$error');
+    }
+  }
+
+  Result<void> saveProposal(AppearanceProposal proposal) =>
+      _writeJson(_proposalFile, proposal.toJson());
+
+  /// 拒绝或已采纳后清除提案；文件本来就不存在也算成功。
+  Result<void> clearProposal() {
+    try {
+      final file = _proposalFile;
+      if (file.existsSync()) file.deleteSync();
+      return const Success(null);
+    } on Object catch (error) {
+      return Failure('appearance.proposal-write-failed', '形态提案清除失败：$error');
+    }
+  }
 
   List<AppearanceState> _loadHistory() {
     try {

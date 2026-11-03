@@ -8,6 +8,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import '../../../persona/appearance/appearance_proposal.dart';
 import '../../../persona/appearance/appearance_state.dart';
 
 class AppearanceSection extends StatelessWidget {
@@ -19,9 +20,17 @@ class AppearanceSection extends StatelessWidget {
     required this.onEvolve,
     required this.onRollback,
     required this.onFreeze,
+    this.proposal,
+    this.onAcceptProposal,
+    this.onRejectProposal,
   });
 
   final AppearanceState state;
+
+  /// 待确认的形态提案；最显眼的变化不自动应用。
+  final AppearanceProposal? proposal;
+  final VoidCallback? onAcceptProposal;
+  final VoidCallback? onRejectProposal;
 
   /// 最近一次推演的可读理由（内核生成，这里只展示）。
   final String reason;
@@ -68,6 +77,49 @@ class AppearanceSection extends StatelessWidget {
             ),
           ],
         ),
+        if (proposal != null) ...[
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: const Color(0x14FFD166),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0x33FFD166)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '形态提案：${_formName(state.form)} → ${_formName(proposal!.targetForm)}',
+                  style: const TextStyle(
+                    color: Color(0xE6FFD166),
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  proposal!.reason,
+                  style: const TextStyle(color: Color(0xB3FFFFFF), fontSize: 11),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    OutlinedButton(
+                      onPressed: onAcceptProposal,
+                      child: const Text('接受'),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton(
+                      onPressed: onRejectProposal,
+                      child: const Text('拒绝'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
         const SizedBox(height: 12),
         Text(
           reason.isEmpty ? '还没有推演过，形象保持初始参数' : '上次推演：$reason',
@@ -105,6 +157,7 @@ class AppearanceSection extends StatelessWidget {
         const Text(
           '推演只由情绪三维、人格主动性与 24 小时内的接受/拒绝反馈驱动：'
           '至少间隔 12 小时、一次只改一个维度、信号不足就不动；'
+          '配色与表情集即时生效，形态只生成提案、由你决定是否接受；'
           '每一次变化都会写进历史并可回滚，冻结后完全暂停。',
           style: TextStyle(color: Color(0x66FFFFFF), fontSize: 10.5),
         ),

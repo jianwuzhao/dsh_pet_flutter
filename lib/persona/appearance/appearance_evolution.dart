@@ -5,9 +5,12 @@
 /// 2. 冷却——两次演化至少间隔 [evolutionCooldown]；
 /// 3. 单步——一次最多改一个维度、枚举只移动一格、体型缩放只移动一格；
 /// 4. 阈值——信号强度不够时宁可不改（理由会写明「信号不足」）。
+/// 形态是最显眼的变化，不自动应用：条件满足时只产出 [AppearanceProposal]，
+/// 等用户在设置页接受后才落盘，拒绝即丢弃。
 /// 输出永远带一条可读理由，设置页直接展示「为什么变了」。
 library;
 
+import 'appearance_proposal.dart';
 import 'appearance_state.dart';
 
 /// 两次自动演化的最小间隔。
@@ -64,10 +67,14 @@ class EvolutionOutcome {
     required this.state,
     required this.changed,
     required this.reason,
+    this.proposal,
   });
 
   final AppearanceState state;
   final bool changed;
+
+  /// 形态建议（需用户接受才生效）；其余维度为自动应用。
+  final AppearanceProposal? proposal;
 
   /// 可解释理由：变了什么、为什么；没变也会说明原因。
   final String reason;
@@ -112,20 +119,31 @@ class AppearanceEvolution {
     }
 
     final next = _applyOneStep(current, signals, balance);
-    if (next.signature == current.signature) {
+    if (next.signature != current.signature) {
+      return EvolutionOutcome(
+        state: next.copyWith(
+          revision: current.revision + 1,
+          updatedAtMs: signals.now.millisecondsSinceEpoch,
+        ),
+        changed: true,
+        reason: _explain(current, next, signals, balance),
+      );
+    }
+
+    // 其它维度都动不了时才考虑形态：只提案，不动状态。
+    final proposal = _formProposal(current, signals, balance);
+    if (proposal != null) {
       return EvolutionOutcome(
         state: current,
         changed: false,
-        reason: '已到该方向的可调整边界，保持现状',
+        reason: proposal.reason,
+        proposal: proposal,
       );
     }
     return EvolutionOutcome(
-      state: next.copyWith(
-        revision: current.revision + 1,
-        updatedAtMs: signals.now.millisecondsSinceEpoch,
-      ),
-      changed: true,
-      reason: _explain(current, next, signals, balance),
+      state: current,
+      changed: false,
+      reason: '已到该方向的可调整边界，保持现状',
     );
   }
 
@@ -200,13 +218,28 @@ class AppearanceEvolution {
       }
     }
 
-    // 6) 形态：只在长期正向且高唤醒时变敦实，负向不动（避免越变越怪）。
-    if (balance >= 0.6 && signals.arousal >= 0.7) {
-      final next = _stepEnum(AppearanceForm.values, current.form, 1);
-      if (next != null) return current.copyWith(form: next);
-    }
-
     return current;
+  }
+
+  /// 形态提案：只在长期正向且高唤醒时递进一格；负向不动（不会越变越怪）。
+  AppearanceProposal? _formProposal(
+    AppearanceState current,
+    AppearanceSignals signals,
+    double balance,
+  ) {
+    if (balance < 0.6 || signals.arousal < 0.7) return null;
+    final next = _stepEnum(AppearanceForm.values, current.form, 1);
+    if (next == null) return null;
+    return AppearanceProposal(
+      id:
+          'form-${current.form.name}-${next.name}-'
+          '${signals.now.microsecondsSinceEpoch}',
+      targetForm: next,
+      reason:
+          '形态建议：${current.form.name} → ${next.name}'
+          '（依据：长期正反馈、唤醒度较高；确认后才生效）',
+      createdAtMs: signals.now.millisecondsSinceEpoch,
+    );
   }
 
   /// 枚举相邻移动：越界返回 null；目标与当前相同时返回 null（无需变）。

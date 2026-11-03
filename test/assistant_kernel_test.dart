@@ -275,6 +275,29 @@ void main() {
   });
 
   group('形象推演接线', () {
+    /// 除形态外都到顶：这样推演只能产出形态提案，便于验证提案制。
+    AppearanceState outlineAtCeiling() => AppearanceState(
+      motionSet: AppearanceMotionSet.lively,
+      expressionSet: AppearanceExpressionSet.bright,
+      accessory: AppearanceAccessory.hat,
+      bodyScale: appearanceMaxBodyScale,
+      revision: 1,
+      updatedAtMs: now
+          .subtract(const Duration(hours: 13))
+          .millisecondsSinceEpoch,
+    );
+
+    void seedOutline() => AppearanceStore(
+      directory: Directory('${tmpDir.path}/profile'),
+    ).save(outlineAtCeiling());
+
+    void feedStrongSignals(AssistantKernel kernel) {
+      for (var index = 0; index < 4; index++) {
+        kernel.applySignal(EmotionSignal.positiveFeedback);
+        kernel.acceptReply();
+      }
+    }
+
     test('启动读取形象档案；缺失时用默认值', () {
       final kernel = buildKernel()..start();
       expect(kernel.appearanceState.signature, const AppearanceState().signature);
@@ -332,6 +355,52 @@ void main() {
 
       expect(kernel.appearanceState.signature, const AppearanceState().signature);
       expect(host.bubbles.single, contains('形象档案读取失败'));
+    });
+
+    test('形态提案需用户接受才生效，接受后落盘并清除提案', () {
+      seedOutline();
+      final kernel = buildKernel()..start();
+      feedStrongSignals(kernel);
+
+      final outcome = kernel.evolveAppearance();
+      expect(outcome.changed, isFalse);
+      expect(outcome.proposal, isNotNull);
+      expect(kernel.appearanceState.form, AppearanceForm.round);
+      expect(kernel.formProposal, isNotNull);
+      expect(
+        File('${tmpDir.path}/profile/appearance_proposal.json').existsSync(),
+        isTrue,
+      );
+
+      final accepted = kernel.acceptFormProposal();
+      expect(accepted, isA<Success<AppearanceState>>());
+      expect(kernel.appearanceState.form, AppearanceForm.chubby);
+      expect(kernel.appearanceState.revision, 2);
+      expect(kernel.formProposal, isNull);
+      expect(
+        File('${tmpDir.path}/profile/appearance_proposal.json').existsSync(),
+        isFalse,
+      );
+    });
+
+    test('已有提案时不再重复生成，拒绝后清除', () {
+      seedOutline();
+      final kernel = buildKernel()..start();
+      feedStrongSignals(kernel);
+      expect(kernel.evolveAppearance().proposal, isNotNull);
+
+      final again = kernel.evolveAppearance();
+      expect(again.proposal, isNotNull);
+      expect(again.changed, isFalse);
+      expect(again.reason, contains('待确认'));
+
+      expect(kernel.rejectFormProposal(), isA<Success<void>>());
+      expect(kernel.formProposal, isNull);
+      expect(kernel.appearanceState.form, AppearanceForm.round);
+      expect(
+        File('${tmpDir.path}/profile/appearance_proposal.json').existsSync(),
+        isFalse,
+      );
     });
   });
 }
