@@ -18,6 +18,8 @@ class EvolutionSection extends StatelessWidget {
     required this.onReject,
     required this.onArchive,
     required this.onReactivate,
+    required this.onAcceptRetire,
+    required this.onRejectRetire,
     required this.hint,
   });
 
@@ -27,6 +29,10 @@ class EvolutionSection extends StatelessWidget {
   final void Function(String id) onReject;
   final void Function(String id) onArchive;
   final void Function(String id) onReactivate;
+
+  /// 停用提案（P1-2 有效性回路）：接受=停用低效准则；拒绝=保留。
+  final void Function(String proposalId) onAcceptRetire;
+  final void Function(String proposalId) onRejectRetire;
   final String hint;
 
   @override
@@ -111,6 +117,54 @@ class EvolutionSection extends StatelessWidget {
               ),
             ),
         ],
+        if (store.retireProposals.isNotEmpty) ...[
+          SettingsDivider('停用提案（${store.retireProposals.length} 条）'),
+          for (final proposal in store.retireProposals)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          proposal.title,
+                          style: const TextStyle(
+                            color: Color(0xFFFFB74D),
+                            fontSize: 12.5,
+                          ),
+                        ),
+                        Text(
+                          proposal.reason,
+                          style: const TextStyle(
+                            color: Color(0x99FFFFFF),
+                            fontSize: 11,
+                            height: 1.45,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => onAcceptRetire(proposal.id),
+                    child: const Text(
+                      '停用',
+                      style: TextStyle(color: Color(0xFFFF8A80), fontSize: 12),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => onRejectRetire(proposal.id),
+                    child: const Text(
+                      '保留',
+                      style: TextStyle(color: Color(0xFF69F0AE), fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
         const SettingsDivider('已生效准则'),
         if (store.active.isEmpty)
           const Padding(
@@ -140,6 +194,7 @@ class EvolutionSection extends StatelessWidget {
                         ),
                         Text(
                           'v${item.version} · 已注入 ${item.useCount} 次'
+                          '${item.correctedAfterUse > 0 ? ' · 注入后纠正 ${item.correctedAfterUse} 次' : ''}'
                           '${item.approvedAt == null ? '' : ' · ${_formatTime(item.approvedAt!)}'}',
                           style: const TextStyle(
                             color: Color(0x59FFFFFF),

@@ -56,6 +56,8 @@ class SettingsPage extends StatefulWidget {
     this.onRejectGuideline,
     this.onArchiveGuideline,
     this.onReactivateGuideline,
+    this.onAcceptRetire,
+    this.onRejectRetire,
     this.appearanceProposal,
     this.onAcceptFormProposal,
     this.onRejectFormProposal,
@@ -113,6 +115,10 @@ class SettingsPage extends StatefulWidget {
 
   /// 恢复已停用准则：误停用可逆。
   final Result<Guideline> Function(String id)? onReactivateGuideline;
+
+  /// 停用提案（P1-2 有效性回路）：接受=归档低效准则；拒绝=保留。
+  final Result<void> Function(String proposalId)? onAcceptRetire;
+  final Result<void> Function(String proposalId)? onRejectRetire;
 
   /// 能力注册表（只读）：联动分区底部展示各外部软件的探测结果。
   final CapabilityRegistry? capabilities;
@@ -554,6 +560,30 @@ class _SettingsPageState extends State<SettingsPage>
     });
   }
 
+  void _acceptRetire(String proposalId) {
+    final result =
+        widget.onAcceptRetire?.call(proposalId) ??
+        const Failure<void>('guideline.offline', '进化引擎还没准备好');
+    setState(() {
+      _evolutionHint = switch (result) {
+        Success() => '已停用这条低效准则',
+        Failure(:final reason) => reason,
+      };
+    });
+  }
+
+  void _rejectRetire(String proposalId) {
+    final result =
+        widget.onRejectRetire?.call(proposalId) ??
+        const Failure<void>('guideline.offline', '进化引擎还没准备好');
+    setState(() {
+      _evolutionHint = switch (result) {
+        Success() => '已保留这条准则，不再建议停用',
+        Failure(:final reason) => reason,
+      };
+    });
+  }
+
   void _archiveGuideline(String id) {
     final result =
         widget.onArchiveGuideline?.call(id) ??
@@ -932,6 +962,8 @@ class _SettingsPageState extends State<SettingsPage>
                       onReject: _rejectGuideline,
                       onArchive: _archiveGuideline,
                       onReactivate: _reactivateGuideline,
+                      onAcceptRetire: _acceptRetire,
+                      onRejectRetire: _rejectRetire,
                       hint: _evolutionHint,
                     ),
                     PersonaSection(

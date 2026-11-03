@@ -13,6 +13,7 @@ import '../persona/memory/memory_store.dart';
 import 'correction_parser.dart';
 import 'eval_gate.dart';
 import 'feedback_collector.dart';
+import 'guideline_store.dart';
 import 'policy_store.dart';
 
 /// 新策略应用后的灰度观察窗与自动回滚阈值。
@@ -26,12 +27,14 @@ class LearningLoop {
     required ExpressionHost host,
     EvalGate gate = const EvalGate(),
     CorrectionParser? correctionParser,
+    GuidelineStore? guidelines,
     DateTime Function()? clock,
   }) : _collector = collector,
        _policy = policy,
        _host = host,
        _gate = gate,
        _correctionParser = correctionParser,
+       _guidelines = guidelines,
        _clock = clock ?? DateTime.now;
 
   final FeedbackCollector _collector;
@@ -41,6 +44,10 @@ class LearningLoop {
 
   /// 二级（LLM）纠正解析器：null = 只有规则解析（现状行为）。
   final CorrectionParser? _correctionParser;
+
+  /// 经验准则（P1-2 有效性回路）：回复采纳/纠正时反查注入计数。
+  /// 可选：内核未启用准则时不回填，行为与现状一致。
+  final GuidelineStore? _guidelines;
 
   final DateTime Function() _clock;
 
@@ -75,14 +82,28 @@ class LearningLoop {
   }
 
   /// 回复被采纳：用户把建议落到了实处。
-  Result<void> acceptReply() => _collector.record(
-    FeedbackVerdict.accepted,
-    target: '$feedbackTargetReply:${_entryId()}',
-  );
+  ///
+  /// 同时回填准则有效性计数（P1-2）：24h 内注入过的 active 准则
+  /// acceptedAfterUse +1；只统计不判断，停用提案由 store 内部生成。
+  Result<void> acceptReply() {
+    final result = _collector.record(
+      FeedbackVerdict.accepted,
+      target: '$feedbackTargetReply:${_entryId()}',
+    );
+    if (result is Success<void>) {
+      _guidelines?.recordInjectionOutcome(accepted: true);
+    }
+    return result;
+  }
 
   /// 回复被拒绝（重说）：记负样本；附纠正时尝试生成策略提案。
-  Result<void> rejectReply({String correction = ''}) =>
-      _recordNegative(feedbackTargetReply, _entryId(), correction);
+  Result<void> rejectReply({String correction = ''}) {
+    final result = _recordNegative(feedbackTargetReply, _entryId(), correction);
+    if (result is Success<void>) {
+      _guidelines?.recordInjectionOutcome(accepted: false);
+    }
+    return result;
+  }
 
   /// 主动关心气泡被提前关闭（自然过期不算）。
   Result<void> dismissCare() => _collector.record(

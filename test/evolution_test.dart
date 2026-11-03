@@ -6,10 +6,14 @@ import 'package:dsh_pet_flutter/ai/skill_library.dart';
 import 'package:dsh_pet_flutter/core/result.dart';
 import 'package:dsh_pet_flutter/features/linkage/status/assistant_event.dart';
 import 'package:dsh_pet_flutter/learning/evolution_engine.dart';
+import 'package:dsh_pet_flutter/learning/feedback_collector.dart';
 import 'package:dsh_pet_flutter/learning/guideline_store.dart';
+import 'package:dsh_pet_flutter/learning/learning_loop.dart';
 import 'package:dsh_pet_flutter/learning/llm_reflection_synthesizer.dart';
+import 'package:dsh_pet_flutter/learning/policy_store.dart';
 import 'package:dsh_pet_flutter/learning/reflection_store.dart';
 import 'package:dsh_pet_flutter/learning/skill_curator.dart';
+import 'package:dsh_pet_flutter/persona/expression/expression_layer.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 class _FakeProvider extends LlmProvider {
@@ -32,6 +36,20 @@ class _FakeProvider extends LlmProvider {
   @override
   Future<Result<LlmReply>> chat(LlmRequest request) async =>
       Success(LlmReply.parse(reply));
+}
+
+/// 记录气泡的宿主：学习闭环只用到展示接口，测试里全部空实现。
+class _FakeExpressionHost extends ExpressionHost {
+  @override
+  void playAnimation(String name) {}
+
+  @override
+  void showBubble(
+    String text, {
+    String? meme,
+    bool dismissible = false,
+    void Function()? onTap,
+  }) {}
 }
 
 void main() {
@@ -608,5 +626,35 @@ void main() {
     expect(restored.correctedAfterUse, 3);
     expect(reloaded.retireProposals, hasLength(1));
     expect(reloaded.retireProposals.single.guidelineId, 'g1');
+  });
+
+  test('P1-2 接线：采纳/纠正回复经 LearningLoop 回填准则计数', () {
+    guidelines.propose(
+      Guideline(id: 'g1', title: '风格', content: '保持简洁', createdAt: now),
+    );
+    guidelines.accept('g1');
+    guidelines.markUsed(guidelines.active);
+
+    final loop = LearningLoop(
+      collector: FeedbackCollector(
+        file: File('${tmpDir.path}/feedback.jsonl'),
+        clock: () => now,
+      ),
+      policy: PolicyStore(
+        directory: Directory('${tmpDir.path}/learning'),
+        clock: () => now,
+      ),
+      host: _FakeExpressionHost(),
+      guidelines: guidelines,
+      clock: () => now,
+    );
+
+    expect(loop.acceptReply(), isA<Success<void>>());
+    expect(loop.rejectReply(correction: '别用长篇'), isA<Success<void>>());
+    final tracked = guidelines.active.single;
+    expect(tracked.acceptedAfterUse, 1);
+    expect(tracked.correctedAfterUse, 1);
+    // useCount=1 未达停用线，不生成停用提案。
+    expect(guidelines.retireProposals, isEmpty);
   });
 }

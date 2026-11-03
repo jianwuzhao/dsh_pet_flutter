@@ -106,6 +106,8 @@ class AssistantKernel {
              correctionParser: CorrectionParser(
                () async => (await gateway.router.resolve())?.provider,
              ),
+             // P1-2 有效性回路：回复采纳/纠正时反查准则注入计数。
+             guidelines: guidelines,
              clock: clock,
            ),
        emotion = ValueNotifier(
@@ -298,6 +300,16 @@ class AssistantKernel {
   /// 恢复已停用准则：误停用可逆，历史记 reactivated。
   Result<Guideline> reactivateGuideline(String id) =>
       _guidelines?.reactivate(id) ??
+      const Failure('guideline.offline', '经验准则还没准备好');
+
+  /// 接受停用提案（P1-2）：归档低效准则，历史记 retired。
+  Result<void> acceptGuidelineRetire(String proposalId) =>
+      _guidelines?.acceptRetire(proposalId) ??
+      const Failure('guideline.offline', '经验准则还没准备好');
+
+  /// 拒绝停用提案（P1-2）：保留准则，提案出队不再重提。
+  Result<void> rejectGuidelineRetire(String proposalId) =>
+      _guidelines?.rejectRetire(proposalId) ??
       const Failure('guideline.offline', '经验准则还没准备好');
 
   /// 当前人格 DNA（设置页展示与保存用）。
