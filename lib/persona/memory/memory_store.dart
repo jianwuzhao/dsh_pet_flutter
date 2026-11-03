@@ -24,6 +24,12 @@ const int memoryPendingMax = 50;
 /// 无 subject 的 LLM 候选去重阈值（字符 bigram Jaccard）。
 const double memorySimilarityThreshold = 0.5;
 
+/// 自动衰减阈值（天）：episode 情境价值消退最快，task 其次；
+/// 其余非 preference 类连续未用同样归档。
+const int memoryEpisodeArchiveDays = 30;
+const int memoryTaskArchiveDays = 90;
+const int memoryUnusedArchiveDays = 90;
+
 class MemoryStore {
   MemoryStore({Directory? directory})
     : _directory = directory ?? AppPaths.memoryDir {
@@ -38,6 +44,10 @@ class MemoryStore {
 
   /// 损坏文件的留痕：损坏文件会被改名保存，读取方至少能看到原因。
   final List<String> _loadWarnings = [];
+
+  /// contextFor 更新过 lastUsedAt 但尚未落盘的 kind：
+  /// 每轮对话都写文件太重，攒到 decay / persistUsage 时一起刷。
+  final Set<MemoryKind> _dirtyUsageKinds = {};
 
   List<String> get loadWarnings => List.unmodifiable(_loadWarnings);
 
@@ -227,7 +237,8 @@ class MemoryStore {
 
   /// LLM 上下文注入（计划 4.4）：scope 允许 + 未过期 + active，
   /// 按 kind 优先级 preference > fact > task > episode、同级新者优先，
-  /// 硬上限 12 条 / 2000 字符。
+  /// 硬上限 12 条 / 2000 字符。被选中的条目在内存里更新 lastUsedAt
+  /// （攒到 decay / persistUsage 才落盘），不为记账做每轮文件 IO。
   List<MemoryEntry> contextFor({DateTime? now}) {
     final at = now ?? DateTime.now();
     final usable = [
@@ -245,7 +256,99 @@ class MemoryStore {
       chars += cost;
       picked.add(entry);
     }
+    if (picked.isEmpty) return picked;
+
+    for (var index = 0; index < picked.length; index++) {
+      picked[index] = picked[index].copyWith(lastUsedAt: at);
+    }
+    final updatedById = {for (final entry in picked) entry.id: entry};
+    for (final kind in MemoryKind.values) {
+      final list = _entries[kind]!;
+      var touched = false;
+      for (var index = 0; index < list.length; index++) {
+        final updated = updatedById[list[index].id];
+        if (updated == null) continue;
+        list[index] = updated;
+        touched = true;
+      }
+      if (touched) _dirtyUsageKinds.add(kind);
+    }
     return picked;
+  }
+
+  /// 自动衰减（复评 Phase 1A）：episode 创建超 30 天、task 超 90 天按龄归档；
+  /// 非 preference 类连续 90 天未被使用（lastUsedAt ?? createdAt）按闲置归档。
+  /// preference 永不自动归档——它是用户显式偏好，数量少且长期有效，
+  /// 自动清理反而伤个性化（有意决策）。归档只改状态、保留条目供审计。
+  /// 落盘时顺带刷掉 contextFor 攒下的使用记录；返回本次归档条数。
+  int decay({DateTime? now}) {
+    final at = now ?? DateTime.now();
+    final changedKinds = <MemoryKind>{};
+    var archivedCount = 0;
+    for (final kind in MemoryKind.values) {
+      if (kind == MemoryKind.preference) continue;
+      final list = _entries[kind]!;
+      var changed = false;
+      for (var index = 0; index < list.length; index++) {
+        final entry = list[index];
+        if (entry.status != MemoryStatus.active) continue;
+        if (!_shouldArchive(entry, at)) continue;
+        list[index] = entry.copyWith(status: MemoryStatus.archived);
+        changed = true;
+        archivedCount++;
+      }
+      if (changed) changedKinds.add(kind);
+    }
+    if (changedKinds.isEmpty && _dirtyUsageKinds.isEmpty) return 0;
+    for (final kind in {...changedKinds, ..._dirtyUsageKinds}) {
+      _save(kind);
+    }
+    _dirtyUsageKinds.clear();
+    return archivedCount;
+  }
+
+  /// 强制落盘内存里攒下的 lastUsedAt：内核在空闲/会话收尾等时机调用，
+  /// 让常规对话轮次完全避开记账 IO。无脏 kind 则不写。
+  void persistUsage() {
+    if (_dirtyUsageKinds.isEmpty) return;
+    for (final kind in _dirtyUsageKinds) {
+      _save(kind);
+    }
+    _dirtyUsageKinds.clear();
+  }
+
+  /// 轻量健康统计：设置页/看板展示用，不参与注入决策。
+  MemoryStats get stats => MemoryStats(
+    activeCount: entries(status: MemoryStatus.active).length,
+    pendingCount: pending.length,
+    archivedCount: entries(status: MemoryStatus.archived).length,
+    nearDuplicatePendingCount: _countNearDuplicatePendingPairs(),
+  );
+
+  /// pending 队列的近似对数量：队列上限 50，两两 _相似度比较的 O(n²) 足够。
+  int _countNearDuplicatePendingPairs() {
+    final queue = pending;
+    var pairs = 0;
+    for (var left = 0; left < queue.length; left++) {
+      for (var right = left + 1; right < queue.length; right++) {
+        if (_similar(queue[left].content, queue[right].content)) pairs++;
+      }
+    }
+    return pairs;
+  }
+
+  /// 单条是否该归档：episode/task 按创建时长，其余非 preference 按闲置时长。
+  static bool _shouldArchive(MemoryEntry entry, DateTime at) {
+    final ageDays = at.difference(entry.createdAt).inDays;
+    if (entry.kind == MemoryKind.episode &&
+        ageDays > memoryEpisodeArchiveDays) {
+      return true;
+    }
+    if (entry.kind == MemoryKind.task && ageDays > memoryTaskArchiveDays) {
+      return true;
+    }
+    final lastUsed = entry.lastUsedAt ?? entry.createdAt;
+    return at.difference(lastUsed).inDays > memoryUnusedArchiveDays;
   }
 
   /// 导出全部记忆到 memory_export.json（用户权利之“导出”）。
@@ -348,4 +451,21 @@ class MemoryStore {
       }
     }
   }
+}
+
+/// 记忆库轻量统计：计数 + pending 近似对，供看板/设置页展示。
+class MemoryStats {
+  const MemoryStats({
+    required this.activeCount,
+    required this.pendingCount,
+    required this.archivedCount,
+    required this.nearDuplicatePendingCount,
+  });
+
+  final int activeCount;
+  final int pendingCount;
+  final int archivedCount;
+
+  /// pending 队列里两两内容近似的对数：非零说明治理队列需要先人工确认。
+  final int nearDuplicatePendingCount;
 }

@@ -519,7 +519,7 @@
           <tr><td>0-3</td><td>用户画像接线</td><td><code>AssistantKernel.start</code> 加载 <code>UserProfile</code>；<code>ConversationService.buildSystem</code> 注入作息/节奏/禁忌/常用工具；或明确删除未使用模型。</td><td>画像内容进入 system prompt；不再有“只写不读”的死代码。</td></tr>
           <tr><td>0-4</td><td>路由语义明确</td><td><code>InteractionGateway._shouldConverse</code> / 设置页文案：provider 可回复时是否忽略 active adapter。</td><td>UI 明确“本地对话优先”；或只有 active=builtin 时才走本地。</td></tr>
           <tr><td>0-5</td><td>一次性清理 pending</td><td>对 <code>memory/task.json</code> 的近似重复做一次合并；新增 pending 上限（如 50）。</td><td>4 条近似任务记忆合并为 1–2 条；pending 不再无限增长。</td></tr>
-          <tr><td>0-6</td><td>基线记录</td><td><code>~/.dsh_pet_flutter/learning/metrics.json</code>：会话数、记忆数/重复数、反馈数、policy 版本、形象推演次数。</td><td>连续 7 天有数据；能回答“这周是否更差”。</td></tr>
+          <tr><td>0-6</td><td>基线记录 <span class="badge b-ok">已实施</span></td><td>✅ 已上线：新增 <code>lib/learning/metrics_store.dart</code> 按天 upsert 快照（90 天裁剪、原子写、损坏留档），内核启动与跨天维护时写入会话轮数/记忆四态计数与近似重复数/反馈数/policy 版本/形象推演次数。</td><td>连续 7 天有数据；能回答“这周是否更差”。</td></tr>
         </tbody>
       </table>
     </div>
@@ -561,7 +561,7 @@
         <tbody>
           <tr><td>去重</td><td>同 kind + 同 subject + 归一化文本相似度高 → 合并 evidence，保留高 confidence/新者；不新增 pending。</td><td>相似度阈值误合并 → 保留原始两条，标 <code>disputed</code>，让用户选。</td></tr>
           <tr><td>冲突</td><td>新偏好与旧偏好同 subject 且值不同 → 新条 active，旧条 <code>superseded</code>，保留 supersededBy。</td><td>用户拒绝新偏好 → 恢复旧条（状态回 active）。</td></tr>
-          <tr><td>衰减</td><td>episode/task 默认 TTL（如 30/90 天）；active 但 90 天未使用 → archived，不再注入。</td><td>归档不删除；用户可恢复/导出。</td></tr>
+          <tr><td>衰减 <span class="badge b-ok">已实施</span></td><td>✅ 已上线：<code>MemoryStore.decay</code>——episode &gt;30 天、task &gt;90 天、非 preference 闲置 &gt;90 天（lastUsedAt ?? createdAt）→ archived 不再注入；preference 永不自动归档；注入上下文即更新 lastUsedAt；每天最多执行一次（启动 + 跨天维护）。</td><td>归档不删除；用户可恢复/导出。</td></tr>
           <tr><td>检索</td><td>kind 优先级 + subject 匹配 + 新近度；可选本地关键词/BM25；仍保留 12 条/2000 字符硬上限。</td><td>检索失败 → 空上下文，不阻塞对话。</td></tr>
           <tr><td>损坏</td><td>读取失败先备份 <code>.corrupt</code>，返回 Failure 并气泡提示；不再静默空库。</td><td>用户可从导出文件恢复。</td></tr>
         </tbody>
@@ -720,7 +720,7 @@
         <tr><td>准则生命周期</td><td>pending / active / archived；接受/停用/恢复全程写 history（含内容快照与版本）；<code>useCount</code>/<code>lastUsedAtMs</code> 记录使用</td><td>0</td><td>误停用可“恢复”（版本 +1，历史记 reactivated）</td></tr>
         <tr><td>安全过滤</td><td>越权表述过滤 + 事实一致性门禁（正文 bigram 共现或 trigger 命中）</td><td>单测覆盖</td><td>只挡明显越权/泄密与无依据内容，不做语义审核</td></tr>
         <tr><td>反馈流水</td><td>append-only JSONL</td><td>1 条 accepted</td><td>来自此前对话的采纳样本</td></tr>
-        <tr><td>工程健康</td><td>analyze 0；306 测试通过</td><td>306 passed</td><td>进化测试累计 11 条、内核日终复盘 1 条（第三轮 +3：历史往返/恢复限制/日终复盘）</td></tr>
+        <tr><td>工程健康</td><td>analyze 0；322 测试通过</td><td>322 passed</td><td>进化测试累计 11 条、内核日终复盘 1 条（第三轮 +3：历史往返/恢复限制/日终复盘）；第四轮 +16：记忆衰减 11（含 lastUsedAt 往返）、指标基线 5、内核日程维护 1</td></tr>
       </tbody>
     </table>
   </div>
@@ -750,7 +750,7 @@
 
   <h3>8B.4 待优化点（按优先级）</h3>
   <div class="callout ok">
-    <b>实施进展（2026-11-03 第三轮，P2 收尾）：</b>P2 三项已全部落地——准则版本恢复（接受/停用/恢复全程写 <code>history</code> 含内容快照，设置页已停用列表提供“恢复”入口，版本 +1、事件 reactivated）、按天聚合日终复盘（跨天首个任务终态时若有 ≥2 条未总结反思补一次总结，每天最多判断一次，与失败专用通道共用 10 分钟冷却）、软规则边界标注（system prompt 措辞改为“软准则/倾向性建议/不是可执行动作”，设置页进化分区同步说明）。至此 08-B 十项待优化点中 P0×3 + P1×4 + P2×3 全部处理完毕（P0-3 的 golden set 部分仍待建）。回归 306 passed、analyze 0。
+    <b>实施进展（2026-11-03 第三轮，P2 收尾）：</b>P2 三项已全部落地——准则版本恢复（接受/停用/恢复全程写 <code>history</code> 含内容快照，设置页已停用列表提供“恢复”入口，版本 +1、事件 reactivated）、按天聚合日终复盘（跨天首个任务终态时若有 ≥2 条未总结反思补一次总结，每天最多判断一次，与失败专用通道共用 10 分钟冷却）、软规则边界标注（system prompt 措辞改为“软准则/倾向性建议/不是可执行动作”，设置页进化分区同步说明）。至此 08-B 十项待优化点中 P0×3 + P1×4 + P2×3 全部处理完毕（P0-3 的 golden set 部分仍待建）。<br><b>第四轮（同日晚，并行）：Phase 0-6 指标基线 + Phase 1A 记忆自动衰减。</b>指标基线：<code>MetricsStore</code> 落 <code>learning/metrics.json</code>，按天 upsert（会话轮数、记忆 active/pending/archived 与近似重复数、反馈数、policy 版本、形象推演次数；90 天裁剪、原子写、损坏留档），内核启动与跨天维护时写入。记忆衰减：<code>MemoryStore.decay</code>（episode &gt;30 天、task &gt;90 天、非 preference 闲置 &gt;90 天 → archived；preference 永不自动归档；注入即更新 lastUsedAt，跨天落盘）。回归 322 passed、analyze 0。
   </div>
   <div class="table-wrap">
     <table>

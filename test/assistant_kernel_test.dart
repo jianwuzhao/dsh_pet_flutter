@@ -18,6 +18,7 @@ import 'package:dsh_pet_flutter/gateway/privacy_center.dart';
 import 'package:dsh_pet_flutter/learning/feedback_collector.dart';
 import 'package:dsh_pet_flutter/learning/guideline_store.dart';
 import 'package:dsh_pet_flutter/learning/learning_loop.dart';
+import 'package:dsh_pet_flutter/learning/metrics_store.dart';
 import 'package:dsh_pet_flutter/learning/policy_store.dart';
 import 'package:dsh_pet_flutter/learning/reflection_store.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_state.dart';
@@ -98,6 +99,11 @@ void main() {
           clock: () => now,
         ),
         host: host,
+        clock: () => now,
+      ),
+      // 指标快照同理：默认 MetricsStore 会写真实用户目录。
+      metrics: MetricsStore(
+        directory: Directory('${tmpDir.path}/learning'),
         clock: () => now,
       ),
       // 形象档案同理：默认 AppearanceStore 会读真实用户目录。
@@ -479,6 +485,10 @@ void main() {
           host: host,
           clock: () => now,
         ),
+        metrics: MetricsStore(
+          directory: Directory('${tmpDir.path}/learning'),
+          clock: () => now,
+        ),
         appearanceStore: AppearanceStore(
           directory: Directory('${tmpDir.path}/profile'),
         ),
@@ -509,6 +519,73 @@ void main() {
       terminal('任务三构建完成');
       await pumpEventQueue();
       expect(guidelines.pending, hasLength(1));
+    });
+  });
+
+  group('日程维护', () {
+    test('start 即写当日指标快照，跨天 decayOnce 补写新一天并归档旧记忆', () {
+      final memory = MemoryStore(directory: Directory('${tmpDir.path}/memory'))
+        ..add(
+          // 创建满 30 天（阈值边界）：第一天判定用 >30 不归档，跨天即超龄。
+          MemoryEntry(
+            id: 'm-old',
+            kind: MemoryKind.episode,
+            content: '上个月的一次构建失败',
+            createdAt: DateTime(2025, 12, 2),
+          ),
+        );
+      final metrics = MetricsStore(
+        directory: Directory('${tmpDir.path}/learning'),
+        clock: () => now,
+      );
+      final kernel = AssistantKernel(
+        gateway: InteractionGateway(
+          dispatcher: Dispatcher(
+            registry: AdapterRegistry(const {}),
+            activeId: '',
+          ),
+          router: LlmRouter(providers: const []),
+        ),
+        store: ProfileStore(directory: tmpDir),
+        host: host,
+        privacy: PrivacyCenter(directory: tmpDir),
+        memory: memory,
+        learning: LearningLoop(
+          collector: FeedbackCollector(
+            file: File('${tmpDir.path}/feedback.jsonl'),
+            clock: () => now,
+          ),
+          policy: PolicyStore(
+            directory: Directory('${tmpDir.path}/learning'),
+            clock: () => now,
+          ),
+          host: host,
+          clock: () => now,
+        ),
+        metrics: metrics,
+        appearanceStore: AppearanceStore(
+          directory: Directory('${tmpDir.path}/profile'),
+        ),
+        clock: () => now,
+      )..start();
+
+      // 启动即落第一条快照，当天再跑 decayOnce 也只 upsert 同一天。
+      expect(metrics.days(), hasLength(1));
+      expect(metrics.latest()!.date, '2026-01-01');
+      expect(metrics.latest()!.memoryActive, 1);
+      kernel.decayOnce();
+      expect(metrics.days(), hasLength(1));
+
+      // 跨天：episode 超 30 天被归档，快照序列补上新一天。
+      now = DateTime(2026, 1, 2, 12, 0);
+      kernel.decayOnce();
+      expect(memory.entries(status: MemoryStatus.archived), hasLength(1));
+      expect(metrics.days().map((day) => day.date), [
+        '2026-01-01',
+        '2026-01-02',
+      ]);
+      expect(metrics.latest()!.memoryActive, 0);
+      expect(metrics.latest()!.memoryArchived, 1);
     });
   });
 }

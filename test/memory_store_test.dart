@@ -17,6 +17,7 @@ void main() {
     DateTime? expireAt,
     MemoryStatus status = MemoryStatus.active,
     DateTime? createdAt,
+    DateTime? lastUsedAt,
   }) => MemoryEntry(
     id: 'id-${kind.name}-$content',
     kind: kind,
@@ -26,6 +27,7 @@ void main() {
     createdAt: createdAt ?? DateTime(2026, 1, 1, 12),
     source: 'rule',
     status: status,
+    lastUsedAt: lastUsedAt,
   );
 
   setUp(() {
@@ -286,6 +288,167 @@ void main() {
         store.contextFor(now: DateTime(2026, 1, 3)).single.content,
         '称呼偏好：主人',
       );
+    });
+  });
+
+  group('记忆衰减', () {
+    test('episode 创建超 30 天归档、29 天不归档', () {
+      store.add(
+        entry(MemoryKind.episode, '老事件', createdAt: DateTime(2026, 1, 31)),
+      );
+      store.add(
+        entry(MemoryKind.episode, '新事件', createdAt: DateTime(2026, 2, 2)),
+      );
+
+      expect(store.decay(now: DateTime(2026, 3, 3)), 1);
+      final episodes = store.entries(kind: MemoryKind.episode);
+      expect(
+        episodes.firstWhere((e) => e.content == '老事件').status,
+        MemoryStatus.archived,
+      );
+      expect(
+        episodes.firstWhere((e) => e.content == '新事件').status,
+        MemoryStatus.active,
+      );
+    });
+
+    test('task 创建超 90 天归档、89 天不归档', () {
+      store.add(entry(MemoryKind.task, '旧任务', createdAt: DateTime(2026, 1, 1)));
+      store.add(entry(MemoryKind.task, '新任务', createdAt: DateTime(2026, 1, 3)));
+
+      expect(store.decay(now: DateTime(2026, 4, 2)), 1);
+      final tasks = store.entries(kind: MemoryKind.task);
+      expect(
+        tasks.firstWhere((e) => e.content == '旧任务').status,
+        MemoryStatus.archived,
+      );
+      expect(
+        tasks.firstWhere((e) => e.content == '新任务').status,
+        MemoryStatus.active,
+      );
+    });
+
+    test('fact 闲置超 90 天归档；lastUsedAt 在 10 天前则不归档', () {
+      store.add(
+        entry(MemoryKind.fact, '没人用的事实', createdAt: DateTime(2026, 1, 1)),
+      );
+      store.add(
+        entry(
+          MemoryKind.fact,
+          '常用事实',
+          createdAt: DateTime(2026, 1, 1),
+          lastUsedAt: DateTime(2026, 3, 23),
+        ),
+      );
+
+      expect(store.decay(now: DateTime(2026, 4, 2)), 1);
+      final facts = store.entries(kind: MemoryKind.fact);
+      expect(
+        facts.firstWhere((e) => e.content == '没人用的事实').status,
+        MemoryStatus.archived,
+      );
+      expect(
+        facts.firstWhere((e) => e.content == '常用事实').status,
+        MemoryStatus.active,
+      );
+    });
+
+    test('preference 创建 200 天也永不自动归档', () {
+      store.add(
+        entry(
+          MemoryKind.preference,
+          '称呼偏好：老板',
+          createdAt: DateTime(2025, 9, 14),
+        ),
+      );
+
+      expect(store.decay(now: DateTime(2026, 4, 2)), 0);
+      expect(store.entries().single.status, MemoryStatus.active);
+    });
+
+    test('archived 条目不再进入 contextFor，且 decay 结果落盘', () {
+      store.add(
+        entry(MemoryKind.episode, '老事件', createdAt: DateTime(2026, 1, 1)),
+      );
+      final now = DateTime(2026, 3, 3);
+
+      expect(store.decay(now: now), 1);
+      expect(store.contextFor(now: now), isEmpty);
+
+      final reopened = MemoryStore(directory: tmpDir);
+      expect(reopened.entries().single.status, MemoryStatus.archived);
+    });
+
+    test('使用记录：contextFor 只改内存，persistUsage 才落盘', () {
+      store.add(entry(MemoryKind.fact, '长期作息'));
+      final usedAt = DateTime(2026, 6, 1);
+
+      final context = store.contextFor(now: usedAt);
+      expect(context.single.lastUsedAt, usedAt);
+      expect(store.entries().single.lastUsedAt, usedAt);
+
+      // 未 persistUsage 前重开：使用时间丢失，证明没有每轮对话都做文件 IO。
+      final beforePersist = MemoryStore(directory: tmpDir);
+      expect(beforePersist.entries().single.lastUsedAt, isNull);
+
+      store.persistUsage();
+      final reopened = MemoryStore(directory: tmpDir);
+      expect(reopened.entries().single.lastUsedAt, usedAt);
+    });
+
+    test('decay 落盘时顺带持久化未写盘的 lastUsedAt', () {
+      store.add(entry(MemoryKind.fact, '长期作息'));
+      store.contextFor(now: DateTime(2026, 6, 1));
+
+      expect(store.decay(now: DateTime(2026, 6, 2)), 0);
+      final reopened = MemoryStore(directory: tmpDir);
+      expect(reopened.entries().single.lastUsedAt, DateTime(2026, 6, 1));
+    });
+
+    test('persistUsage 无脏 kind 时不写盘', () {
+      store.persistUsage();
+      expect(tmpDir.listSync(), isEmpty);
+    });
+  });
+
+  group('记忆统计', () {
+    test('stats 各计数正确', () {
+      store.add(entry(MemoryKind.preference, '称呼偏好：老板'));
+      store.add(entry(MemoryKind.fact, '常用事实'));
+      store.add(
+        entry(MemoryKind.episode, '老事件', createdAt: DateTime(2026, 1, 31)),
+      );
+      store.decay(now: DateTime(2026, 3, 3));
+
+      final stats = store.stats;
+      expect(stats.activeCount, 2);
+      expect(stats.pendingCount, 0);
+      expect(stats.archivedCount, 1);
+    });
+
+    test('nearDuplicatePendingCount 统计 pending 队列的近似对', () {
+      // add 只对 llm 候选自动合并；rule 来源的 pending 原样保留，便于构造近似对。
+      store.add(
+        entry(
+          MemoryKind.task,
+          '主人计划重构底层架构，实现自主学习',
+          status: MemoryStatus.pending,
+        ),
+      );
+      store.add(
+        entry(
+          MemoryKind.task,
+          '主人计划重构底层系统，实现自主学习能力',
+          status: MemoryStatus.pending,
+        ),
+      );
+      store.add(
+        entry(MemoryKind.preference, '称呼偏好：老板', status: MemoryStatus.pending),
+      );
+
+      final stats = store.stats;
+      expect(stats.pendingCount, 3);
+      expect(stats.nearDuplicatePendingCount, 1);
     });
   });
 }

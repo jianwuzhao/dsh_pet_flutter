@@ -30,6 +30,7 @@ import '../learning/feedback_collector.dart';
 import '../learning/guideline_store.dart';
 import '../learning/learning_loop.dart';
 import '../learning/llm_reflection_synthesizer.dart';
+import '../learning/metrics_store.dart';
 import '../learning/policy_store.dart';
 import '../learning/reflection_store.dart';
 import '../persona/appearance/appearance_evolution.dart';
@@ -58,6 +59,7 @@ class AssistantKernel {
     LearningLoop? learning,
     ReflectionStore? reflections,
     GuidelineStore? guidelines,
+    MetricsStore? metrics,
     AppearanceStore? appearanceStore,
     AppearanceEvolution appearanceEvolution = const AppearanceEvolution(),
     DateTime Function()? clock,
@@ -71,8 +73,10 @@ class AssistantKernel {
        // 状态机的节流窗基准必须与注入时钟同源，否则测试时钟永远走不满 90s。
        _machine = EmotionMachine(now: clock == null ? null : clock()),
        _memory = memory ?? MemoryStore(),
+       _conversationHistory = conversationHistory,
        _reflections = reflections,
        _guidelines = guidelines,
+       _metrics = metrics ?? MetricsStore(),
        _evolution = (reflections == null || guidelines == null)
            ? null
            : EvolutionEngine(
@@ -127,8 +131,12 @@ class AssistantKernel {
   final ResponseStrategy _strategy = ResponseStrategy();
   final ExpressionLayer _expression;
   final MemoryStore _memory;
+
+  /// 会话原文：指标快照的“会话轮数”从这里数（口径 = 消息数 / 2）。
+  final ChatMemory? _conversationHistory;
   final ReflectionStore? _reflections;
   final GuidelineStore? _guidelines;
+  final MetricsStore _metrics;
   final EvolutionEngine? _evolution;
   final LearningLoop _learning;
   final AppearanceStore _appearanceStore;
@@ -151,6 +159,9 @@ class AssistantKernel {
 
   /// 最近一次“日终复盘”的日期（天粒度）：跨天补复盘的节流闸。
   DateTime? _lastDailyReviewDay;
+
+  /// 最近一次“日程维护”的日期（天粒度）：记忆衰减 + 指标快照每天最多一次。
+  DateTime? _lastHousekeepingDay;
 
   /// UI 可监听的情绪快照（三维数值，供画像/调试展示用）。
   final ValueNotifier<EmotionView> emotion;
@@ -396,6 +407,7 @@ class AssistantKernel {
     if (!_profile.emotionEnabled) _machine.reset(now: _clock());
     _lastActivityAt = _clock();
     emotion.value = _emotion.view;
+    _housekeeping();
     _decayTimer?.cancel();
     _decayTimer = Timer.periodic(
       const Duration(seconds: 60),
@@ -478,9 +490,50 @@ class AssistantKernel {
     _syncPhase(impulse: impulse);
   }
 
+  /// 日程维护（每天最多一次）：记忆自动衰减 + 指标快照。
+  /// start() 兜底一次，长驻进程靠 decayOnce 的跨天检测补跑——
+  /// 即使桌宠连开几天不重启，快照序列也不断天。
+  void _housekeeping() {
+    final now = _clock();
+    final today = DateTime(now.year, now.month, now.day);
+    if (_lastHousekeepingDay == today) return;
+    _lastHousekeepingDay = today;
+    final archived = _memory.decay(now: now);
+    if (archived > 0) {
+      debugPrint('[dafishu] 记忆衰减：归档 $archived 条旧记忆（只留档审计，不再注入）');
+    }
+    _recordMetrics();
+  }
+
+  /// 组装并落一天的指标快照（复评 0-6 基线）：
+  /// 口径全部取“当前累计值”，趋势对比靠按天序列而非增量计算。
+  void _recordMetrics() {
+    final now = _clock();
+    final stats = _memory.stats;
+    final result = _metrics.record(
+      MetricsSnapshot(
+        // ISO 时间串前 10 位即 YYYY-MM-DD，与 MetricsStore 的主键口径一致。
+        date: now.toIso8601String().substring(0, 10),
+        recordedAt: now,
+        sessions: (_conversationHistory?.messages.length ?? 0) ~/ 2,
+        memoryActive: stats.activeCount,
+        memoryPending: stats.pendingCount,
+        memoryArchived: stats.archivedCount,
+        memoryDuplicates: stats.nearDuplicatePendingCount,
+        feedbackCount: _learning.collector.load().length,
+        policyVersion: _learning.policy.version,
+        appearanceRevisions: _appearanceStore.history().length,
+      ),
+    );
+    if (result is Failure<void>) {
+      debugPrint('[dafishu] 指标快照写入失败：${result.reason}');
+    }
+  }
+
   /// 衰减一拍（timer 调用；公开以便离线测试）：
   /// 三维回归基线，空闲超半小时再压唤醒。
   void decayOnce() {
+    _housekeeping();
     _emotion.decayTick();
     if (_clock().difference(_lastActivityAt) > const Duration(minutes: 30)) {
       _emotion.applyIdleFatigue();
