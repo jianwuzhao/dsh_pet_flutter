@@ -38,17 +38,10 @@ class TrendOutfitProposal {
   final DateTime proposedAt;
 }
 
-/// 提案治理状态：周限、拒绝冷却与已穿装扮的配色回放。
-/// 可整体丢弃——最坏情况是本周多提一次、已穿趋势装重启后画不出
-/// （回放缺席，非崩溃），因此读失败按空状态继续。
+/// 提案治理状态：周限与拒绝冷却。
+/// 可整体丢弃——最坏情况是本周多提一次，因此读失败按空状态继续。
 class TrendGate {
-  const TrendGate({
-    this.lastProposedWeek,
-    this.rejectedUntilMs,
-    this.acceptedOutfit,
-    this.acceptedMain,
-    this.acceptedTrim,
-  });
+  const TrendGate({this.lastProposedWeek, this.rejectedUntilMs});
 
   /// 最近一次提案的周键；null = 从未提案。
   final String? lastProposedWeek;
@@ -56,56 +49,21 @@ class TrendGate {
   /// 拒绝冷却截止（epoch 毫秒）；null 或已过期 = 不在冷却。
   final int? rejectedUntilMs;
 
-  /// 已穿上身的趋势装扮（trend- 前缀）与配色：配色注册表是内存态，
-  /// 冻结形象时换装轨道不回落季节装，重启必须靠这份记录补注册，
-  /// 否则会出现「穿着合法装扮却画不出图层」。
-  final String? acceptedOutfit;
-  final int? acceptedMain;
-  final int? acceptedTrim;
-
-  TrendGate copyWith({
-    String? lastProposedWeek,
-    int? rejectedUntilMs,
-    String? acceptedOutfit,
-    int? acceptedMain,
-    int? acceptedTrim,
-  }) => TrendGate(
-    lastProposedWeek: lastProposedWeek ?? this.lastProposedWeek,
-    rejectedUntilMs: rejectedUntilMs ?? this.rejectedUntilMs,
-    acceptedOutfit: acceptedOutfit ?? this.acceptedOutfit,
-    acceptedMain: acceptedMain ?? this.acceptedMain,
-    acceptedTrim: acceptedTrim ?? this.acceptedTrim,
-  );
+  TrendGate copyWith({String? lastProposedWeek, int? rejectedUntilMs}) =>
+      TrendGate(
+        lastProposedWeek: lastProposedWeek ?? this.lastProposedWeek,
+        rejectedUntilMs: rejectedUntilMs ?? this.rejectedUntilMs,
+      );
 
   Map<String, dynamic> toJson() => {
     if (lastProposedWeek != null) 'week': lastProposedWeek,
     if (rejectedUntilMs != null) 'cooldownUntil': rejectedUntilMs,
-    if (acceptedOutfit != null) ...{
-      'acceptedOutfit': acceptedOutfit,
-      'acceptedMain': acceptedMain,
-      'acceptedTrim': acceptedTrim,
-    },
   };
 
-  static TrendGate fromJson(Map<String, dynamic> json) {
-    final outfit = json['acceptedOutfit'] as String?;
-    final main = (json['acceptedMain'] as num?)?.toInt();
-    final trim = (json['acceptedTrim'] as num?)?.toInt();
-    // 回放三元组要么完整要么整体丢弃：半个三元组画不出图层，
-    // 脏数据按「没穿过」处理（重启回落季节装，安全侧）。
-    final complete =
-        outfit != null &&
-        outfit.startsWith(trendOutfitPrefix) &&
-        main != null &&
-        trim != null;
-    return TrendGate(
-      lastProposedWeek: json['week'] as String?,
-      rejectedUntilMs: (json['cooldownUntil'] as num?)?.toInt(),
-      acceptedOutfit: complete ? outfit : null,
-      acceptedMain: complete ? main : null,
-      acceptedTrim: complete ? trim : null,
-    );
-  }
+  static TrendGate fromJson(Map<String, dynamic> json) => TrendGate(
+    lastProposedWeek: json['week'] as String?,
+    rejectedUntilMs: (json['cooldownUntil'] as num?)?.toInt(),
+  );
 }
 
 /// 周键（年 + 第几周）：粗粒度防打扰即可，跨年边界不追求 ISO 对齐。

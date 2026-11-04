@@ -22,6 +22,7 @@ import 'behavior/pose_machine.dart';
 import 'behavior/roaming.dart';
 import 'hit_test.dart';
 import 'render/sprite_player.dart';
+import 'render/wardrobe.dart';
 
 enum PetPanel { menu, chat, settings }
 
@@ -64,6 +65,7 @@ class PetController {
     required this.manifest,
     required this.platform,
     this.initialPosition,
+    this.wardrobe = const Wardrobe.empty(),
     double bodyScale = 1.0,
   }) : _poses = PoseMachine(manifest),
        _basePetSize = Size(
@@ -85,6 +87,9 @@ class PetController {
   final PhysicsParams physics;
   final AnimationManifest manifest;
   final PetPlatform platform;
+
+  /// 形象素材包登记表：决定变体形象能切哪些动画素材。
+  final Wardrobe wardrobe;
 
   /// 动画素材的原始尺寸（缩放前）。
   final Size _basePetSize;
@@ -1165,6 +1170,29 @@ class PetController {
   // 动画切换
   // ---------------------------------------------------------------------------
 
+  /// 当前形象变体（素材包名）；null = 默认动画包（原版立绘）。
+  String? _appearanceVariant;
+
+  /// 形象变体素材解析：变体包里有这个动作才用包内素材，否则默认包。
+  /// 部分包（只生成了部分动作）由此自然回退，不会出现「断片」。
+  String _assetPathFor(String name) =>
+      wardrobe.has(_appearanceVariant, name)
+          ? 'assets/appearance/$_appearanceVariant/$name.webp'
+          : 'assets/animations/$name.webp';
+
+  /// 切换形象变体（来自形象状态：装扮优先、配色兜底）。
+  /// 换装即刻可见：当前动画在新解析下素材路径变了就原地重启同一动作；
+  /// 路径没变（两边都用默认包）则不打断当前播放。
+  void setAppearanceVariant(String? variant) {
+    if (_appearanceVariant == variant) return;
+    _appearanceVariant = variant;
+    final name = _currentAnimation;
+    final player = _player;
+    if (name == null || player == null) return;
+    if (_assetPathFor(name) == player.assetPath) return;
+    _play(name, loop: player.loop, restart: true);
+  }
+
   void _play(String? name, {bool loop = false, bool restart = false}) {
     if (name == null || name.isEmpty) return;
     final current = _player;
@@ -1177,7 +1205,7 @@ class PetController {
     }
 
     final next = SpritePlayer(
-      assetPath: 'assets/animations/$name.webp',
+      assetPath: _assetPathFor(name),
       loop: loop,
     );
     // 旧帧 clone 一份给淡出用：直接持有旧 player 的 image 会被它的 dispose 提前释放。

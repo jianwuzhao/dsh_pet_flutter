@@ -1,52 +1,57 @@
-/// 装扮配色（paperdoll 的程序化落地）：装扮 = 底层形象整体换主题色。
+/// 衣橱：登记哪些形象变体有成套素材包（assets/appearance/<变体>/）。
 ///
-/// 为什么不画叠加图层：底图是带明暗层次的成品立绘，任何程序化
-/// 平面色块盖上去都读作 UI 元件而不是衣服（线条、比例与底稿风格
-/// 互斥）。保明暗配色矩阵让底稿自己「换装」：轮廓、褶皱、阴影全
-/// 保留，只换主题色——与配色演化同一管线，感知一致。
-/// 未来接入真装扮素材帧时在此加 loader 分支即可，调用方接口不变。
+/// 形象演化不做任何程序化改色或叠加——变体要有真素材（按提示词用 AI
+/// 重新生成的整套动画）才可见。衣橱只回答两件事：某变体有没有包、包里
+/// 有哪些动作；包缺失或动作缺失都回退默认动画包（assets/animations/），
+/// 也就是原版立绘——宁可暂时「没换装」，不用滤镜假装换装。
 library;
 
-import 'dart:ui';
+import '../../../persona/appearance/appearance_state.dart';
 
-import '../../../persona/appearance/appearance_state.dart' show trendOutfitPrefix;
+/// 变体素材包登记表：变体名 → 包内动作名集合。
+class Wardrobe {
+  const Wardrobe(this._packs);
 
-/// 趋势装扮的动态配色注册表：白名单之外，trend- 装扮由内核在
-/// 接受 LLM 提案时注册；已接受的配色随治理状态落盘、内核启动时
-/// 回放注册（冻结形象时换装轨道不回落，配色不能只活在内存里）。
-final Map<String, (Color, Color)> _trendColors = {};
+  /// 空衣橱：所有形象都回退默认动画包（无任何素材包时的初始态）。
+  const Wardrobe.empty() : _packs = const {};
 
-/// 注册趋势装扮配色（0xAARRGGBB，来自已过校验的提案）；同主题幂等覆盖。
-void registerTrendColors(String outfit, int main, int trim) {
-  _trendColors[outfit] = (Color(main), Color(trim));
+  final Map<String, Set<String>> _packs;
+
+  /// 变体有成套素材包。
+  bool knows(String variant) => _packs.containsKey(variant);
+
+  /// 变体包里有没有这个动作（单条动画能否用该包素材）。
+  bool has(String? variant, String animation) =>
+      variant != null && (_packs[variant]?.contains(animation) ?? false);
+
+  /// 当前形象该穿哪套素材：装扮（情境级）优先于配色（人格级）；
+  /// blue 即素材原色、不需要包。都没有则 null = 默认动画包。
+  String? packVariantOf(AppearanceState appearance) {
+    if (knows(appearance.outfit)) return appearance.outfit;
+    final palette = appearance.palette.name;
+    if (palette != 'blue' && knows(palette)) return palette;
+    return null;
+  }
+
+  /// 解析 assets/appearance/registry.json：
+  /// {"packs": {"rain": {"names": ["待机呼吸休闲", ...]}}}
+  /// 结构不符合预期按空衣橱处理（安全侧：全部回退默认包）。
+  factory Wardrobe.fromJson(Map<String, dynamic> json) {
+    final packs = json['packs'];
+    if (packs is! Map<String, dynamic>) return const Wardrobe.empty();
+    final parsed = <String, Set<String>>{};
+    for (final entry in packs.entries) {
+      final spec = entry.value;
+      if (spec is! Map<String, dynamic>) continue;
+      final names = spec['names'];
+      if (names is! List) continue;
+      final set = {
+        for (final name in names)
+          if (name is String) name,
+      };
+      // 空名单的包登记了也画不出任何东西，直接不收。
+      if (set.isNotEmpty) parsed[entry.key] = set;
+    }
+    return Wardrobe(parsed);
+  }
 }
-
-/// 测试隔离用：清空动态注册表。
-void resetTrendColors() => _trendColors.clear();
-
-/// 装扮主题色；无配色的装扮（居家/春夏秋默认形态、未注册趋势）
-/// 返回 null——底稿保持原样，安全侧。
-Color? outfitTintOf(String outfit) => switch (outfit) {
-  // 冬：奶白毛线（默认应季装）。
-  'winter' => const Color(0xFFF3E9DC),
-  // 春节：中国红。
-  'newyear' => const Color(0xFFE23E3E),
-  // 中秋：暖月黄。
-  'midautumn' => const Color(0xFFF6C453),
-  // 万圣夜：南瓜橙。
-  'halloween' => const Color(0xFFF2811D),
-  // 圣诞：松绿。
-  'christmas' => const Color(0xFF2E7D52),
-  // 雨具（天气装扮）：明黄雨衣——雨天识别度最高的配色。
-  'rain' => const Color(0xFFF2C94C),
-  // 雪装（天气装扮）：冰蓝，与冬季默认装的奶白区分开。
-  'snow' => const Color(0xFFA8DADC),
-  // 晴日装（天气装扮）：向日葵黄。
-  'sunny' => const Color(0xFFF4A261),
-  // 趋势装扮：注册表配色（未注册 = 没配色，底稿保持原样）。
-  _ =>
-      outfit.startsWith(trendOutfitPrefix) ? _trendColors[outfit]?.$1 : null,
-};
-
-/// 该装扮是否有可见配色（换装有感的前提；设置页预览与测试用）。
-bool wardrobeKnows(String outfit) => outfitTintOf(outfit) != null;

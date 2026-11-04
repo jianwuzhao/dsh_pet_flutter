@@ -29,6 +29,7 @@ import '../features/linkage/event_server.dart';
 import '../features/linkage/status/app_watch_source.dart';
 import '../features/linkage/status/assistant_event.dart';
 import '../features/pet/pet_controller.dart';
+import '../features/pet/render/wardrobe.dart';
 import '../gateway/hotkey_source.dart';
 import '../gateway/interaction_gateway.dart';
 import '../gateway/privacy_center.dart';
@@ -262,6 +263,7 @@ class _PetAppState extends State<PetApp> {
         physics: config.physics,
         manifest: manifest,
         platform: _platform,
+        wardrobe: await _loadWardrobe(),
         initialPosition: savedPosition?.offset,
       );
       // 屏幕列表决定出生点与活动域，必须在第一帧之前就绪。
@@ -905,22 +907,38 @@ class _PetAppState extends State<PetApp> {
     return kernel.saveEmotionProfile(value);
   }
 
-  /// 订阅形象变化：体型缩放交给控制器重算尺寸/位置/命中区。
-  /// 只同步 bodyScale；配色由 PetStage 的渲染监听处理。
+  /// 订阅形象变化：体型缩放交给控制器重算尺寸/位置/命中区；
+  /// 素材包变体交给控制器热切当前动画（换装即刻可见）。
   void _watchAppearance(
     PetController controller,
     ValueNotifier<AppearanceState> source,
   ) {
     _unwatchAppearance();
     void apply() {
-      controller.setBodyScale(source.value.bodyScale);
-      controller.setMotionSet(source.value.motionSet);
+      final state = source.value;
+      controller.setBodyScale(state.bodyScale);
+      controller.setMotionSet(state.motionSet);
+      controller.setAppearanceVariant(controller.wardrobe.packVariantOf(state));
     }
 
     apply();
     source.addListener(apply);
     _appearanceSource = source;
     _appearanceListener = apply;
+  }
+
+  /// 读形象素材包登记表（assets/appearance/registry.json）：
+  /// 缺失或损坏按空衣橱继续——所有形象回退默认动画包，不阻塞启动。
+  Future<Wardrobe> _loadWardrobe() async {
+    try {
+      final raw = jsonDecode(
+        await rootBundle.loadString('assets/appearance/registry.json'),
+      );
+      if (raw is Map<String, dynamic>) return Wardrobe.fromJson(raw);
+    } on Object catch (error) {
+      debugPrint('[dafishu] 形象素材包登记表缺失或损坏，全部回退默认动画包：$error');
+    }
+    return const Wardrobe.empty();
   }
 
   void _unwatchAppearance() {

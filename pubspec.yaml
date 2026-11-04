@@ -17,6 +17,7 @@ dependencies:
   flutter_secure_storage: ^9.2.0
   sqlite3: ^3.5.2
   sqlite_vector: ^1.2.0
+  nobodywho: ^6.0.0
 
 dev_dependencies:
   flutter_test:
@@ -29,6 +30,8 @@ flutter:
   assets:
     - assets/config.default.jsonc
     - assets/animations/
+    # 形象变体素材包（子目录每个包需另加一行，见 tools/appearance-prompt-kit）。
+    - assets/appearance/
     - assets/memes/
     - assets/pic/
 
