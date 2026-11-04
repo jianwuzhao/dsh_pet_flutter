@@ -1,5 +1,7 @@
 import 'package:dsh_pet_flutter/features/bubble/bubble_widget.dart';
 import 'package:dsh_pet_flutter/features/pet/pet_controller.dart';
+import 'package:dsh_pet_flutter/features/pet/render/face.dart';
+import 'package:dsh_pet_flutter/persona/appearance/appearance_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -46,5 +48,52 @@ void main() {
     );
 
     expect(find.byIcon(Icons.close), findsNothing);
+  });
+
+  testWidgets('P2-4 参数化表情配图：expression 优先于 meme，四态可切换', (
+    tester,
+  ) async {
+    CustomPaint? facePaintOf() => tester.widget<CustomPaint>(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is CustomPaint &&
+            widget.painter != null &&
+            widget.painter!.runtimeType.toString() == '_FacePainter',
+      ),
+    );
+
+    await tester.pumpWidget(
+      host(
+        const BubbleWidget(
+          state: BubbleState(
+            text: '碎碎念',
+            meme: 'assets/memes/可爱.png',
+            expression: AppearanceExpressionSet.bright,
+          ),
+        ),
+      ),
+    );
+    // expression 非空：画参数化表情图，不再加载光栅 asset。
+    expect(find.byType(Image), findsNothing);
+    expect(
+      (facePaintOf()!.painter as dynamic).face,
+      expressionFaces[AppearanceExpressionSet.bright],
+    );
+
+    // 切换表情集：气泡配图参数跟着换。
+    await tester.pumpWidget(
+      host(
+        const BubbleWidget(
+          state: BubbleState(
+            text: '碎碎念',
+            expression: AppearanceExpressionSet.shy,
+          ),
+        ),
+      ),
+    );
+    expect(
+      (facePaintOf()!.painter as dynamic).face,
+      expressionFaces[AppearanceExpressionSet.shy],
+    );
   });
 }

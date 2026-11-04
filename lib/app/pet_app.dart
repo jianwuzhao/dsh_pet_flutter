@@ -5,7 +5,6 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
-import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
@@ -733,19 +732,6 @@ class _PetAppState extends State<PetApp> {
   // 内置 AI：碎碎念与对话人格
   // ---------------------------------------------------------------------------
 
-  static const List<String> _memeAssets = [
-    'assets/memes/可爱.png',
-    'assets/memes/吃饱饱摸肚子.png',
-    'assets/memes/哦鲸鲸.png',
-    'assets/memes/大的要来啦.png',
-    'assets/memes/深度睡眠.png',
-    'assets/memes/先养着吧.png',
-    'assets/memes/死掉了.png',
-    'assets/memes/我不更新你们用什么.png',
-    'assets/memes/压力一只大肥鱼.png',
-    'assets/memes/厉害了我的鲸.png',
-  ];
-
   String _personaFor(PetConfig pet) {
     final custom = pet.whisperPrompt.trim();
     if (custom.isNotEmpty) return custom;
@@ -789,8 +775,13 @@ class _PetAppState extends State<PetApp> {
       if (!mounted || !identical(_controller, controller)) return;
       switch (result) {
         case Success(value: final text):
-          final meme = _memeAssets[math.Random().nextInt(_memeAssets.length)];
-          controller.showBubble(text, meme: meme, source: 'whisper');
+          // 碎碎念配图（P2-4）：参数化表情随当前表情集四态变化，
+          // 替代随机光栅表情包（与形象演化联动，不再固定素材池）。
+          controller.showBubble(
+            text,
+            expression: kernel.appearance.value.expressionSet,
+            source: 'whisper',
+          );
         case Failure(reason: final reason):
           if (manual) controller.showBubble(reason);
           debugPrint('[dafishu] 碎碎念失败：$reason');

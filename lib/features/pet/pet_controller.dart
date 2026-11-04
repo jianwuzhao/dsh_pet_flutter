@@ -31,6 +31,7 @@ class BubbleState {
     this.thinking = false,
     this.source = '',
     this.meme,
+    this.expression,
     this.dismissible = false,
     this.onTap,
   });
@@ -39,8 +40,12 @@ class BubbleState {
   final bool thinking;
   final String source;
 
-  /// 可选表情包资源（assets/memes/xxx.png）；碎碎念时随机配一张。
+  /// 可选表情包资源（assets/memes/xxx.png）。
   final String? meme;
+
+  /// 参数化表情（P2-4）：非空时气泡配图按表情集四态程序化绘制，
+  /// 优先级高于 [meme]（碎碎念已从随机光栅切到参数化表情）。
+  final AppearanceExpressionSet? expression;
 
   /// true = 气泡带“知道了”关闭入口（仅主动关心使用）。
   /// 其余气泡保持纯展示：桌面穿透行为完全不变。
@@ -626,6 +631,7 @@ class PetController {
     bool thinking = false,
     String source = '',
     String? meme,
+    AppearanceExpressionSet? expression,
     bool dismissible = false,
     void Function()? onTap,
   }) {
@@ -636,6 +642,7 @@ class PetController {
       thinking: thinking,
       source: source,
       meme: meme,
+      expression: expression,
       dismissible: dismissible,
       onTap: onTap,
     );

@@ -6,7 +6,9 @@ library;
 
 import 'package:flutter/material.dart';
 
+import '../../persona/appearance/appearance_state.dart';
 import '../pet/pet_controller.dart';
+import '../pet/render/face.dart';
 
 class BubbleWidget extends StatelessWidget {
   const BubbleWidget({
@@ -52,7 +54,11 @@ class BubbleWidget extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          if (state.meme != null) ...[
+          if (state.expression != null) ...[
+            // 参数化表情配图（P2-4）：随表情集四态变化，替代随机光栅。
+            _FaceImage(expression: state.expression!),
+            const SizedBox(height: 8),
+          ] else if (state.meme != null) ...[
             ClipRRect(
               borderRadius: BorderRadius.circular(8),
               child: Image.asset(
@@ -182,6 +188,35 @@ class _ActionButton extends StatelessWidget {
       ),
     ),
   );
+}
+
+/// 参数化表情图：与光栅 meme 同尺寸（180×180），带与光栅一致的圆角。
+class _FaceImage extends StatelessWidget {
+  const _FaceImage({required this.expression});
+
+  final AppearanceExpressionSet expression;
+
+  @override
+  Widget build(BuildContext context) => ClipRRect(
+    borderRadius: BorderRadius.circular(8),
+    child: CustomPaint(
+      size: const Size(180, 180),
+      painter: _FacePainter(expressionFaces[expression]!),
+    ),
+  );
+}
+
+class _FacePainter extends CustomPainter {
+  const _FacePainter(this.face);
+
+  final FaceParams face;
+
+  @override
+  void paint(Canvas canvas, Size size) => paintFace(canvas, size, face);
+
+  @override
+  bool shouldRepaint(covariant _FacePainter oldDelegate) =>
+      oldDelegate.face != face;
 }
 
 class _BubbleTailPainter extends CustomPainter {
