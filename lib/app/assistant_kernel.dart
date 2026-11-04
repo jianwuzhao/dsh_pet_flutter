@@ -17,6 +17,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import '../ai/conversation.dart';
+import '../ai/embedding_provider.dart';
 import '../ai/llm_provider.dart';
 import '../ai/skill_library.dart';
 import '../ai/thinking_tier.dart';
@@ -48,6 +49,8 @@ import '../persona/emotion/interruption_budget.dart';
 import '../persona/emotion/response_strategy.dart';
 import '../persona/expression/expression_layer.dart';
 import '../persona/memory/memory_store.dart';
+import '../persona/memory/memory_vector_sync.dart';
+import '../persona/memory/memory_vectors.dart';
 import '../persona/persona_dna.dart';
 import '../persona/profile_store.dart';
 
@@ -60,6 +63,8 @@ class AssistantKernel {
     ChatMemory? conversationHistory,
     int conversationRounds = 8,
     MemoryStore? memory,
+    MemoryVectorStore? vectors,
+    EmbeddingProvider? Function()? embeddingLoader,
     LearningLoop? learning,
     ReflectionStore? reflections,
     GuidelineStore? guidelines,
@@ -78,6 +83,7 @@ class AssistantKernel {
        // 状态机的节流窗基准必须与注入时钟同源，否则测试时钟永远走不满 90s。
        _machine = EmotionMachine(now: clock == null ? null : clock()),
        _memory = memory ?? MemoryStore(),
+       _vectors = vectors ?? MemoryVectorStore.openFile(),
        _conversationHistory = conversationHistory,
        _reflections = reflections,
        _guidelines = guidelines,
@@ -113,6 +119,14 @@ class AssistantKernel {
        emotion = ValueNotifier(
          const EmotionView(valence: 0, arousal: 0.3, intimacy: 0.3),
        ) {
+    // 向量增量同步（P1-4）：embedding 提供者随配置热替换，loader 现取
+    // 最新；开关关闭时返回禁用实例，sync 的 embed 全部落空自然停摆。
+    _vectorSync = MemoryVectorSync(
+      memory: _memory,
+      vectors: _vectors,
+      embeddingLoader:
+          () => embeddingLoader?.call() ?? const DisabledEmbeddingProvider(),
+    );
     _conversation = ConversationService(
       // 取值函数而不是值：配置热替换换掉 gateway.router 后仍能拿到最新。
       routerLoader: () => gateway.router,
@@ -150,6 +164,21 @@ class AssistantKernel {
                 expanded: hits,
               );
             },
+      // 语义召回（P1-4）：提供者现取（配置热替换生效）；embed 失败在
+      // provider 内折叠成 null，这里再折叠成空语义结果，contextFor
+      // 回落关键词命中——语义层永远不挡对话主路径。
+      semanticRecallLoader:
+          embeddingLoader == null
+              ? null
+              : (prompt) async {
+                  final embedder = embeddingLoader();
+                  if (embedder == null) return null;
+                  final vector = await embedder.embed(prompt);
+                  if (vector == null) return null;
+                  return [
+                    for (final hit in _vectors.nearest(vector)) hit.id,
+                  ];
+                },
       clock: _clock,
       rounds: conversationRounds,
     );
@@ -201,6 +230,12 @@ class AssistantKernel {
   final ResponseStrategy _strategy = ResponseStrategy();
   final ExpressionLayer _expression;
   final MemoryStore _memory;
+
+  /// 向量检索索引（P1-4）：主存储之外的派生缓存，可丢弃可重建。
+  final MemoryVectorStore _vectors;
+
+  /// 向量增量同步：prune + 增量补嵌，由启动/日终/对话后钩子触发。
+  late final MemoryVectorSync _vectorSync;
 
   /// 会话原文：指标快照的“会话轮数”从这里数（口径 = 消息数 / 2）。
   final ChatMemory? _conversationHistory;
@@ -498,7 +533,13 @@ class AssistantKernel {
   /// 再挂上衰减（60s/拍）与主动关心巡检（30s/拍）两个周期任务，
   /// 最后把会话服务挂到网关对话路径。
   void start() {
-    _gateway.conversation = _conversation.handle;
+    // 对话路径挂接：回复完成后顺带跑一次向量增量同步（stale 为空时
+    // 只花一次 SELECT），新记忆尽快可语义召回，不必等日终。
+    _gateway.conversation = (prompt) async {
+      final result = await _conversation.handle(prompt);
+      unawaited(_vectorSync.run());
+      return result;
+    };
     _guidelines?.load();
     _lastTaskSynthesisCount = _taskReflectionCount;
     switch (_store.loadPersonaDna()) {
@@ -648,6 +689,8 @@ class AssistantKernel {
     if (archived > 0) {
       debugPrint('[dafishu] 记忆衰减：归档 $archived 条旧记忆（只留档审计，不再注入）');
     }
+    // 日终同步向量库：prune 清当天删除/归档记忆的残留向量。
+    unawaited(_vectorSync.run());
     _persistIntimacy();
     _recordMetrics();
     // 日终顺带检查待确认积压：重启（start 也走这里）与跨天各触达一次，
@@ -992,6 +1035,7 @@ class AssistantKernel {
     _careTimer?.cancel();
     // 退出前兜一次亲密度快照：正常退出不靠日终那条路。
     _persistIntimacy();
+    _vectors.dispose();
     emotion.dispose();
     appearance.dispose();
   }

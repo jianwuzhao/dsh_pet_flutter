@@ -10,6 +10,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show rootBundle;
 
+import '../ai/embedding_provider.dart';
 import '../ai/llm_router.dart';
 import '../ai/providers/deepseek_provider.dart';
 import '../ai/providers/ollama_provider.dart';
@@ -71,6 +72,9 @@ class _PetAppState extends State<PetApp> {
   /// 四层核心：隐私门禁、LLM 选路、统一输入网关、全局热键、内核。
   PrivacyCenter? _privacy;
   LlmRouter? _router;
+
+  /// embedding 提供者（P1-4 语义召回）：配置热替换时随路由一起重建。
+  EmbeddingProvider? _embedding;
   InteractionGateway? _gateway;
   HotkeySource? _hotkey;
   AssistantKernel? _kernel;
@@ -270,6 +274,9 @@ class _PetAppState extends State<PetApp> {
         activeId: config.linkage.active,
       );
       final router = _buildRouter(config);
+      // embedding 提供者随配置重建（同步与召回都是现取，热切换生效）。
+      _embedding?.dispose();
+      _embedding = _buildEmbedding(config);
       final gateway = InteractionGateway(
         dispatcher: dispatcher,
         router: router,
@@ -292,6 +299,7 @@ class _PetAppState extends State<PetApp> {
         // 会话历史与 builtin 联动共用一份轮次记录（config.ai.memoryRounds 截断）。
         conversationHistory: _memory,
         conversationRounds: config.ai.memoryRounds,
+        embeddingLoader: () => _embedding,
       );
       kernel.start();
       // 形象体型缩放要在第一帧布局前就应用，否则会先按默认尺寸出生再跳一下。
@@ -479,6 +487,8 @@ class _PetAppState extends State<PetApp> {
     _ai = null;
     if (_router != null) _disposeRouter(_router!);
     _router = null;
+    _embedding?.dispose();
+    _embedding = null;
     _gateway = null;
     unawaited(_hotkey?.unregister());
     _hotkey = null;
@@ -563,6 +573,10 @@ class _PetAppState extends State<PetApp> {
     );
     final oldRouter = _router;
     final router = _buildRouter(config);
+    // embedding 与路由同源（baseUrl/provider/key），配置变了要一起换。
+    final oldEmbedding = _embedding;
+    final embedding = _buildEmbedding(config);
+    _embedding = embedding;
     setState(() {
       _config = config;
       _router = router;
@@ -574,6 +588,9 @@ class _PetAppState extends State<PetApp> {
     });
     if (oldRouter != null && !identical(oldRouter, router)) {
       _disposeRouter(oldRouter);
+    }
+    if (oldEmbedding != null && !identical(oldEmbedding, embedding)) {
+      oldEmbedding.dispose();
     }
     unawaited(_hotkey?.register(config.gateway.hotkey));
     _restartWhisper();
@@ -656,6 +673,30 @@ class _PetAppState extends State<PetApp> {
     // dispose 已提升到 LlmProvider 接口，不再按具体类型分支。
     for (final provider in router.providers) {
       provider.dispose();
+    }
+  }
+
+  /// 装配 embedding 提供者（P1-4）：跟随 ai 配置段的 provider/baseUrl，
+  /// 模型空值按 provider 取惯例默认（openai: text-embedding-3-small /
+  /// ollama: bge-m3）。开关关 / deepseek（官方无 embeddings 端点）/ none
+  /// 一律返回 null——内核拿不到 loader 就完全不挂语义召回路径。
+  EmbeddingProvider? _buildEmbedding(AppConfig config) {
+    if (!config.ai.embeddingEnabled) return null;
+    final model = config.ai.embeddingModel.trim();
+    switch (config.ai.provider) {
+      case 'openai':
+        return OpenAiEmbeddingProvider(
+          baseUrl: config.ai.baseUrl,
+          model: model.isEmpty ? 'text-embedding-3-small' : model,
+          keyLoader: _keyStore.read,
+        );
+      case 'ollama':
+        return OllamaEmbeddingProvider(
+          baseUrl: config.ai.baseUrl,
+          model: model.isEmpty ? 'bge-m3' : model,
+        );
+      default:
+        return null;
     }
   }
 

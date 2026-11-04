@@ -6,6 +6,7 @@ library;
 
 import 'dart:io';
 
+import 'package:dsh_pet_flutter/ai/embedding_provider.dart';
 import 'package:dsh_pet_flutter/ai/llm_provider.dart';
 import 'package:dsh_pet_flutter/ai/llm_router.dart';
 import 'package:dsh_pet_flutter/app/assistant_kernel.dart';
@@ -28,6 +29,7 @@ import 'package:dsh_pet_flutter/persona/emotion/emotion_signal.dart';
 import 'package:dsh_pet_flutter/persona/expression/expression_layer.dart';
 import 'package:dsh_pet_flutter/persona/memory/memory_entry.dart';
 import 'package:dsh_pet_flutter/persona/memory/memory_store.dart';
+import 'package:dsh_pet_flutter/persona/memory/memory_vectors.dart';
 import 'package:dsh_pet_flutter/persona/profile_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -58,11 +60,13 @@ class _FakeHost extends ExpressionHost {
   void openPendingConfirmations() => panelOpens++;
 }
 
-/// 可回复的假提供者：日终复盘测试用，chat 永远返回固定 JSON。
+/// 可回复的假提供者：日终复盘测试用，chat 永远返回固定 JSON；
+/// 顺带记录每次请求的 system，供注入断言复用。
 class _ReplyProvider implements LlmProvider {
   _ReplyProvider(this.reply);
 
   final String reply;
+  final List<String> systems = [];
 
   @override
   String get id => 'fake';
@@ -77,11 +81,27 @@ class _ReplyProvider implements LlmProvider {
   Future<bool> get isReady async => true;
 
   @override
-  Future<Result<LlmReply>> chat(LlmRequest request) async =>
-      Success(LlmReply(content: reply));
+  Future<Result<LlmReply>> chat(LlmRequest request) async {
+    systems.add(request.system);
+    return Success(LlmReply(content: reply));
+  }
 
   @override
   void dispose() {}
+}
+
+/// 恒定向量的假 embedder：让“query 与记忆同向”可确定构造。
+class _FakeEmbedder extends EmbeddingProvider {
+  int calls = 0;
+
+  @override
+  String get id => 'fake-embed';
+
+  @override
+  Future<List<double>?> embed(String text) async {
+    calls++;
+    return const [1.0, 0.0];
+  }
 }
 
 void main() {
@@ -102,6 +122,8 @@ void main() {
       privacy: PrivacyCenter(directory: tmpDir),
       // 记忆库同样必须指到临时目录：默认 MemoryStore 会写真实用户目录。
       memory: MemoryStore(directory: Directory('${tmpDir.path}/memory')),
+      // 向量库默认会打开真实用户目录的 vectors.db，测试一律禁用。
+      vectors: MemoryVectorStore.disabled(),
       // 学习层必须指到临时目录：默认 LearningLoop 会写真实用户目录。
       learning: LearningLoop(
         collector: FeedbackCollector(
@@ -564,6 +586,7 @@ void main() {
         host: host,
         privacy: PrivacyCenter(directory: tmpDir),
         memory: memory,
+        vectors: MemoryVectorStore.disabled(),
         learning: LearningLoop(
           collector: FeedbackCollector(
             file: File('${tmpDir.path}/feedback.jsonl'),
@@ -635,6 +658,7 @@ void main() {
         host: host,
         privacy: PrivacyCenter(directory: tmpDir),
         memory: memory,
+        vectors: MemoryVectorStore.disabled(),
         learning: LearningLoop(
           collector: FeedbackCollector(
             file: File('${tmpDir.path}/feedback.jsonl'),
@@ -674,6 +698,73 @@ void main() {
       now = now.add(const Duration(hours: 6, minutes: 1));
       kernel.notifyPendingConfirmations();
       expect(host.bubbles, hasLength(2));
+    });
+  });
+
+  group('语义召回（P1-4）', () {
+    test('对话后增量同步建索引，下一轮语义命中注入', () async {
+      final memory = MemoryStore(directory: Directory('${tmpDir.path}/memory'))
+        ..add(
+          MemoryEntry(
+            id: 'm-cat',
+            kind: MemoryKind.fact,
+            content: '养了只橘猫叫蛋黄',
+            createdAt: now,
+          ),
+        );
+      final vectors = MemoryVectorStore.openInMemory();
+      final embedder = _FakeEmbedder();
+      final provider = _ReplyProvider('[[sentiment:positive]]\n好的。');
+      final gateway = InteractionGateway(
+        dispatcher: Dispatcher(
+          registry: AdapterRegistry(const {}),
+          activeId: '',
+        ),
+        router: LlmRouter(providers: [provider], activeId: 'fake'),
+      );
+      final kernel = AssistantKernel(
+        gateway: gateway,
+        store: ProfileStore(directory: tmpDir),
+        host: host,
+        privacy: PrivacyCenter(directory: tmpDir),
+        memory: memory,
+        vectors: vectors,
+        embeddingLoader: () => embedder,
+        learning: LearningLoop(
+          collector: FeedbackCollector(
+            file: File('${tmpDir.path}/feedback.jsonl'),
+            clock: () => now,
+          ),
+          policy: PolicyStore(
+            directory: Directory('${tmpDir.path}/learning'),
+            clock: () => now,
+          ),
+          host: host,
+          clock: () => now,
+        ),
+        metrics: MetricsStore(
+          directory: Directory('${tmpDir.path}/learning'),
+          clock: () => now,
+        ),
+        appearanceStore: AppearanceStore(
+          directory: Directory('${tmpDir.path}/profile'),
+        ),
+        clock: () => now,
+      )..start();
+
+      // 第一轮：启动维护的 unawaited 同步可能先于上下文构建完成，也
+      // 可能赶不上——两种顺序都合法，这里只保证对话成功并泵完队列。
+      final first = await gateway.chat('我出差三天宠物怎么办');
+      expect(first.ok, isTrue);
+      await pumpEventQueue();
+
+      // 第二轮：query 与记忆同向（fake 恒 [1.0, 0.0]，距离 0）→ 语义
+      // 命中注入。该 query 与记忆零关键词交集，注入只可能来自语义路径。
+      final second = await gateway.chat('我出差三天宠物怎么办');
+      expect(second.ok, isTrue);
+      expect(provider.systems.last, contains('橘猫'));
+      expect(embedder.calls, greaterThanOrEqualTo(2)); // 同步 + query 各 ≥1
+      kernel.dispose();
     });
   });
 }

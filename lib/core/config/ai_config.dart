@@ -11,6 +11,8 @@ class AiConfig {
     this.model = 'gpt-4o-mini',
     this.whisperIntervalSec = 300,
     this.memoryRounds = 8,
+    this.embeddingEnabled = false,
+    this.embeddingModel = '',
   });
 
   /// none / openai / ollama。
@@ -25,6 +27,14 @@ class AiConfig {
 
   /// 每次对话带最近多少轮记忆。
   final int memoryRounds;
+
+  /// 语义召回（P1-4）总开关：默认关，计划建议记忆总量 <200 条前不
+  /// 启用——关键词召回够用，embedding 接口的延迟与成本不划算。
+  final bool embeddingEnabled;
+
+  /// embedding 模型；空 = 按 provider 取默认（openai:
+  /// text-embedding-3-small / ollama: bge-m3）。
+  final String embeddingModel;
 
   bool get enabled =>
       provider != 'none' &&
@@ -43,6 +53,8 @@ class AiConfig {
       final value = json[key];
       return value is num ? value.toInt() : def;
     }
+    bool readBool(String key, bool def) =>
+        json[key] is bool ? json[key] as bool : def;
 
     return AiConfig(
       provider: read('provider', fallback.provider).toLowerCase(),
@@ -53,6 +65,11 @@ class AiConfig {
         fallback.whisperIntervalSec,
       ),
       memoryRounds: readInt('memoryRounds', fallback.memoryRounds),
+      embeddingEnabled: readBool(
+        'embeddingEnabled',
+        fallback.embeddingEnabled,
+      ),
+      embeddingModel: read('embeddingModel', fallback.embeddingModel),
     );
   }
 
@@ -62,6 +79,8 @@ class AiConfig {
     String? model,
     int? whisperIntervalSec,
     int? memoryRounds,
+    bool? embeddingEnabled,
+    String? embeddingModel,
   }) {
     return AiConfig(
       provider: provider ?? this.provider,
@@ -69,6 +88,8 @@ class AiConfig {
       model: model ?? this.model,
       whisperIntervalSec: whisperIntervalSec ?? this.whisperIntervalSec,
       memoryRounds: memoryRounds ?? this.memoryRounds,
+      embeddingEnabled: embeddingEnabled ?? this.embeddingEnabled,
+      embeddingModel: embeddingModel ?? this.embeddingModel,
     );
   }
 
@@ -78,5 +99,7 @@ class AiConfig {
     'model': model,
     'whisperIntervalSec': whisperIntervalSec,
     'memoryRounds': memoryRounds,
+    'embeddingEnabled': embeddingEnabled,
+    'embeddingModel': embeddingModel,
   };
 }
