@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 
 import '../../../persona/appearance/appearance_state.dart';
 import '../pet_controller.dart';
+import 'wardrobe.dart';
 
 class PetView extends StatelessWidget {
   const PetView({
@@ -17,6 +18,7 @@ class PetView extends StatelessWidget {
     required this.controller,
     this.palette = AppearancePalette.blue,
     this.accessory = AppearanceAccessory.none,
+    this.outfit = defaultOutfit,
   });
 
   final PetController controller;
@@ -27,22 +29,26 @@ class PetView extends StatelessWidget {
   /// 配饰叠加：只画在宠物矩形内，不扩大窗口命中区。
   final AppearanceAccessory accessory;
 
+  /// 装扮叠加（P2-2）：画在 body 之上、配饰之下。
+  final String outfit;
+
   @override
   Widget build(BuildContext context) {
     return CustomPaint(
-      painter: _PetPainter(controller, palette, accessory),
+      painter: _PetPainter(controller, palette, accessory, outfit),
       size: controller.petSize,
     );
   }
 }
 
 class _PetPainter extends CustomPainter {
-  _PetPainter(this.controller, this.palette, this.accessory)
+  _PetPainter(this.controller, this.palette, this.accessory, this.outfit)
     : super(repaint: controller.repaint);
 
   final PetController controller;
   final AppearancePalette palette;
   final AppearanceAccessory accessory;
+  final String outfit;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -52,6 +58,8 @@ class _PetPainter extends CustomPainter {
 
     final image = controller.player?.image;
     if (image != null) _paintFrame(canvas, image, size, progress);
+    // 图层序：body → outfit（装扮在体）→ accessory（配饰在外）。
+    paintOutfit(canvas, size, outfit);
     _paintAccessory(canvas, size);
   }
 
@@ -187,5 +195,7 @@ class _PetPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _PetPainter oldDelegate) =>
-      oldDelegate.palette != palette || oldDelegate.accessory != accessory;
+      oldDelegate.palette != palette ||
+      oldDelegate.accessory != accessory ||
+      oldDelegate.outfit != outfit;
 }

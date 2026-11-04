@@ -270,6 +270,7 @@ class _PetStageState extends State<PetStage> {
         controller: controller,
         palette: widget.appearance.palette,
         accessory: widget.appearance.accessory,
+        outfit: widget.appearance.outfit,
       );
     }
     return ValueListenableBuilder<AppearanceState>(
@@ -278,6 +279,7 @@ class _PetStageState extends State<PetStage> {
         controller: controller,
         palette: appearance.palette,
         accessory: appearance.accessory,
+        outfit: appearance.outfit,
       ),
     );
   }
