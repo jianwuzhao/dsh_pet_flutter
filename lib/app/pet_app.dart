@@ -167,7 +167,6 @@ class _PetAppState extends State<PetApp> {
       privacy: _privacy?.settings ?? const PrivacySettings(),
       emotion: _kernel?.emotionProfile ?? const EmotionProfile(),
       appearance: _kernel?.appearanceState ?? const AppearanceState(),
-      appearanceChanges: _kernel?.appearance,
       appearanceReason: _kernel?.appearanceReason ?? '',
       appearanceProposal: _kernel?.formProposal,
       onAcceptFormProposal: _kernel?.acceptFormProposal,

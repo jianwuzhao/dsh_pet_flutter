@@ -74,7 +74,6 @@ class PetStage extends StatefulWidget {
     this.onRejectTrendOutfit,
     this.mementoEligible,
     this.onGenerateMemento,
-    this.appearanceChanges,
     this.appearanceProposal,
     this.onAcceptFormProposal,
     this.onRejectFormProposal,
@@ -101,9 +100,6 @@ class PetStage extends StatefulWidget {
   /// 形象当前值与最近一次推演理由：传给设置页做参数化预览。
   final AppearanceState appearance;
   final String appearanceReason;
-
-  /// 形象变化流（内核 ValueNotifier）：配色要立刻反映到宠物本体。
-  final ValueListenable<AppearanceState>? appearanceChanges;
 
   /// 推演 / 回滚 / 冻结入口（由内核提供，页面只同步展示结果）。
   final EvolutionOutcome Function()? onEvolveAppearance;
@@ -292,27 +288,9 @@ class _PetStageState extends State<PetStage> {
     );
   }
 
-  /// 配色随形象变化即时重绘；没有变化流时退回当前快照。
-  Widget _petView(PetController controller) {
-    final changes = widget.appearanceChanges;
-    if (changes == null) {
-      return PetView(
-        controller: controller,
-        palette: widget.appearance.palette,
-        accessory: widget.appearance.accessory,
-        outfit: widget.appearance.outfit,
-      );
-    }
-    return ValueListenableBuilder<AppearanceState>(
-      valueListenable: changes,
-      builder: (context, appearance, _) => PetView(
-        controller: controller,
-        palette: appearance.palette,
-        accessory: appearance.accessory,
-        outfit: appearance.outfit,
-      ),
-    );
-  }
+  /// 本体视图只画帧：形象变化的视觉表达走素材包热切（控制器内换资产
+  /// 路径），不在这里挂形象监听重建。
+  Widget _petView(PetController controller) => PetView(controller: controller);
 
   Widget _bubbleLayer() {
     final controller = widget.controller;

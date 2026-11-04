@@ -88,7 +88,6 @@ void main() {
           onSaveEmotion: (_) => const Success(null),
           onCheckAccessibility: () async => false,
           onQuit: () {},
-          appearanceChanges: null,
         ),
       ),
     );
