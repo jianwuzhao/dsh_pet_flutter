@@ -12,6 +12,7 @@ library;
 
 import 'appearance_proposal.dart';
 import 'appearance_state.dart';
+import 'outfit_policy.dart';
 
 /// 两次自动演化的最小间隔。
 const Duration evolutionCooldown = Duration(hours: 12);
@@ -30,6 +31,10 @@ class AppearanceSignals {
     required this.rejectedCount,
     required this.correctedCount,
     required this.now,
+    this.season,
+    this.solarTerm,
+    this.festival,
+    this.weather,
   });
 
   /// 情绪效价 [-1, 1]。
@@ -48,6 +53,13 @@ class AppearanceSignals {
   final int acceptedCount;
   final int rejectedCount;
   final int correctedCount;
+
+  /// 情境信号（P2-1）：可选，留空时由本地日期计算兜底；
+  /// weather 仅在用户确认过天气提案的当天由内核传入（提案制）。
+  final AppearanceSeason? season;
+  final String? solarTerm;
+  final String? festival;
+  final String? weather;
 
   final DateTime now;
 

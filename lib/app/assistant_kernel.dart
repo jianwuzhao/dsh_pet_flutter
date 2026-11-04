@@ -42,6 +42,7 @@ import '../learning/skill_curator.dart';
 import '../persona/appearance/appearance_evolution.dart';
 import '../persona/appearance/appearance_proposal.dart';
 import '../persona/appearance/appearance_state.dart';
+import '../persona/appearance/outfit_policy.dart';
 import '../persona/appearance/appearance_store.dart';
 import '../persona/emotion/emotion_machine.dart';
 import '../persona/emotion/emotion_signal.dart';
@@ -749,9 +750,49 @@ class AssistantKernel {
     unawaited(_vectorSync.run());
     _persistIntimacy();
     _recordMetrics();
+    // 跨天顺带做情境换装：季节/节令分界线常在夜间跨过，
+    // 挂在这里保证每天最多评估一次（装扮是装饰层，无需更细粒度）。
+    _refreshOutfit();
     // 日终顺带检查待确认积压：重启（start 也走这里）与跨天各触达一次，
     // 冷却窗口防双发。放在最后：前面任何写入失败都不影响触达独立判断。
     notifyPendingConfirmations();
+  }
+
+  /// 情境换装（P2-1）：季节/节令全自动，冻结与时钟回拨兜底。
+  ///
+  /// 装扮是装饰层：revision+1 留痕但不写版本历史（不占回滚额度）；
+  /// 理由并入推演理由，用户在设置页可见「为什么换装」。
+  void _refreshOutfit({String? weather}) {
+    final now = _clock();
+    // 情境换装不消费反馈信号：全 0 语义是「这些维度与本决策无关」。
+    final decision = decideOutfit(
+      appearance.value,
+      AppearanceSignals(
+        valence: 0,
+        arousal: 0,
+        intimacy: 0,
+        proactiveness: 0,
+        acceptedCount: 0,
+        rejectedCount: 0,
+        correctedCount: 0,
+        now: now,
+        weather: weather,
+      ),
+    );
+    if (!decision.changed) return;
+    final next = appearance.value.copyWith(
+      outfit: decision.outfit,
+      outfitSource: decision.source,
+      revision: appearance.value.revision + 1,
+      updatedAtMs: now.millisecondsSinceEpoch,
+    );
+    final saved = _appearanceStore.save(next, recordHistory: false);
+    if (saved is Failure<void>) {
+      debugPrint('[dafishu] 换装落盘失败：${saved.reason}');
+      return;
+    }
+    appearance.value = next;
+    _appearanceReason = decision.reason;
   }
 
   /// 亲密度快照落盘：退出（dispose）与日终各兜一次，

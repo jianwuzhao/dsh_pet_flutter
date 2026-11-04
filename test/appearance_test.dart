@@ -7,6 +7,7 @@ import 'package:dsh_pet_flutter/persona/appearance/appearance_evolution.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_proposal.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_state.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_store.dart';
+import 'package:dsh_pet_flutter/persona/appearance/outfit_policy.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -483,6 +484,137 @@ void main() {
       expect(accepted, 1);
       expect(rejected, 1);
       expect(tester.takeException(), isNull);
+    });
+  });
+
+  group('情境换装（P2-1）', () {
+    AppearanceSignals signalsAt(DateTime now, {String? weather}) =>
+        AppearanceSignals(
+          valence: 0,
+          arousal: 0,
+          intimacy: 0,
+          proactiveness: 0,
+          acceptedCount: 0,
+          rejectedCount: 0,
+          correctedCount: 0,
+          now: now,
+          weather: weather,
+        );
+
+    test('四季按节气近似日切换', () {
+      // 立春 2/4、立夏 5/6、立秋 8/7、立冬 11/7，跨年段（冬）两头覆盖。
+      expect(seasonOf(DateTime(2026, 2, 3)), AppearanceSeason.winter);
+      expect(seasonOf(DateTime(2026, 2, 5)), AppearanceSeason.spring);
+      expect(seasonOf(DateTime(2026, 5, 5)), AppearanceSeason.spring);
+      expect(seasonOf(DateTime(2026, 5, 7)), AppearanceSeason.summer);
+      expect(seasonOf(DateTime(2026, 8, 6)), AppearanceSeason.summer);
+      expect(seasonOf(DateTime(2026, 8, 8)), AppearanceSeason.autumn);
+      expect(seasonOf(DateTime(2026, 11, 6)), AppearanceSeason.autumn);
+      expect(seasonOf(DateTime(2026, 11, 8)), AppearanceSeason.winter);
+      expect(seasonOf(DateTime(2026, 1, 1)), AppearanceSeason.winter);
+      expect(seasonOf(DateTime(2026, 12, 31)), AppearanceSeason.winter);
+      expect(solarTermOf(DateTime(2026, 11, 4)), '霜降');
+      expect(solarTermOf(DateTime(2026, 11, 8)), '立冬');
+    });
+
+    test('节令窗口：农历查表与公历固定日，窗口外返回空', () {
+      // 2026 中秋 9/25，窗口 9/22-9/28；2027 春节 2/6。
+      expect(festivalOf(DateTime(2026, 9, 25)), 'midautumn');
+      expect(festivalOf(DateTime(2026, 9, 22)), 'midautumn');
+      expect(festivalOf(DateTime(2026, 9, 28)), 'midautumn');
+      expect(festivalOf(DateTime(2026, 9, 21)), isNull);
+      expect(festivalOf(DateTime(2026, 9, 29)), isNull);
+      expect(festivalOf(DateTime(2027, 2, 6)), 'newyear');
+      expect(festivalOf(DateTime(2026, 10, 31)), 'halloween');
+      expect(festivalOf(DateTime(2026, 12, 25)), 'christmas');
+      expect(festivalOf(DateTime(2026, 11, 4)), isNull);
+      // 查表范围外的年份：安全侧返回空，不换装。
+      expect(festivalOf(DateTime(2040, 9, 25)), isNull);
+    });
+
+    test('季节轨道：跨立冬自动换冬装，已穿则不动', () {
+      const home = AppearanceState();
+      final toWinter = decideOutfit(home, signalsAt(DateTime(2026, 11, 8)));
+      expect(toWinter.changed, isTrue);
+      expect(toWinter.outfit, 'winter');
+      expect(toWinter.source, AppearanceOutfitSource.seasonal);
+
+      final already = decideOutfit(
+        home.copyWith(
+          outfit: 'winter',
+          outfitSource: AppearanceOutfitSource.seasonal,
+        ),
+        signalsAt(DateTime(2026, 11, 8)),
+      );
+      expect(already.changed, isFalse);
+      expect(already.outfit, 'winter');
+    });
+
+    test('优先级：节令 > 天气 > 季节', () {
+      // 12/25 圣诞窗口（此时也是冬天）：节令盖过季节与天气。
+      final festive = decideOutfit(
+        const AppearanceState(),
+        signalsAt(DateTime(2026, 12, 25), weather: 'rain'),
+      );
+      expect(festive.outfit, 'christmas');
+      expect(festive.source, AppearanceOutfitSource.festive);
+
+      // 非节令日：已确认的天气装扮盖过季节。
+      final rainy = decideOutfit(
+        const AppearanceState(),
+        signalsAt(DateTime(2026, 11, 10), weather: 'rain'),
+      );
+      expect(rainy.outfit, 'rain');
+      expect(rainy.source, AppearanceOutfitSource.weather);
+
+      // 天气装扮只在传入当天有效：次日不带 weather 即回季节轨道。
+      final backToSeason = decideOutfit(
+        const AppearanceState().copyWith(
+          outfit: 'rain',
+          outfitSource: AppearanceOutfitSource.weather,
+        ),
+        signalsAt(DateTime(2026, 11, 11)),
+      );
+      expect(backToSeason.outfit, 'winter');
+      expect(backToSeason.source, AppearanceOutfitSource.seasonal);
+
+      // 节令装扮在窗口内不被季节抢回，窗口结束才回季节轨道。
+      final midFestival = decideOutfit(
+        const AppearanceState().copyWith(
+          outfit: 'midautumn',
+          outfitSource: AppearanceOutfitSource.festive,
+        ),
+        signalsAt(DateTime(2026, 9, 26)),
+      );
+      expect(midFestival.changed, isFalse);
+      final afterFestival = decideOutfit(
+        const AppearanceState().copyWith(
+          outfit: 'midautumn',
+          outfitSource: AppearanceOutfitSource.festive,
+        ),
+        signalsAt(DateTime(2026, 9, 30)),
+      );
+      expect(afterFestival.outfit, 'autumn');
+    });
+
+    test('冻结优先与时钟回拨保持现状', () {
+      final frozen = decideOutfit(
+        const AppearanceState().copyWith(frozen: true),
+        signalsAt(DateTime(2026, 11, 8)),
+      );
+      expect(frozen.changed, isFalse);
+      expect(frozen.outfit, 'home');
+      expect(frozen.reason, contains('冻结'));
+
+      // 日期信号早于上次形象变化：视为时钟回拨，不切换。
+      final clockSkew = decideOutfit(
+        const AppearanceState().copyWith(
+          updatedAtMs: DateTime(2026, 11, 8, 12).millisecondsSinceEpoch,
+        ),
+        signalsAt(DateTime(2026, 11, 8, 11)),
+      );
+      expect(clockSkew.changed, isFalse);
+      expect(clockSkew.reason, contains('时钟回拨'));
     });
   });
 }
