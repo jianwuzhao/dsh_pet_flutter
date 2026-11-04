@@ -760,8 +760,10 @@ class AssistantKernel {
 
   /// 情境换装（P2-1）：季节/节令全自动，冻结与时钟回拨兜底。
   ///
-  /// 装扮是装饰层：revision+1 留痕但不写版本历史（不占回滚额度）；
-  /// 理由并入推演理由，用户在设置页可见「为什么换装」。
+  /// 装扮是纯装饰轨道：只改 outfit/outfitSource 两字段——
+  /// 不 +1 revision（会破坏「历史末条=当前版本」的回滚不变量）、
+  /// 不刷新 updatedAtMs（会重置人格推演的 12h 冷却）、不写版本历史
+  /// （不占 10 版回滚额度）。留痕即 appearance.json 落盘与推演理由。
   void _refreshOutfit({String? weather}) {
     final now = _clock();
     // 情境换装不消费反馈信号：全 0 语义是「这些维度与本决策无关」。
@@ -783,8 +785,6 @@ class AssistantKernel {
     final next = appearance.value.copyWith(
       outfit: decision.outfit,
       outfitSource: decision.source,
-      revision: appearance.value.revision + 1,
-      updatedAtMs: now.millisecondsSinceEpoch,
     );
     final saved = _appearanceStore.save(next, recordHistory: false);
     if (saved is Failure<void>) {

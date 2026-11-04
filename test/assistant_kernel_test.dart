@@ -392,6 +392,23 @@ void main() {
       expect(host.bubbles, isEmpty);
     });
 
+    test('启动换季不重置推演冷却与回滚不变量（P2-1）', () {
+      // 测试时钟是 1/1（冬）：启动即自动换冬装，但装扮是纯装饰轨道，
+      // revision/updatedAt/history 都不能被动，否则人格推演被冷却卡死。
+      final kernel = buildKernel()..start();
+      expect(kernel.appearanceState.outfit, 'winter');
+      expect(
+        kernel.appearanceState.outfitSource,
+        AppearanceOutfitSource.seasonal,
+      );
+      expect(kernel.appearanceState.revision, 0);
+
+      kernel.acceptReply();
+      kernel.acceptReply();
+      expect(kernel.evolveAppearance().changed, isTrue);
+      expect(kernel.rollbackAppearance(), isA<Success<AppearanceState>>());
+    });
+
     test('反馈足够时推演一步并落盘，冷却期内不再变', () {
       final kernel = buildKernel()..start();
       kernel.acceptReply();
