@@ -25,7 +25,14 @@ void resetTrendColors() => _trendColors.clear();
 
 /// 该装扮是否有可见图层（设置页预览与测试用）。
 bool wardrobeKnows(String outfit) => switch (outfit) {
-  'winter' || 'newyear' || 'midautumn' || 'halloween' || 'christmas' => true,
+  'winter' ||
+  'newyear' ||
+  'midautumn' ||
+  'halloween' ||
+  'christmas' ||
+  'rain' ||
+  'snow' ||
+  'sunny' => true,
   // 只认受控前缀：内置名永远不可能被注册表覆盖。
   _ => outfit.startsWith(trendOutfitPrefix) && _trendColors.containsKey(outfit),
 };
@@ -78,6 +85,12 @@ void paintOutfit(Canvas canvas, Size size, String outfit) {
   'halloween' => (const Color(0xFFF2811D), const Color(0xFF6A3FA0)),
   // 圣诞：松绿 + 圣诞红。
   'christmas' => (const Color(0xFF2E7D52), const Color(0xFFD64545)),
+  // 雨具（天气装扮）：明黄雨衣 + 靛蓝垂穗——雨天识别度最高的配色。
+  'rain' => (const Color(0xFFF2C94C), const Color(0xFF3D5A80)),
+  // 雪装（天气装扮）：冰蓝 + 雪白，与冬季默认装的奶白区分开。
+  'snow' => (const Color(0xFFA8DADC), const Color(0xFFFFFFFF)),
+  // 晴日装（天气装扮）：向日葵黄 + 天蓝穗。
+  'sunny' => (const Color(0xFFF4A261), const Color(0xFF6FC2D0)),
   // 趋势装扮：注册表配色（未注册 = 没画，静默跳过）。
   _ => _trendColors[outfit] ?? (null, null),
 };

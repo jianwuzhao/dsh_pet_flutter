@@ -27,16 +27,39 @@ void main() {
       'midautumn',
       'halloween',
       'christmas',
+      // 天气装扮（P2-3a）：rain/snow/sunny 三态都有图层。
+      'rain',
+      'snow',
+      'sunny',
     ]) {
       expect(wardrobeKnows(outfit), isTrue, reason: outfit);
       expect(hasVisiblePixels((await render(outfit))!), isTrue, reason: outfit);
     }
 
     // home 与未注册装扮（含未来白名单扩张先于绘制器的名字）：安全侧不画。
-    for (final outfit in ['home', 'spring', 'rain', 'trend-xyz']) {
+    for (final outfit in ['home', 'spring', 'trend-xyz']) {
       expect(wardrobeKnows(outfit), isFalse, reason: outfit);
       expect(hasVisiblePixels((await render(outfit))!), isFalse, reason: outfit);
     }
+  });
+
+  test('天气装扮与季节装扮像素可区分（雨天换装有感）', () async {
+    final winter = (await render('winter'))!;
+    final rain = (await render('rain'))!;
+    final snow = (await render('snow'))!;
+    final sunny = (await render('sunny'))!;
+    bool anyDiffers(ByteData a, ByteData b) {
+      for (var i = 0; i < a.lengthInBytes; i += 4) {
+        if (a.getUint8(i) != b.getUint8(i)) return true;
+      }
+      return false;
+    }
+
+    // rain 与默认冬装（同为冬天可能同时在衣柜）必须可区分；
+    // 雪装主色冰蓝、晴日装主色向日葵黄，与雨装两两可区分。
+    expect(anyDiffers(winter, rain), isTrue);
+    expect(anyDiffers(snow, rain), isTrue);
+    expect(anyDiffers(sunny, rain), isTrue);
   });
 
   test('不同装扮的图层颜色可区分（换装可见）', () async {
