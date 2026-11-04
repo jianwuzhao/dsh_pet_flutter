@@ -63,9 +63,13 @@ class _FakeHost extends ExpressionHost {
 /// 可回复的假提供者：日终复盘测试用，chat 永远返回固定 JSON；
 /// 顺带记录每次请求的 system，供注入断言复用。
 class _ReplyProvider implements LlmProvider {
-  _ReplyProvider(this.reply);
+  _ReplyProvider(this.reply, {this.rewriteReply});
 
   final String reply;
+
+  /// 影子措辞优化（P1-5）的专用回复：按 system 分流，
+  /// 候选 JSON 与对话回复互不掺和。
+  final String? rewriteReply;
   final List<String> systems = [];
 
   @override
@@ -83,7 +87,9 @@ class _ReplyProvider implements LlmProvider {
   @override
   Future<Result<LlmReply>> chat(LlmRequest request) async {
     systems.add(request.system);
-    return Success(LlmReply(content: reply));
+    final body =
+        request.system.contains('措辞优化助手') ? (rewriteReply ?? reply) : reply;
+    return Success(LlmReply(content: body));
   }
 
   @override
@@ -110,10 +116,17 @@ void main() {
   // 中午起步：默认安静时段 22:00–08:00 之外，预算判定不被它拦。
   var now = DateTime(2026, 1, 1, 12, 0);
 
-  AssistantKernel buildKernel() {
+  AssistantKernel buildKernel({
+    LlmProvider? provider,
+    GuidelineStore? guidelines,
+  }) {
     final gateway = InteractionGateway(
       dispatcher: Dispatcher(registry: AdapterRegistry(const {}), activeId: ''),
-      router: LlmRouter(providers: const []),
+      // 测试要触发 LLM 路径时必须同时设 activeId，否则 resolve 不出提供者。
+      router: LlmRouter(
+        providers: provider == null ? const [] : [provider],
+        activeId: provider == null ? '' : provider.id,
+      ),
     );
     return AssistantKernel(
       gateway: gateway,
@@ -134,9 +147,11 @@ void main() {
           directory: Directory('${tmpDir.path}/learning'),
           clock: () => now,
         ),
+        guidelines: guidelines,
         host: host,
         clock: () => now,
       ),
+      guidelines: guidelines,
       // 指标快照同理：默认 MetricsStore 会写真实用户目录。
       metrics: MetricsStore(
         directory: Directory('${tmpDir.path}/learning'),
@@ -764,6 +779,86 @@ void main() {
       expect(second.ok, isTrue);
       expect(provider.systems.last, contains('橘猫'));
       expect(embedder.calls, greaterThanOrEqualTo(2)); // 同步 + query 各 ≥1
+      kernel.dispose();
+    });
+  });
+
+  group('影子措辞优化（P1-5）', () {
+    test('低效准则触发影子试验：候选与原文交替注入', () async {
+      final guidelines = GuidelineStore(
+        directory: Directory('${tmpDir.path}/learning'),
+      )..load();
+      guidelines.propose(
+        Guideline(
+          id: 'g1',
+          title: '风格',
+          content: '原文措辞',
+          createdAt: now,
+        ),
+      );
+      guidelines.accept('g1');
+      // 注入 5 次 + 1 次采纳：接受率 100%，还谈不上低效。
+      for (var i = 0; i < 5; i++) {
+        guidelines.markUsed(guidelines.active);
+      }
+      guidelines.recordInjectionOutcome(accepted: true);
+
+      final provider = _ReplyProvider(
+        '好的',
+        rewriteReply: '{"candidates":["候选措辞一","候选措辞二"]}',
+      );
+      final kernel = buildKernel(guidelines: guidelines, provider: provider)
+        ..start();
+
+      // 拒绝反馈（带纠正文本确保成功）把接受率压到 50%：
+      // 触发 deep 生成候选并开影子试验。
+      kernel.rejectReply(correction: '太啰嗦了');
+      await pumpEventQueue();
+      expect(
+        provider.systems.where((s) => s.contains('措辞优化助手')),
+        hasLength(1),
+        reason: '低效准则应触发一次候选生成',
+      );
+
+      // 影子轮换注入：第一轮 base 原文、第二轮候选一，用户无感知。
+      final first = await kernel.chat('第一句');
+      final second = await kernel.chat('第二句');
+      expect(first.ok && second.ok, isTrue);
+      final dialogSystems = provider.systems
+          .where((s) => !s.contains('措辞优化助手'))
+          .toList();
+      expect(dialogSystems[dialogSystems.length - 2], contains('原文措辞'));
+      expect(dialogSystems.last, contains('候选措辞一'));
+      kernel.dispose();
+    });
+
+    test('高效准则不触发候选生成；无提供者时静默跳过', () async {
+      final guidelines = GuidelineStore(
+        directory: Directory('${tmpDir.path}/learning'),
+      )..load();
+      guidelines.propose(
+        Guideline(
+          id: 'g1',
+          title: '风格',
+          content: '原文措辞',
+          createdAt: now,
+        ),
+      );
+      guidelines.accept('g1');
+      for (var i = 0; i < 3; i++) {
+        guidelines.markUsed(guidelines.active);
+      }
+      // useCount=3 未达门槛：即使全部纠正也不算证据充分。
+      guidelines.recordInjectionOutcome(accepted: false);
+      final provider = _ReplyProvider('好的');
+      final kernel = buildKernel(guidelines: guidelines, provider: provider)
+        ..start();
+      kernel.rejectReply(correction: '太啰嗦了');
+      await pumpEventQueue();
+      expect(
+        provider.systems.where((s) => s.contains('措辞优化助手')),
+        isEmpty,
+      );
       kernel.dispose();
     });
   });

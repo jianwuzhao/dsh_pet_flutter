@@ -116,7 +116,7 @@ class LlmReflectionSynthesizer {
 
   Result<List<TaskLessonDraft>> _parse(String raw, String input) {
     try {
-      final cleaned = _stripFence(raw);
+      final cleaned = stripFence(raw);
       final start = cleaned.indexOf('{');
       final end = cleaned.lastIndexOf('}');
       if (start < 0 || end <= start) {
@@ -206,7 +206,9 @@ class LlmReflectionSynthesizer {
       text.substring(index, index + 2),
   };
 
-  static String _stripFence(String raw) {
+  /// 剥掉模型输出常见的 Markdown 代码围栏；公开给其它学习组件复用
+  /// （如准则措辞优化器），保持同一套清洗口径。
+  static String stripFence(String raw) {
     var text = raw.trim();
     if (text.startsWith('```')) {
       text = text.replaceFirst(RegExp(r'^```(?:json)?\s*'), '');

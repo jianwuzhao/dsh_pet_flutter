@@ -31,6 +31,7 @@ import '../learning/correction_parser.dart';
 import '../learning/eval_gate.dart';
 import '../learning/evolution_engine.dart';
 import '../learning/feedback_collector.dart';
+import '../learning/guideline_rewriter.dart';
 import '../learning/guideline_store.dart';
 import '../learning/learning_loop.dart';
 import '../learning/llm_reflection_synthesizer.dart';
@@ -140,9 +141,13 @@ class AssistantKernel {
         final store = _guidelines;
         if (store == null) return const <Guideline>[];
         final picked = store.activeFor(prompt);
-        // 注入即记账：useCount/lastUsedAt 是有效性追踪的最小信号。
-        if (picked.isNotEmpty) store.markUsed(picked);
-        return picked;
+        if (picked.isEmpty) return const <Guideline>[];
+        // 注入即记账（useCount/lastUsedAt）+ 影子臂轮换（P1-5）：
+        // 先定臂再记使用，两者共用同一次注入时间，反馈归因才能对上臂。
+        // base 臂原样注入，候选臂只换措辞（id/trigger 边界不动）。
+        final armed = [for (final item in picked) store.applyShadowArm(item)];
+        store.markUsed(picked);
+        return armed;
       },
       // 策略参数只影响表达偏好，不碰身份/隐私/打扰上限等安全边界。
       policyHintLoader: () => _learning.policy.params.promptHint,
@@ -274,6 +279,11 @@ class AssistantKernel {
   /// 最近一次“日程维护”的日期（天粒度）：记忆衰减 + 指标快照每天最多一次。
   DateTime? _lastHousekeepingDay;
 
+  /// 影子措辞试验（P1-5）：反馈后异步检查低效准则并生成候选。
+  /// 并发闸 + 冷却防反馈风暴打爆模型；deep 档调用成本高。
+  bool _rewritingGuidelines = false;
+  DateTime? _lastGuidelineRewriteAt;
+
   /// 最近一次 dispatch 的原文与时间：任务终态回填反思 intent 用。
   /// 只保留单槽 + 新鲜度窗口——终态通常紧跟最近一次派发，
   /// 跨 source 精确匹配的成本远大于收益。
@@ -347,6 +357,16 @@ class AssistantKernel {
       _guidelines?.rejectRetire(proposalId) ??
       const Failure('guideline.offline', '经验准则还没准备好');
 
+  /// 接受措辞替换提案（P1-5）：只换 content、版本 +1、历史留痕。
+  Result<void> acceptGuidelineRewrite(String proposalId) =>
+      _guidelines?.acceptRewrite(proposalId) ??
+      const Failure('guideline.offline', '经验准则还没准备好');
+
+  /// 拒绝措辞替换提案（P1-5）：保持原文，本次运行不再试验。
+  Result<void> rejectGuidelineRewrite(String proposalId) =>
+      _guidelines?.rejectRewrite(proposalId) ??
+      const Failure('guideline.offline', '经验准则还没准备好');
+
   /// 当前人格 DNA（设置页展示与保存用）。
   PersonaDna get dna => _dna;
 
@@ -370,6 +390,7 @@ class AssistantKernel {
   void acceptReply() {
     _learning.acceptReply();
     if (_privacy.allowed('memoryRecording')) _evolution?.recordAccept();
+    unawaited(_maybeStartShadowTrials());
   }
 
   /// 回复被拒绝（重说）；可附一句纠正，规则解析后可能生成策略/准则提案。
@@ -378,6 +399,7 @@ class AssistantKernel {
     if (_privacy.allowed('memoryRecording')) {
       _evolution?.recordCorrection(correction);
     }
+    unawaited(_maybeStartShadowTrials());
   }
 
   /// 碎碎念：与聊天共用人格/记忆/情绪/策略与同一 provider 路径，
@@ -484,6 +506,40 @@ class AssistantKernel {
       }
     } finally {
       _synthesizingTaskLessons = false;
+    }
+  }
+
+  /// 影子措辞试验（P1-5 OPRO）：反馈计数变化后，把“注入 ≥5 次且
+  /// 接受率 <60%”的准则交给 deep 档生成候选措辞并开影子试验。
+  /// 一次只优化证据最多的一条；15 分钟冷却防高频重试。
+  Future<void> _maybeStartShadowTrials() async {
+    final store = _guidelines;
+    if (_rewritingGuidelines || store == null) return;
+    if (store.inefficientGuidelines.isEmpty) return;
+    if (!_privacy.allowed('memoryRecording')) return;
+    final now = _clock();
+    final last = _lastGuidelineRewriteAt;
+    if (last != null && now.difference(last) < const Duration(minutes: 15)) {
+      return;
+    }
+    final resolution = await _gateway.router.resolve();
+    if (resolution == null || !resolution.provider.supportsReply) return;
+
+    _rewritingGuidelines = true;
+    try {
+      // resolve 之后重新取：await 间隙里判定可能已被其它路径消费。
+      final inefficient = store.inefficientGuidelines;
+      if (inefficient.isEmpty) return;
+      final candidates = await GuidelineRewriter(
+        resolution.provider,
+      ).rewrite(inefficient.first);
+      if (candidates.isNotEmpty) {
+        store.startShadowTrial(inefficient.first.id, candidates);
+      }
+      // 失败也记冷却：影子优化是纯增益路径，不值得高频重试。
+      _lastGuidelineRewriteAt = _clock();
+    } finally {
+      _rewritingGuidelines = false;
     }
   }
 
