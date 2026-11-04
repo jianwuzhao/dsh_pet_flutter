@@ -115,6 +115,26 @@ void main() {
     expect(store.nearest([1.0, 0.0]).map((hit) => hit.id), isNot(contains('a')));
   });
 
+  test('prune 清所有维度表里不在 validIds 的残留向量', () {
+    store.upsert(entry('a', '记忆'), [1.0, 0.0]);
+    store.upsert(entry('b', '垫背'), [0.5, 0.5, 0.5]);
+
+    store.prune({'b'});
+
+    // 当前 3 维表：a 已清，b 保留。
+    expect(store.nearest([0.5, 0.5, 0.5]).map((hit) => hit.id), ['b']);
+    // 切回 2 维（upsert 触发）：a 也不能复活。
+    store.upsert(entry('c', '锚'), [0.9, 0.1]);
+    expect(store.nearest([1.0, 0.0]).map((hit) => hit.id), ['c']);
+  });
+
+  test('prune 空 validIds 全清', () {
+    store.upsert(entry('a', '记忆'), [1.0, 0.0]);
+    store.prune({});
+    store.upsert(entry('b', '锚'), [0.9, 0.1]);
+    expect(store.nearest([1.0, 0.0]).map((hit) => hit.id), ['b']);
+  });
+
   test('禁用实例：全部操作 no-op 不抛异常', () {
     final disabled = MemoryVectorStore.disabled();
     expect(disabled.isAvailable, isFalse);

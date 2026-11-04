@@ -259,9 +259,17 @@ class MemoryStore {
   ///   达标），权重降序、同权重新者优先，≤6 条；
   /// - Recall：query 非空时其余条目按关键词命中取 ≤6 条，未命中属
   ///   Archival 不注入；query 为空回落现状 kind 优先级全量填充；
+  /// - [semanticIds] 非空时替代关键词过滤（P1-4 语义召回）：调用方先
+  ///   embed(query) → 向量近邻拿到按距离升序的 id 列表，这里保序取
+  ///   ≤6 条——相关性排序优先于 kind/新近度。id 对应条目不在候选集
+  ///   （Core/不可用/已过期）自然跳过。
   /// 总上限 12 条 / 2000 字符照旧。被选中的条目在内存里更新 lastUsedAt
   /// （攒到 decay / persistUsage 才落盘），不为记账做每轮文件 IO。
-  List<MemoryEntry> contextFor({String query = '', DateTime? now}) {
+  List<MemoryEntry> contextFor({
+    String query = '',
+    DateTime? now,
+    List<String>? semanticIds,
+  }) {
     final at = now ?? DateTime.now();
     final usable = [
       for (final entry in entries(status: MemoryStatus.active))
@@ -282,12 +290,23 @@ class MemoryStore {
       for (final entry in usable)
         if (entry.coreWeight < memoryCoreWeightFloor) entry,
     ];
-    // Recall 层：query 非空只保留关键词命中的条目（≤6 条，未命中属
-    // Archival 不注入）；query 为空回落现状——kind 优先级 + 新者优先
-    // 全量填充（总上限 12 约束），不砍既有注入能力。
+    // Recall 层：语义命中优先（P1-4，替代关键词过滤）；无语义结果时
+    // query 非空只保留关键词命中的条目（≤6 条，未命中属 Archival 不注入）；
+    // query 为空回落现状——kind 优先级 + 新者优先全量填充（总上限 12
+    // 约束），不砍既有注入能力。
+    final semantic = semanticIds;
     final keywords = _keywordsOf(query);
     List<MemoryEntry> recall;
-    if (keywords.isEmpty) {
+    if (semantic != null && semantic.isNotEmpty) {
+      final byId = {for (final entry in rest) entry.id: entry};
+      recall = [
+        for (final id in semantic)
+          if (byId.containsKey(id)) byId[id]!,
+      ];
+      if (recall.length > memoryRecallMax) {
+        recall = recall.sublist(0, memoryRecallMax);
+      }
+    } else if (keywords.isEmpty) {
       rest.sort(_compareForContext);
       recall = rest;
     } else {

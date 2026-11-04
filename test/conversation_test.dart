@@ -68,6 +68,7 @@ void main() {
     int rounds = 8,
     String? policyHint,
     SkillInjection? Function(String prompt)? skillLoader,
+    Future<List<String>?> Function(String prompt)? semanticRecallLoader,
   }) =>
       ConversationService(
         routerLoader: () => LlmRouter(providers: [provider], activeId: 'fake'),
@@ -82,6 +83,7 @@ void main() {
         ),
         policyHintLoader: policyHint == null ? null : () => policyHint,
         skillLoader: skillLoader,
+        semanticRecallLoader: semanticRecallLoader,
         rounds: rounds,
       );
 
@@ -235,6 +237,39 @@ void main() {
 
     expect(history.messages.length, 2);
     expect(history.messages.last.content, '正文。');
+  });
+
+  test('语义召回（P1-4）：loader 返回 id 替代关键词命中注入', () async {
+    memory.add(MemoryEntry(
+      id: 'm-cat',
+      kind: MemoryKind.fact,
+      content: '养了只橘猫叫蛋黄',
+      createdAt: DateTime(2026, 1, 1, 12),
+    ));
+    provider.script = '[[sentiment:positive]]\n好的。';
+    final service = buildService(
+      semanticRecallLoader: (prompt) async => ['m-cat'],
+    );
+
+    // query 与记忆零关键词交集：只有语义路径能把它带进来。
+    await service.handle('我出差三天宠物怎么办');
+    expect(provider.requests.single.system, contains('橘猫'));
+  });
+
+  test('语义召回：loader 返回 null 回落关键词，未命中不注入', () async {
+    memory.add(MemoryEntry(
+      id: 'm-cat',
+      kind: MemoryKind.fact,
+      content: '养了只橘猫叫蛋黄',
+      createdAt: DateTime(2026, 1, 1, 12),
+    ));
+    provider.script = '[[sentiment:positive]]\n好的。';
+    final service = buildService(
+      semanticRecallLoader: (prompt) async => null,
+    );
+
+    await service.handle('我出差三天宠物怎么办');
+    expect(provider.requests.single.system, isNot(contains('橘猫')));
   });
 
   test('提供者失败透传；无可用提供者给明确原因', () async {

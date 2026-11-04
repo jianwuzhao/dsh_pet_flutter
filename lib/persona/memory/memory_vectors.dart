@@ -222,6 +222,29 @@ class MemoryVectorStore {
     }
   }
 
+  /// 清掉主存储里已不存在的记忆残留向量（所有维度表）：已删/归档的
+  /// 记忆不该继续占用 top-k 名额，更不能在换回旧模型时“复活”。
+  /// validIds 为空 = 全清（记忆库整体清空的形态）。
+  void prune(Set<String> validIds) {
+    final db = _db;
+    if (db == null) return;
+    try {
+      for (final table in _allTables(db)) {
+        if (validIds.isEmpty) {
+          db.execute('DELETE FROM $table');
+          continue;
+        }
+        final placeholders = List.filled(validIds.length, '?').join(', ');
+        db.execute(
+          'DELETE FROM $table WHERE id NOT IN ($placeholders)',
+          validIds.toList(),
+        );
+      }
+    } on Object {
+      // 同 upsert：索引层失败静默。
+    }
+  }
+
   /// 找需要（重新）嵌向量的条目：库里没有对应向量，或正文已变更。
   /// 向量同步任务据此做增量补嵌，避免每轮全量调用 embedding 接口。
   List<MemoryEntry> stale(Iterable<MemoryEntry> entries) {

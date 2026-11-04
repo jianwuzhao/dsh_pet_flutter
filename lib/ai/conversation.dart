@@ -35,6 +35,7 @@ class ConversationService {
     List<Guideline> Function(String prompt)? guidelineLoader,
     String Function()? policyHintLoader,
     SkillInjection? Function(String prompt)? skillLoader,
+    Future<List<String>?> Function(String prompt)? semanticRecallLoader,
     DateTime Function()? clock,
     this.rounds = 8,
   }) : _routerLoader = routerLoader,
@@ -47,6 +48,7 @@ class ConversationService {
        _guidelineLoader = guidelineLoader,
        _policyHintLoader = policyHintLoader,
        _skillLoader = skillLoader,
+       _semanticRecallLoader = semanticRecallLoader,
        _clock = clock ?? DateTime.now;
 
   /// 配置热替换时 gateway.router 整体会被换掉，注入取值函数保证拿到最新。
@@ -62,6 +64,12 @@ class ConversationService {
 
   /// 技能检索（渐进加载）：null = 未启用技能库，行为与现状一致。
   final SkillInjection? Function(String prompt)? _skillLoader;
+
+  /// 语义召回（P1-4）：prompt 非空时先 embed → 向量近邻，返回按距离
+  /// 升序的记忆 id 列表给 contextFor 替代关键词过滤；null/空 = 回落
+  /// 关键词。未配置或 embedding 失败都在 loader 内部折叠成 null。
+  final Future<List<String>?> Function(String prompt)? _semanticRecallLoader;
+
   final DateTime Function() _clock;
 
   /// 会话历史注入轮数（config.ai.memoryRounds）。
@@ -86,12 +94,24 @@ class ConversationService {
       );
     }
 
+    // 语义召回（P1-4）：多一次 embedding 网络往返，只对非空 prompt 做；
+    // 失败/未启用折叠成 null，contextFor 照旧走关键词命中。
+    final recall = _semanticRecallLoader;
+    List<String>? semanticIds;
+    if (recall != null && prompt.trim().isNotEmpty) {
+      semanticIds = await recall(prompt);
+    }
+
     final system = buildSystem(
       dna: _dnaLoader?.call() ?? const PersonaDna(),
       view:
           _emotionLoader?.call() ??
           const EmotionView(valence: 0, arousal: 0.3, intimacy: 0.3),
-      memories: _memory.contextFor(query: prompt, now: _clock()),
+      memories: _memory.contextFor(
+        query: prompt,
+        now: _clock(),
+        semanticIds: semanticIds,
+      ),
       userProfile: _userProfileLoader?.call(),
       guidelines: _guidelineLoader?.call(prompt) ?? const [],
       policyHint: _policyHintLoader?.call(),

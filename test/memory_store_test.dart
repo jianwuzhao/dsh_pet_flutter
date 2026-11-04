@@ -444,6 +444,57 @@ void main() {
       expect(context.map((e) => e.content), ['周三前交周报']);
     });
 
+    test('语义命中（P1-4）：semanticIds 替代关键词过滤且保距离序', () {
+      store.add(entry(MemoryKind.fact, '养了只橘猫叫蛋黄'));
+      store.add(entry(MemoryKind.fact, '作息：早八'));
+      store.add(entry(MemoryKind.fact, '核心', coreWeight: 0.9));
+
+      final context = store.contextFor(
+        // query 与记忆零关键词交集：纯语义路径的典型形态。
+        query: '我出差三天宠物怎么办',
+        now: DateTime(2026, 1, 1),
+        semanticIds: [
+          'id-fact-核心', // 已在 Core 层：跳过不重复
+          'id-fact-养了只橘猫叫蛋黄',
+          'id-fact-作息：早八',
+          'id-fact-不存在', // 未知 id 自然跳过
+        ],
+      );
+      expect(
+        context.map((e) => e.content),
+        ['核心', '养了只橘猫叫蛋黄', '作息：早八'],
+      );
+    });
+
+    test('语义命中为空列表：回落关键词路径', () {
+      store.add(entry(MemoryKind.task, '周三前交周报', subject: 'task'));
+      final context = store.contextFor(
+        query: '周报',
+        now: DateTime(2026, 1, 1),
+        semanticIds: const [],
+      );
+      expect(context.map((e) => e.content), ['周三前交周报']);
+    });
+
+    test('语义命中超过 6 条截取距离最近的前 6', () {
+      for (var i = 0; i < 8; i++) {
+        store.add(entry(MemoryKind.fact, '语义$i'));
+      }
+      final context = store.contextFor(
+        query: '语义查询',
+        now: DateTime(2026, 1, 1),
+        semanticIds: [
+          // 调用方给的顺序 = 距离升序：截取时保序。
+          for (var i = 7; i >= 0; i--) 'id-fact-语义$i',
+        ],
+      );
+      expect(context.length, memoryRecallMax);
+      expect(
+        context.map((e) => e.content),
+        ['语义7', '语义6', '语义5', '语义4', '语义3', '语义2'],
+      );
+    });
+
     test('query 为空回落现状：Core 之外的条目仍全量按 kind 优先级注入', () {
       store.add(entry(MemoryKind.episode, '事件'));
       store.add(entry(MemoryKind.fact, '事实', coreWeight: 0.9));
