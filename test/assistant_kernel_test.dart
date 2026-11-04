@@ -24,6 +24,7 @@ import 'package:dsh_pet_flutter/learning/policy_store.dart';
 import 'package:dsh_pet_flutter/learning/reflection_store.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_state.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_store.dart';
+import 'package:dsh_pet_flutter/persona/appearance/weather_outfit.dart';
 import 'package:dsh_pet_flutter/persona/emotion/emotion_machine.dart';
 import 'package:dsh_pet_flutter/persona/emotion/emotion_signal.dart';
 import 'package:dsh_pet_flutter/persona/expression/expression_layer.dart';
@@ -32,6 +33,8 @@ import 'package:dsh_pet_flutter/persona/memory/memory_store.dart';
 import 'package:dsh_pet_flutter/persona/memory/memory_vectors.dart';
 import 'package:dsh_pet_flutter/persona/profile_store.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 /// 记录表达决策的假宿主：关心是否表达、表达了几次全在这里断言。
 class _FakeHost extends ExpressionHost {
@@ -119,6 +122,7 @@ void main() {
   AssistantKernel buildKernel({
     LlmProvider? provider,
     GuidelineStore? guidelines,
+    WeatherOutfitService? weatherOutfit,
   }) {
     final gateway = InteractionGateway(
       dispatcher: Dispatcher(registry: AdapterRegistry(const {}), activeId: ''),
@@ -161,6 +165,8 @@ void main() {
       appearanceStore: AppearanceStore(
         directory: Directory('${tmpDir.path}/profile'),
       ),
+      // 天气装扮（P2-3）：测试注入 MockClient 版服务，绝不碰真实网络。
+      weatherOutfit: weatherOutfit,
       clock: () => now,
     );
   }
@@ -517,6 +523,84 @@ void main() {
         File('${tmpDir.path}/profile/appearance_proposal.json').existsSync(),
         isFalse,
       );
+    });
+  });
+
+  group('天气装扮（P2-3）', () {
+    // 1/1 是冬：启动后已穿 winter，天气 rain 才值得建议。
+    WeatherOutfitService rainyService() => WeatherOutfitService(
+      client: MockClient(
+        (_) async => http.Response(
+          '{"current_condition":[{"weatherCode":"293"}]}',
+          200,
+        ),
+      ),
+      clock: () => now,
+    );
+
+    test('开关默认关：启动后不发任何天气请求', () async {
+      var requests = 0;
+      final kernel = buildKernel(
+        weatherOutfit: WeatherOutfitService(
+          client: MockClient((_) async {
+            requests++;
+            return http.Response('{}', 200);
+          }),
+          clock: () => now,
+        ),
+      )..start();
+      await pumpEventQueue();
+
+      expect(
+        kernel.appearanceState.weatherSource,
+        AppearanceWeatherSource.off,
+      );
+      expect(requests, 0);
+      expect(kernel.weatherSuggestion.value, isNull);
+    });
+
+    test('开启后给出建议；确认才换装（source=weather）', () async {
+      final kernel = buildKernel(weatherOutfit: rainyService())..start();
+      await pumpEventQueue();
+      // 开关关着：观察与建议都不存在。
+      expect(kernel.weatherSuggestion.value, isNull);
+
+      expect(
+        kernel.setWeatherSource(AppearanceWeatherSource.builtin),
+        isA<Success<void>>(),
+      );
+      await pumpEventQueue();
+      final suggestion = kernel.weatherSuggestion.value;
+      expect(suggestion?.outfit, 'rain');
+      expect(suggestion?.reason, contains('有雨'));
+      // 建议只是提案：形象还没换。
+      expect(kernel.appearanceState.outfit, 'winter');
+
+      kernel.acceptWeatherOutfit();
+      expect(kernel.appearanceState.outfit, 'rain');
+      expect(
+        kernel.appearanceState.outfitSource,
+        AppearanceOutfitSource.weather,
+      );
+      expect(kernel.weatherSuggestion.value, isNull);
+      expect(host.bubbles.single, '换好了，这身应景吧');
+    });
+
+    test('忽略后当日不再提；开关切换不动修订号（装饰轨道）', () async {
+      final kernel = buildKernel(weatherOutfit: rainyService())..start();
+      await pumpEventQueue();
+      kernel.setWeatherSource(AppearanceWeatherSource.builtin);
+      await pumpEventQueue();
+      expect(kernel.weatherSuggestion.value, isNotNull);
+
+      kernel.dismissWeatherOutfit();
+      // 同日关→开重新触发观察：日键命中「今日已忽略」，不再建议。
+      kernel.setWeatherSource(AppearanceWeatherSource.off);
+      kernel.setWeatherSource(AppearanceWeatherSource.builtin);
+      await pumpEventQueue();
+      expect(kernel.weatherSuggestion.value, isNull);
+      // 全周期修订号不动：换装不占版本历史额度。
+      expect(kernel.appearanceState.revision, 0);
     });
   });
 

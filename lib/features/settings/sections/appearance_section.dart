@@ -6,10 +6,13 @@ library;
 
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../../persona/appearance/appearance_proposal.dart';
 import '../../../persona/appearance/appearance_state.dart';
+import '../../../persona/appearance/weather_outfit.dart';
+import 'settings_controls.dart';
 
 class AppearanceSection extends StatelessWidget {
   const AppearanceSection({
@@ -23,6 +26,11 @@ class AppearanceSection extends StatelessWidget {
     this.proposal,
     this.onAcceptProposal,
     this.onRejectProposal,
+    this.weatherSource = AppearanceWeatherSource.off,
+    this.weatherSuggestion,
+    this.onWeatherSourceChanged,
+    this.onAcceptWeatherOutfit,
+    this.onDismissWeatherOutfit,
   });
 
   final AppearanceState state;
@@ -41,6 +49,16 @@ class AppearanceSection extends StatelessWidget {
   final VoidCallback? onEvolve;
   final VoidCallback? onRollback;
   final ValueChanged<bool>? onFreeze;
+
+  /// 天气装扮源（P2-3）：默认 off，开启后内核才允许发天气请求。
+  final AppearanceWeatherSource weatherSource;
+
+  /// 当日换装建议；只在当天有效（内核不持久化），null = 不渲染建议卡片。
+  final ValueListenable<WeatherOutfitSuggestion?>? weatherSuggestion;
+
+  final ValueChanged<AppearanceWeatherSource>? onWeatherSourceChanged;
+  final VoidCallback? onAcceptWeatherOutfit;
+  final VoidCallback? onDismissWeatherOutfit;
 
   @override
   Widget build(BuildContext context) {
@@ -126,6 +144,63 @@ class AppearanceSection extends StatelessWidget {
             ),
           ),
         ],
+        // 天气装扮（P2-3）：提案制——先建议、你确认才换，不自动改形象。
+        if (onWeatherSourceChanged != null)
+          SettingsSwitch(
+            title: '天气装扮',
+            subtitle: '开启后每天最多 2 次免费天气查询，换装建议由你确认',
+            value: weatherSource != AppearanceWeatherSource.off,
+            onChanged: (value) => onWeatherSourceChanged!(
+              value
+                  ? AppearanceWeatherSource.builtin
+                  : AppearanceWeatherSource.off,
+            ),
+          ),
+        if (weatherSuggestion != null)
+          ValueListenableBuilder<WeatherOutfitSuggestion?>(
+            valueListenable: weatherSuggestion!,
+            builder: (context, suggestion, _) {
+              if (suggestion == null) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0x14FFB74D),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0x33FFB74D)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        suggestion.reason,
+                        style: const TextStyle(
+                          color: Color(0xE6FFB74D),
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          OutlinedButton(
+                            onPressed: onAcceptWeatherOutfit,
+                            child: const Text('穿上'),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton(
+                            onPressed: onDismissWeatherOutfit,
+                            child: const Text('忽略'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
         const SizedBox(height: 12),
         Text(
           reason.isEmpty ? '还没有推演过，形象保持初始参数' : '上次推演：$reason',

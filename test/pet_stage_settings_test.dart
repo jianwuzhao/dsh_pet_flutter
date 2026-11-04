@@ -7,9 +7,11 @@ import 'package:dsh_pet_flutter/core/result.dart';
 import 'package:dsh_pet_flutter/features/linkage/assistant_adapters.dart';
 import 'package:dsh_pet_flutter/features/pet/behavior/physics.dart';
 import 'package:dsh_pet_flutter/features/pet/pet_controller.dart';
+import 'package:dsh_pet_flutter/features/settings/sections/appearance_section.dart';
 import 'package:dsh_pet_flutter/features/settings/sections/evolution_section.dart';
 import 'package:dsh_pet_flutter/learning/guideline_store.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_state.dart';
+import 'package:dsh_pet_flutter/persona/appearance/weather_outfit.dart';
 import 'package:dsh_pet_flutter/persona/profile_store.dart';
 import 'package:dsh_pet_flutter/platform/pet_platform.dart';
 import 'package:flutter/material.dart';
@@ -120,6 +122,59 @@ void main() {
     }
 
     controller.dispose();
+  });
+
+  testWidgets('P2-3 天气装扮：开关与建议卡片的两路回调', (tester) async {
+    final suggestion = ValueNotifier<WeatherOutfitSuggestion?>(
+      WeatherOutfitSuggestion(
+        outfit: 'rain',
+        reason: '今日有雨，建议换上雨具装扮？',
+        suggestedAt: DateTime(2026, 1, 1, 12),
+      ),
+    );
+    addTearDown(suggestion.dispose);
+    var accepted = 0;
+    var dismissed = 0;
+    final sources = <AppearanceWeatherSource>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: const Color(0xFF26262C),
+          body: AppearanceSection(
+            state: const AppearanceState(),
+            reason: '',
+            hint: '',
+            onEvolve: () {},
+            onRollback: () {},
+            onFreeze: (_) {},
+            weatherSource: AppearanceWeatherSource.builtin,
+            weatherSuggestion: suggestion,
+            onWeatherSourceChanged: sources.add,
+            onAcceptWeatherOutfit: () => accepted++,
+            onDismissWeatherOutfit: () => dismissed++,
+          ),
+        ),
+      ),
+    );
+
+    // 开着 + 有建议：开关常驻，卡片带理由与两路按钮。
+    expect(find.text('天气装扮'), findsOneWidget);
+    expect(find.text('今日有雨，建议换上雨具装扮？'), findsOneWidget);
+
+    await tester.tap(find.text('穿上'));
+    expect(accepted, 1);
+    await tester.tap(find.text('忽略'));
+    expect(dismissed, 1);
+
+    // 建议清空：卡片随 ValueListenable 消失。
+    suggestion.value = null;
+    await tester.pump();
+    expect(find.text('今日有雨，建议换上雨具装扮？'), findsNothing);
+
+    // 开关关掉：回传 off（内核据此落盘并停止观察）。
+    await tester.tap(find.text('天气装扮'));
+    expect(sources, [AppearanceWeatherSource.off]);
   });
 
   testWidgets('P1-5 措辞替换提案卡片：新旧对照展示与两路回调', (tester) async {

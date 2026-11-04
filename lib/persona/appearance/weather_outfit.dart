@@ -18,6 +18,28 @@ class WeatherOutfit {
   final DateTime fetchedAt;
 }
 
+/// 待用户确认的天气装扮建议（内存态：生命周期只有当天，重启即清，
+/// 不值得为它持久化）。
+class WeatherOutfitSuggestion {
+  const WeatherOutfitSuggestion({
+    required this.outfit,
+    required this.reason,
+    required this.suggestedAt,
+  });
+
+  final String outfit;
+  final String reason;
+  final DateTime suggestedAt;
+}
+
+/// 天气装扮名的中文短语（建议理由与 UI 共用）。
+String weatherOutfitLabel(String outfit) => switch (outfit) {
+  'rain' => '雨具装扮',
+  'snow' => '雪装',
+  'sunny' => '晴日装',
+  _ => '$outfit 装扮',
+};
+
 class WeatherOutfitService {
   WeatherOutfitService({
     http.Client? client,

@@ -24,6 +24,7 @@ import '../learning/learning_loop.dart';
 import '../persona/appearance/appearance_evolution.dart';
 import '../persona/appearance/appearance_proposal.dart';
 import '../persona/appearance/appearance_state.dart';
+import '../persona/appearance/weather_outfit.dart';
 import '../persona/memory/memory_store.dart';
 import '../persona/persona_dna.dart';
 import '../persona/profile_store.dart';
@@ -62,6 +63,10 @@ class PetStage extends StatefulWidget {
     this.onEvolveAppearance,
     this.onRollbackAppearance,
     this.onFreezeAppearance,
+    this.weatherSuggestion,
+    this.onWeatherSourceChanged,
+    this.onAcceptWeatherOutfit,
+    this.onDismissWeatherOutfit,
     this.appearanceChanges,
     this.appearanceProposal,
     this.onAcceptFormProposal,
@@ -97,6 +102,13 @@ class PetStage extends StatefulWidget {
   final EvolutionOutcome Function()? onEvolveAppearance;
   final Result<AppearanceState> Function()? onRollbackAppearance;
   final Result<void> Function(bool frozen)? onFreezeAppearance;
+
+  /// 天气装扮（P2-3）：建议流 + 开关/确认/忽略入口，纯透传。
+  final ValueListenable<WeatherOutfitSuggestion?>? weatherSuggestion;
+  final Result<void> Function(AppearanceWeatherSource value)?
+  onWeatherSourceChanged;
+  final VoidCallback? onAcceptWeatherOutfit;
+  final VoidCallback? onDismissWeatherOutfit;
 
   /// 形态提案：最显眼的变化需用户接受才生效。
   final AppearanceProposal? appearanceProposal;
@@ -417,6 +429,10 @@ class _PetStageState extends State<PetStage> {
             onEvolveAppearance: widget.onEvolveAppearance,
             onRollbackAppearance: widget.onRollbackAppearance,
             onFreezeAppearance: widget.onFreezeAppearance,
+            weatherSuggestion: widget.weatherSuggestion,
+            onWeatherSourceChanged: widget.onWeatherSourceChanged,
+            onAcceptWeatherOutfit: widget.onAcceptWeatherOutfit,
+            onDismissWeatherOutfit: widget.onDismissWeatherOutfit,
             onCheckAccessibility: widget.onCheckAccessibility,
             onClose: controller.closePanel,
             capabilities: widget.capabilities,

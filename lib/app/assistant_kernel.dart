@@ -43,6 +43,7 @@ import '../persona/appearance/appearance_evolution.dart';
 import '../persona/appearance/appearance_proposal.dart';
 import '../persona/appearance/appearance_state.dart';
 import '../persona/appearance/outfit_policy.dart';
+import '../persona/appearance/weather_outfit.dart';
 import '../persona/appearance/appearance_store.dart';
 import '../persona/emotion/emotion_machine.dart';
 import '../persona/emotion/emotion_signal.dart';
@@ -74,6 +75,7 @@ class AssistantKernel {
     AppearanceStore? appearanceStore,
     AppearanceEvolution appearanceEvolution = const AppearanceEvolution(),
     SkillCurator? skillCurator,
+    WeatherOutfitService? weatherOutfit,
     DateTime Function()? clock,
   }) : _gateway = gateway,
        _store = store,
@@ -103,6 +105,7 @@ class AssistantKernel {
        _appearanceStore = appearanceStore ?? AppearanceStore(),
        _appearanceEvolution = appearanceEvolution,
        _skillCurator = skillCurator,
+       _weatherOutfit = weatherOutfit ?? WeatherOutfitService(),
        _learning =
            learning ??
            LearningLoop(
@@ -255,6 +258,16 @@ class AssistantKernel {
 
   /// 技能策展（P1-1）：null = 未启用技能库，对话行为与现状一致。
   final SkillCurator? _skillCurator;
+
+  /// 天气装扮服务（P2-3）：默认关闭，开启后才可能发网络请求。
+  final WeatherOutfitService _weatherOutfit;
+
+  /// 待确认的天气装扮建议（UI 监听；内存态，生命周期只有当天）。
+  final ValueNotifier<WeatherOutfitSuggestion?> weatherSuggestion =
+      ValueNotifier(null);
+
+  /// 用户点过「忽略」的日期（本地日键）：当日不再提同一建议。
+  String _weatherOutfitDismissedDay = '';
 
   /// 常驻索引行数：进模型视野的名额靠注入次数竞争（useCount Top N）。
   static const int skillIndexLines = 5;
@@ -753,6 +766,9 @@ class AssistantKernel {
     // 跨天顺带做情境换装：季节/节令分界线常在夜间跨过，
     // 挂在这里保证每天最多评估一次（装扮是装饰层，无需更细粒度）。
     _refreshOutfit();
+    // 天气装扮（P2-3）：开关默认 off；开着才观察（内部还有 12h 缓存
+    // 与日限兜底，这里无需再加节流）。
+    unawaited(_checkWeatherOutfit());
     // 日终顺带检查待确认积压：重启（start 也走这里）与跨天各触达一次，
     // 冷却窗口防双发。放在最后：前面任何写入失败都不影响触达独立判断。
     notifyPendingConfirmations();
@@ -781,19 +797,89 @@ class AssistantKernel {
         weather: weather,
       ),
     );
-    if (!decision.changed) return;
-    final next = appearance.value.copyWith(
-      outfit: decision.outfit,
-      outfitSource: decision.source,
-    );
+    if (decision.changed) {
+      _applyOutfit(decision.outfit, decision.source, decision.reason);
+    }
+  }
+
+  /// 换装落盘的唯一出口（情境自动与用户确认共用）。
+  void _applyOutfit(
+    String outfit,
+    AppearanceOutfitSource source,
+    String reason,
+  ) {
+    final next = appearance.value.copyWith(outfit: outfit, outfitSource: source);
     final saved = _appearanceStore.save(next, recordHistory: false);
     if (saved is Failure<void>) {
       debugPrint('[dafishu] 换装落盘失败：${saved.reason}');
       return;
     }
     appearance.value = next;
-    _appearanceReason = decision.reason;
+    _appearanceReason = reason;
   }
+
+  /// 拉天气并给出换装建议（P2-3）：开关关着或用户当日点过忽略时
+  /// 直接短路；建议只是提案，换不换由用户确认。
+  Future<void> _checkWeatherOutfit() async {
+    if (appearance.value.weatherSource == AppearanceWeatherSource.off) return;
+    final now = _clock();
+    if (_localDayKey(now) == _weatherOutfitDismissedDay) return;
+    final observed = await _weatherOutfit.current();
+    final outfit = observed?.outfit;
+    if (outfit == null || outfit == appearance.value.outfit) {
+      // 天气不值得换装或已经穿着：清掉旧建议，不打扰。
+      weatherSuggestion.value = null;
+      return;
+    }
+    weatherSuggestion.value = WeatherOutfitSuggestion(
+      outfit: outfit,
+      reason: '今日${switch (outfit) {
+        'rain' => '有雨',
+        'snow' => '有雪',
+        'sunny' => '晴朗',
+        _ => '',
+      }}，建议换上${weatherOutfitLabel(outfit)}？',
+      suggestedAt: now,
+    );
+  }
+
+  /// 用户确认天气装扮：显式意图直接换，不再经情境优先级仲裁
+  /// （节令窗口也不该拦住用户刚点的确认）。
+  void acceptWeatherOutfit() {
+    final suggestion = weatherSuggestion.value;
+    if (suggestion == null) return;
+    weatherSuggestion.value = null;
+    _applyOutfit(
+      suggestion.outfit,
+      AppearanceOutfitSource.weather,
+      suggestion.reason,
+    );
+    _host.showBubble('换好了，这身应景吧');
+  }
+
+  /// 用户忽略天气装扮：当日不再提（次日天气若仍不同会再建议）。
+  void dismissWeatherOutfit() {
+    weatherSuggestion.value = null;
+    _weatherOutfitDismissedDay = _localDayKey(_clock());
+  }
+
+  /// 天气装扮开关（默认 off，决策点 D4）：开启后立刻观察一次天气。
+  /// 返回落盘结果：设置页据此决定要不要翻转开关回显。
+  Result<void> setWeatherSource(AppearanceWeatherSource value) {
+    final next = appearance.value.copyWith(weatherSource: value);
+    final saved = _appearanceStore.save(next, recordHistory: false);
+    if (saved is Failure<void>) {
+      debugPrint('[dafishu] 天气装扮开关落盘失败：${saved.reason}');
+      return saved;
+    }
+    appearance.value = next;
+    if (value != AppearanceWeatherSource.off) {
+      unawaited(_checkWeatherOutfit());
+    }
+    return const Success(null);
+  }
+
+  String _localDayKey(DateTime now) => '${now.year}-${now.month}-${now.day}';
 
   /// 亲密度快照落盘：退出（dispose）与日终各兜一次，
   /// 异常退出最多丢一天增量，慢变量对这个精度不敏感。

@@ -5,6 +5,7 @@
 /// API Key 不写进 jsonc，保存时进系统安全存储（不可用时回退 0600 文件）。
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../ai/llm_provider.dart';
@@ -21,6 +22,7 @@ import '../../learning/learning_loop.dart';
 import '../../persona/appearance/appearance_evolution.dart';
 import '../../persona/appearance/appearance_proposal.dart';
 import '../../persona/appearance/appearance_state.dart';
+import '../../persona/appearance/weather_outfit.dart';
 import '../../persona/memory/memory_entry.dart';
 import '../../persona/memory/memory_store.dart';
 import '../../persona/profile_store.dart';
@@ -66,6 +68,10 @@ class SettingsPage extends StatefulWidget {
     this.onEvolveAppearance,
     this.onRollbackAppearance,
     this.onFreezeAppearance,
+    this.weatherSuggestion,
+    this.onWeatherSourceChanged,
+    this.onAcceptWeatherOutfit,
+    this.onDismissWeatherOutfit,
     required this.onCheckAccessibility,
     required this.onClose,
     this.capabilities,
@@ -97,6 +103,16 @@ class SettingsPage extends StatefulWidget {
 
   /// 冻结/解冻自动演化。
   final Result<void> Function(bool frozen)? onFreezeAppearance;
+
+  /// 天气装扮建议流（P2-3）：内核 ValueNotifier，设置页只读。
+  final ValueListenable<WeatherOutfitSuggestion?>? weatherSuggestion;
+
+  /// 天气装扮开关（返回落盘结果，失败时页面不翻转回显）。
+  final Result<void> Function(AppearanceWeatherSource value)?
+  onWeatherSourceChanged;
+
+  final VoidCallback? onAcceptWeatherOutfit;
+  final VoidCallback? onDismissWeatherOutfit;
 
   /// 记忆库（内核实例）：查看/纠正/遗忘/导出直接操作，即时生效。
   final MemoryStore? memory;
@@ -691,6 +707,24 @@ class _SettingsPageState extends State<SettingsPage>
     });
   }
 
+  /// 天气装扮开关：落盘成功才翻转本地回显（失败保持原样并提示）。
+  void _setWeatherSource(AppearanceWeatherSource value) {
+    final change = widget.onWeatherSourceChanged;
+    if (change == null) return;
+    final result = change(value);
+    setState(() {
+      switch (result) {
+        case Success():
+          _appearance = _appearance.copyWith(weatherSource: value);
+          _appearanceHint = value == AppearanceWeatherSource.off
+              ? '已关闭天气装扮'
+              : '已开启，今日天气不同会给出换装建议';
+        case Failure(:final reason):
+          _appearanceHint = reason;
+      }
+    });
+  }
+
   void _acceptFormProposal() {
     final accept = widget.onAcceptFormProposal;
     if (accept == null) return;
@@ -949,6 +983,14 @@ class _SettingsPageState extends State<SettingsPage>
                       onFreeze: widget.onFreezeAppearance == null
                           ? null
                           : _toggleAppearanceFrozen,
+                      weatherSource: _appearance.weatherSource,
+                      weatherSuggestion: widget.weatherSuggestion,
+                      onWeatherSourceChanged:
+                          widget.onWeatherSourceChanged == null
+                          ? null
+                          : _setWeatherSource,
+                      onAcceptWeatherOutfit: widget.onAcceptWeatherOutfit,
+                      onDismissWeatherOutfit: widget.onDismissWeatherOutfit,
                     ),
                     if (widget.memory == null)
                       const Padding(
