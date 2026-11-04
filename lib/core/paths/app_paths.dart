@@ -79,6 +79,11 @@ class AppPaths {
   static File get memoryExportFile =>
       File('${root.path}${Platform.pathSeparator}memory_export.json');
 
+  /// 记忆向量库（P1-4 语义召回）：与 json 记忆文件同目录，
+  /// 主存储仍是 json，向量只是可丢弃的检索索引。
+  static File get memoryVectorFile =>
+      File('${memoryDir.path}${Platform.pathSeparator}vectors.db');
+
   /// 学习治理层：反馈流水（append-only）与策略版本。
   static Directory get learningDir =>
       Directory('${root.path}${Platform.pathSeparator}learning');
