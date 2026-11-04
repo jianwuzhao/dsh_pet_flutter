@@ -18,6 +18,14 @@ import 'memory_entry.dart';
 const int memoryContextMaxCount = 12;
 const int memoryContextMaxChars = 2000;
 
+/// Core 层（P1-3）：coreWeight 达到该值即常驻注入，权重降序取前 N 条。
+const double memoryCoreWeightFloor = 0.8;
+const int memoryCoreMax = 6;
+
+/// Recall 层（P1-3）：query 命中的相关条目最多注入条数。
+/// Core 6 + Recall 6 = 总上限 12，两层互不挤占对方的配额。
+const int memoryRecallMax = 6;
+
 /// 待确认队列上限：防止 LLM 候选无限堆积（本机已出现过近似重复）。
 const int memoryPendingMax = 50;
 
@@ -95,8 +103,18 @@ class MemoryStore {
       _supersedeConflicts(list, entry);
     }
 
-    list.add(entry);
+    list.add(_applyCoreAdmission(entry));
     return _save(entry.kind);
+  }
+
+  /// Core 层准入规则（计划 5.4）：preference 类 + 高置信度 → 常驻核心。
+  /// 只对未显式赋过权（默认 0）的条目生效——人工/上游定过的权重不动；
+  /// 置信度不够的（如 LLM 候选 0.5）留在 Recall 层，靠关键词命中。
+  static MemoryEntry _applyCoreAdmission(MemoryEntry entry) {
+    if (entry.coreWeight > 0) return entry;
+    if (entry.kind != MemoryKind.preference) return entry;
+    if (entry.confidence < 0.8) return entry;
+    return entry.copyWith(coreWeight: memoryCoreWeightFloor);
   }
 
   /// 启动时合并历史上已经堆下来的近似 pending（本机曾出现 4 条同义任务）。
@@ -235,20 +253,56 @@ class MemoryStore {
   /// 拒绝待确认提案：直接丢弃。
   Result<void> reject(String id) => remove(id);
 
-  /// LLM 上下文注入（计划 4.4）：scope 允许 + 未过期 + active，
-  /// 按 kind 优先级 preference > fact > task > episode、同级新者优先，
-  /// 硬上限 12 条 / 2000 字符。被选中的条目在内存里更新 lastUsedAt
+  /// LLM 上下文注入（P1-3 三层，计划 5.4）：scope 允许 + active +
+  /// 未过期 + 生效窗口内，然后分三层：
+  /// - Core：coreWeight ≥ 0.8 常驻（preference 类高置信条目入库时自动
+  ///   达标），权重降序、同权重新者优先，≤6 条；
+  /// - Recall：query 非空时其余条目按关键词命中取 ≤6 条，未命中属
+  ///   Archival 不注入；query 为空回落现状 kind 优先级全量填充；
+  /// 总上限 12 条 / 2000 字符照旧。被选中的条目在内存里更新 lastUsedAt
   /// （攒到 decay / persistUsage 才落盘），不为记账做每轮文件 IO。
-  List<MemoryEntry> contextFor({DateTime? now}) {
+  List<MemoryEntry> contextFor({String query = '', DateTime? now}) {
     final at = now ?? DateTime.now();
     final usable = [
       for (final entry in entries(status: MemoryStatus.active))
-        if (entry.scope == memoryScopeChat && !isExpiredAt(entry, at)) entry,
-    ]..sort(_compareForContext);
+        if (entry.scope == memoryScopeChat &&
+            !isExpiredAt(entry, at) &&
+            _withinValidity(entry, at))
+          entry,
+    ];
+
+    final core = [
+      ...usable.where((entry) => entry.coreWeight >= memoryCoreWeightFloor),
+    ]..sort(_compareForCore);
+    if (core.length > memoryCoreMax) core.removeRange(memoryCoreMax, core.length);
+
+    // Recall 候选只留权重低于 Core 门槛的条目：达标但挤不进前 6 的核心条目
+    // 本轮出局（否则经回落层回流，Core 上限形同虚设）。
+    final rest = [
+      for (final entry in usable)
+        if (entry.coreWeight < memoryCoreWeightFloor) entry,
+    ];
+    // Recall 层：query 非空只保留关键词命中的条目（≤6 条，未命中属
+    // Archival 不注入）；query 为空回落现状——kind 优先级 + 新者优先
+    // 全量填充（总上限 12 约束），不砍既有注入能力。
+    final keywords = _keywordsOf(query);
+    List<MemoryEntry> recall;
+    if (keywords.isEmpty) {
+      rest.sort(_compareForContext);
+      recall = rest;
+    } else {
+      recall = [
+        for (final entry in rest)
+          if (_matchesQuery(entry, keywords)) entry,
+      ]..sort(_compareForContext);
+      if (recall.length > memoryRecallMax) {
+        recall = recall.sublist(0, memoryRecallMax);
+      }
+    }
 
     final picked = <MemoryEntry>[];
     var chars = 0;
-    for (final entry in usable) {
+    for (final entry in [...core, ...recall]) {
       if (picked.length >= memoryContextMaxCount) break;
       // 字符预算按“长度 + 换行”计，防止恰好压线后拼出来的上下文超限。
       final cost = entry.content.length + 1;
@@ -274,6 +328,49 @@ class MemoryStore {
       if (touched) _dirtyUsageKinds.add(kind);
     }
     return picked;
+  }
+
+  /// 生效窗口校验：0 = 不限；窗口外（还没生效/已过季）不注入。
+  static bool _withinValidity(MemoryEntry entry, DateTime at) {
+    final nowMs = at.millisecondsSinceEpoch;
+    if (entry.validFromMs > 0 && nowMs < entry.validFromMs) return false;
+    if (entry.validUntilMs > 0 && nowMs > entry.validUntilMs) return false;
+    return true;
+  }
+
+  /// Core 层排序：权重降序，同权重按新近度。
+  static int _compareForCore(MemoryEntry a, MemoryEntry b) {
+    final byWeight = b.coreWeight.compareTo(a.coreWeight);
+    if (byWeight != 0) return byWeight;
+    return b.createdAt.compareTo(a.createdAt);
+  }
+
+  /// query → 关键词集：先按非文字字符切词（拉丁文习惯，≥2 字符），
+  /// 再补归一化后的字符 bigram——中文没有空格，词级切分拿不到
+  /// “周报”这类子词，bigram 是最小可用单元（复用 _normalize/_bigrams）。
+  static Set<String> _keywordsOf(String query) {
+    if (query.trim().isEmpty) return const {};
+    return {
+      for (final token
+          in query.toLowerCase().split(RegExp(r'[^0-9a-z\u4e00-\u9fff]+')))
+        if (token.length >= 2) token,
+      ..._bigrams(_normalize(query)),
+    };
+  }
+
+  /// Recall 命中：任一关键词出现在 subject + content 的归一化文本里。
+  static bool _matchesQuery(MemoryEntry entry, Set<String> keywords) {
+    final haystack = _normalize('${entry.subject}${entry.content}');
+    return keywords.any(haystack.contains);
+  }
+
+  /// 反向提示（P1-3）：这条记忆替代了哪条旧值。注入新值时附上旧值内容
+  /// 并声明“已作废”，防止模型从对话历史里翻出旧说法继续引用。
+  String? supersededHintFor(MemoryEntry entry) {
+    for (final old in _entries[entry.kind] ?? const <MemoryEntry>[]) {
+      if (old.supersededBy == entry.id) return old.content;
+    }
+    return null;
   }
 
   /// 自动衰减（复评 Phase 1A）：episode 创建超 30 天、task 超 90 天按龄归档；
@@ -385,7 +482,11 @@ class MemoryStore {
       final list = _entries[kind]!;
       final index = list.indexWhere((entry) => entry.id == id);
       if (index >= 0) {
-        list[index] = list[index].copyWith(status: status);
+        // confirm（→active）时重算 Core 准入：确认后的 preference 候选
+        // 若置信度达标同样常驻，与直接写入路径保持一致。
+        list[index] = _applyCoreAdmission(
+          list[index].copyWith(status: status),
+        );
         return _save(kind);
       }
     }

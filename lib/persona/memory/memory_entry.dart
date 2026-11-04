@@ -34,6 +34,10 @@ class MemoryEntry {
     this.lastUsedAt,
     this.supersededBy,
     this.conflictGroup,
+    this.coreWeight = 0.0,
+    this.links = const [],
+    this.validFromMs = 0,
+    this.validUntilMs = 0,
   });
 
   final String id;
@@ -78,6 +82,20 @@ class MemoryEntry {
   /// 冲突组：同一 subject 下互相矛盾的条目共享一个 id。
   final String? conflictGroup;
 
+  /// 核心层权重 0~1：≥0.8 进入 Core 层常驻注入（P1-3 分层）。
+  /// 默认 0 = 普通条目，走 Recall 检索或 kind 优先级填充。
+  final double coreWeight;
+
+  /// 关联记忆 id 列表：条目间的语义链接（如“称呼偏好”链“沟通偏好”），
+  /// 供后续按图扩展召回；本期只存取，不参与注入决策。
+  final List<String> links;
+
+  /// 生效窗口（epoch 毫秒）：0 = 不限。窗口外的条目不注入。
+  /// 与 expireAt 的区别：expireAt 是“过期作废”，窗口是“还没到/已过季”，
+  /// 例如“这周在外地出差”只在出差期间生效。
+  final int validFromMs;
+  final int validUntilMs;
+
   bool get isActive => status == MemoryStatus.active;
 
   DateTime get effectiveUpdatedAt => updatedAt ?? createdAt;
@@ -121,6 +139,13 @@ class MemoryEntry {
           : null,
       supersededBy: json['supersededBy'] as String?,
       conflictGroup: json['conflictGroup'] as String?,
+      coreWeight: ((json['coreWeight'] as num?)?.toDouble() ?? 0.0).clamp(
+        0.0,
+        1.0,
+      ),
+      links: _stringsOf(json['links']),
+      validFromMs: (json['validFromMs'] as num?)?.toInt() ?? 0,
+      validUntilMs: (json['validUntilMs'] as num?)?.toInt() ?? 0,
     );
   }
 
@@ -163,6 +188,11 @@ class MemoryEntry {
     if (lastUsedAt != null) 'lastUsedAt': lastUsedAt!.toIso8601String(),
     if (supersededBy != null) 'supersededBy': supersededBy,
     if (conflictGroup != null) 'conflictGroup': conflictGroup,
+    // 分层字段仅非默认时写：老库文件保持精简，零值即“普通条目/无窗口”。
+    if (coreWeight > 0) 'coreWeight': coreWeight,
+    if (links.isNotEmpty) 'links': links,
+    if (validFromMs > 0) 'validFromMs': validFromMs,
+    if (validUntilMs > 0) 'validUntilMs': validUntilMs,
   };
 
   MemoryEntry copyWith({
@@ -179,6 +209,10 @@ class MemoryEntry {
     String? supersededBy,
     bool clearSupersededBy = false,
     String? conflictGroup,
+    double? coreWeight,
+    List<String>? links,
+    int? validFromMs,
+    int? validUntilMs,
   }) => MemoryEntry(
     id: id,
     kind: kind,
@@ -197,5 +231,9 @@ class MemoryEntry {
         ? null
         : (supersededBy ?? this.supersededBy),
     conflictGroup: conflictGroup ?? this.conflictGroup,
+    coreWeight: coreWeight ?? this.coreWeight,
+    links: links ?? this.links,
+    validFromMs: validFromMs ?? this.validFromMs,
+    validUntilMs: validUntilMs ?? this.validUntilMs,
   );
 }

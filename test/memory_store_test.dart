@@ -13,21 +13,31 @@ void main() {
   MemoryEntry entry(
     MemoryKind kind,
     String content, {
+    String subject = '',
     String scope = memoryScopeChat,
     DateTime? expireAt,
     MemoryStatus status = MemoryStatus.active,
     DateTime? createdAt,
     DateTime? lastUsedAt,
+    double coreWeight = 0.0,
+    List<String> links = const [],
+    int validFromMs = 0,
+    int validUntilMs = 0,
   }) => MemoryEntry(
     id: 'id-${kind.name}-$content',
     kind: kind,
     content: content,
+    subject: subject,
     scope: scope,
     expireAt: expireAt,
     createdAt: createdAt ?? DateTime(2026, 1, 1, 12),
     source: 'rule',
     status: status,
     lastUsedAt: lastUsedAt,
+    coreWeight: coreWeight,
+    links: links,
+    validFromMs: validFromMs,
+    validUntilMs: validUntilMs,
   );
 
   setUp(() {
@@ -408,6 +418,174 @@ void main() {
     test('persistUsage 无脏 kind 时不写盘', () {
       store.persistUsage();
       expect(tmpDir.listSync(), isEmpty);
+    });
+  });
+
+  group('记忆分层注入（P1-3）', () {
+    test('Core 层：权重 ≥0.8 常驻且按权重降序排在前', () {
+      store.add(entry(MemoryKind.fact, '普通事实'));
+      store.add(entry(MemoryKind.fact, '核心A', coreWeight: 0.85));
+      store.add(entry(MemoryKind.fact, '核心B', coreWeight: 0.95));
+
+      final context = store.contextFor(now: DateTime(2026, 1, 1));
+      // Core（按权重降序）在前，普通条目回落层在后。
+      expect(context.map((e) => e.content), ['核心B', '核心A', '普通事实']);
+    });
+
+    test('Recall 层：query 命中相关条目，未命中的不注入', () {
+      store.add(entry(MemoryKind.task, '周三前交周报', subject: 'task'));
+      store.add(entry(MemoryKind.fact, '作息：早八'));
+
+      final context = store.contextFor(
+        query: '帮我看看周报写什么',
+        now: DateTime(2026, 1, 1),
+      );
+      // 中文按 bigram 命中：“周报”是 query 与任务记忆的公共子串。
+      expect(context.map((e) => e.content), ['周三前交周报']);
+    });
+
+    test('query 为空回落现状：Core 之外的条目仍全量按 kind 优先级注入', () {
+      store.add(entry(MemoryKind.episode, '事件'));
+      store.add(entry(MemoryKind.fact, '事实', coreWeight: 0.9));
+
+      final context = store.contextFor(now: DateTime(2026, 1, 1));
+      expect(context.map((e) => e.content), ['事实', '事件']);
+    });
+
+    test('Core 条目超过 6 条只保留权重最高的前 6', () {
+      for (var i = 0; i < 8; i++) {
+        store.add(
+          entry(
+            MemoryKind.fact,
+            '核心$i',
+            coreWeight: 0.8 + i * 0.01,
+            createdAt: DateTime(2026, 1, 1, 0, i),
+          ),
+        );
+      }
+      final context = store.contextFor(now: DateTime(2026, 1, 1));
+      expect(context.length, memoryCoreMax);
+      expect(context.first.content, '核心7');
+      expect(context.last.content, '核心2');
+    });
+
+    test('生效窗口：未到 validFrom / 超过 validUntil 都不注入', () {
+      store.add(
+        entry(
+          MemoryKind.fact,
+          '出差中',
+          validFromMs: DateTime(2026, 2, 1).millisecondsSinceEpoch,
+          validUntilMs: DateTime(2026, 3, 1).millisecondsSinceEpoch,
+        ),
+      );
+      expect(store.contextFor(now: DateTime(2026, 1, 15)), isEmpty);
+      expect(
+        store.contextFor(now: DateTime(2026, 2, 15)).single.content,
+        '出差中',
+      );
+      expect(store.contextFor(now: DateTime(2026, 3, 15)), isEmpty);
+    });
+
+    test('分层字段 JSON 往返保留；默认零值不写键', () {
+      store.add(
+        entry(
+          MemoryKind.fact,
+          '分层条目',
+          coreWeight: 0.9,
+          links: const ['m-other'],
+          validFromMs: 1000,
+          validUntilMs: 2000,
+        ),
+      );
+      final reopened = MemoryStore(directory: tmpDir);
+      final loaded = reopened.entries().single;
+      expect(loaded.coreWeight, 0.9);
+      expect(loaded.links, ['m-other']);
+      expect(loaded.validFromMs, 1000);
+      expect(loaded.validUntilMs, 2000);
+
+      // 默认值条目不写分层键，老文件读入回落零值。
+      store.add(entry(MemoryKind.fact, '普通条目'));
+      final raw = jsonDecode(
+        File('${tmpDir.path}/fact.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
+      final plain = (raw['entries'] as List)
+          .whereType<Map>()
+          .singleWhere((item) => item['content'] == '普通条目');
+      expect(plain.containsKey('coreWeight'), isFalse);
+      expect(plain.containsKey('links'), isFalse);
+      expect(plain.containsKey('validFromMs'), isFalse);
+      expect(plain.containsKey('validUntilMs'), isFalse);
+    });
+
+    test('老格式文件（无分层字段）读入默认零值', () {
+      File('${tmpDir.path}/fact.json').writeAsStringSync(
+        jsonEncode({
+          'entries': [
+            {
+              'id': 'old-1',
+              'kind': 'fact',
+              'content': '旧格式条目',
+              'createdAt': '2026-01-01T00:00:00.000',
+            },
+          ],
+        }),
+      );
+      final legacy = MemoryStore(directory: tmpDir);
+      final loaded = legacy.entries().single;
+      expect(loaded.content, '旧格式条目');
+      expect(loaded.coreWeight, 0.0);
+      expect(loaded.links, isEmpty);
+      expect(loaded.validFromMs, 0);
+      expect(loaded.validUntilMs, 0);
+    });
+
+    test('Core 准入：preference 高置信入库自动常驻，query 未命中也注入', () {
+      store.add(entry(MemoryKind.preference, '称呼偏好：老板'));
+      store.add(entry(MemoryKind.fact, '作息：早八'));
+
+      // query 与两条记忆都无关键词交集，但 preference 高置信走 Core 常驻。
+      final context = store.contextFor(
+        query: '在吗',
+        now: DateTime(2026, 1, 1),
+      );
+      expect(context.map((e) => e.content), ['称呼偏好：老板']);
+      expect(store.entries().first.coreWeight, memoryCoreWeightFloor);
+    });
+
+    test('Core 准入：低置信 LLM 候选确认后不常驻，仍靠关键词命中', () {
+      store.add(
+        entry(
+          MemoryKind.preference,
+          '回复保持短句',
+          status: MemoryStatus.pending,
+          createdAt: DateTime(2026, 1, 2),
+        ).copyWith(confidence: 0.5),
+      );
+      expect(store.confirm(store.pending.single.id), isA<Success<void>>());
+      expect(store.entries().single.coreWeight, 0.0);
+
+      final missed = store.contextFor(
+        query: '在吗',
+        now: DateTime(2026, 1, 3),
+      );
+      expect(missed, isEmpty);
+
+      final hit = store.contextFor(
+        query: '回复要短',
+        now: DateTime(2026, 1, 3),
+      );
+      expect(hit.single.content, '回复保持短句');
+    });
+
+    test('supersededHintFor：新条目能查到被替代的旧值，旧条目返回 null', () {
+      store.add(entry(MemoryKind.preference, '称呼：小张', subject: 'address'));
+      store.add(entry(MemoryKind.preference, '称呼：老板', subject: 'address'));
+
+      final active = store.entries(status: MemoryStatus.active).single;
+      final superseded = store.entries(status: MemoryStatus.superseded).single;
+      expect(store.supersededHintFor(active), '称呼：小张');
+      expect(store.supersededHintFor(superseded), isNull);
     });
   });
 

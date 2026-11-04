@@ -91,7 +91,7 @@ class ConversationService {
       view:
           _emotionLoader?.call() ??
           const EmotionView(valence: 0, arousal: 0.3, intimacy: 0.3),
-      memories: _memory.contextFor(now: _clock()),
+      memories: _memory.contextFor(query: prompt, now: _clock()),
       userProfile: _userProfileLoader?.call(),
       guidelines: _guidelineLoader?.call(prompt) ?? const [],
       policyHint: _policyHintLoader?.call(),
@@ -146,7 +146,7 @@ class ConversationService {
     if (memories.isNotEmpty) {
       buffer
         ..writeln('关于用户的长期记忆（只用于更好地回应，不要主动复述）：')
-        ..writeAll([for (final memory in memories) '- ${memory.content}\n'])
+        ..writeAll([for (final memory in memories) '- ${_memoryLine(memory)}\n'])
         ..writeln();
     }
     if (guidelines.isNotEmpty) {
@@ -216,6 +216,14 @@ class ConversationService {
       used += block.length + 1;
     }
     buffer.writeln();
+  }
+
+  /// 记忆行渲染（P1-3）：新值若替代过旧偏好，附上旧值并声明作废——
+  /// 对话历史里可能还留着旧说法的回声，不声明会让两个版本打架。
+  String _memoryLine(MemoryEntry memory) {
+    final superseded = _memory.supersededHintFor(memory);
+    if (superseded == null) return memory.content;
+    return '${memory.content}（此前的说法“$superseded”已作废，勿引用）';
   }
 
   /// 用户画像转成可读行：只输出非空字段，避免默认值污染 prompt。
