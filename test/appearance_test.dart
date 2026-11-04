@@ -69,6 +69,41 @@ void main() {
       expect(base.copyWith(palette: AppearancePalette.green, form: AppearanceForm.tall)
           .signature, isNot(base.signature));
     });
+
+    test('装扮默认居家，JSON 往返与非法值回落', () {
+      const base = AppearanceState();
+      expect(base.outfit, 'home');
+      expect(base.outfitSource, AppearanceOutfitSource.builtin);
+
+      final dressed = base.copyWith(
+        outfit: 'winter',
+        outfitSource: AppearanceOutfitSource.seasonal,
+      );
+      expect(dressed.outfit, 'winter');
+      // 装扮不进人格推演的比较键（装饰层走独立轨道）。
+      expect(dressed.signature, base.signature);
+
+      final restored = AppearanceState.fromJson(
+        jsonDecode(jsonEncode(dressed.toJson())) as Map<String, dynamic>,
+      );
+      expect(restored.outfit, 'winter');
+      expect(restored.outfitSource, AppearanceOutfitSource.seasonal);
+
+      // 白名单与 trend- 前缀之外的名字一律回落。
+      expect(base.copyWith(outfit: 'super-cute').outfit, 'home');
+      expect(base.copyWith(outfit: 'trend-2026-olympic').outfit,
+          'trend-2026-olympic');
+      expect(
+        AppearanceState.fromJson({'outfit': 'weird', 'outfitSource': 'hacker'})
+            .outfit,
+        'home',
+      );
+      expect(
+        AppearanceState.fromJson({'outfit': 'weird', 'outfitSource': 'hacker'})
+            .outfitSource,
+        AppearanceOutfitSource.builtin,
+      );
+    });
   });
 
   group('AppearanceStore', () {

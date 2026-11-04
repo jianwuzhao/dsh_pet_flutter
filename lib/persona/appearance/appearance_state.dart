@@ -21,6 +21,37 @@ enum AppearanceMotionSet { lively, playful, calm, sleepy }
 /// 表情集：决定气泡配图与表情帧的倾向。
 enum AppearanceExpressionSet { soft, bright, cool, shy }
 
+/// 装扮来源：这次 outfit 是谁定的（可解释 + 防止趋势装扮伪装成季节）。
+enum AppearanceOutfitSource { builtin, seasonal, festive, weather, trend, user }
+
+/// 默认装扮（居家）：没有情境信号时的兜底。
+const String defaultOutfit = 'home';
+
+/// 内置装扮白名单：受控枚举，不允许自由字符串（trend-* 动态注册另走前缀校验）。
+const Set<String> builtinOutfits = {
+  'home',
+  'spring',
+  'summer',
+  'autumn',
+  'winter',
+  'newyear',
+  'midautumn',
+  'halloween',
+  'christmas',
+  'rain',
+  'snow',
+  'sunny',
+};
+
+/// 热门提案入库后动态注册的装扮前缀。
+const String trendOutfitPrefix = 'trend-';
+
+/// 校验装扮名：白名单命中或 trend- 前缀；渲染层只认识合法名字。
+bool isValidOutfitName(String? name) {
+  if (name == null) return false;
+  return builtinOutfits.contains(name) || name.startsWith(trendOutfitPrefix);
+}
+
 /// 体型缩放的硬边界：超出范围一律夹取，避免视觉失真。
 const double appearanceMinBodyScale = 0.85;
 const double appearanceMaxBodyScale = 1.15;
@@ -34,6 +65,8 @@ class AppearanceState {
     this.accessory = AppearanceAccessory.none,
     this.motionSet = AppearanceMotionSet.calm,
     this.expressionSet = AppearanceExpressionSet.soft,
+    this.outfit = defaultOutfit,
+    this.outfitSource = AppearanceOutfitSource.builtin,
     this.frozen = false,
     this.updatedAtMs = 0,
   });
@@ -48,6 +81,12 @@ class AppearanceState {
   final AppearanceAccessory accessory;
   final AppearanceMotionSet motionSet;
   final AppearanceExpressionSet expressionSet;
+
+  /// 装扮名：白名单枚举或 trend- 前缀（见 [isValidOutfitName]）。
+  final String outfit;
+
+  /// 装扮来源：季节/节令/天气/热门/用户手选，展示「为什么换装」用。
+  final AppearanceOutfitSource outfitSource;
 
   /// 冻结后不再接受任何自动演化（用户手动改不受限）。
   final bool frozen;
@@ -67,6 +106,8 @@ class AppearanceState {
     AppearanceAccessory? accessory,
     AppearanceMotionSet? motionSet,
     AppearanceExpressionSet? expressionSet,
+    String? outfit,
+    AppearanceOutfitSource? outfitSource,
     bool? frozen,
     int? updatedAtMs,
   }) => AppearanceState(
@@ -77,6 +118,9 @@ class AppearanceState {
     accessory: accessory ?? this.accessory,
     motionSet: motionSet ?? this.motionSet,
     expressionSet: expressionSet ?? this.expressionSet,
+    // 非法装扮名一律回落默认：构造端也不给自由字符串留口子。
+    outfit: isValidOutfitName(outfit) ? outfit! : this.outfit,
+    outfitSource: outfitSource ?? this.outfitSource,
     frozen: frozen ?? this.frozen,
     updatedAtMs: updatedAtMs ?? this.updatedAtMs,
   );
@@ -85,6 +129,8 @@ class AppearanceState {
       value.clamp(appearanceMinBodyScale, appearanceMaxBodyScale);
 
   /// 稳定的比较键：用于判断「这次推演到底有没有变化」。
+  ///
+  /// 不含 outfit：装扮是装饰层、走独立换装轨道，不参与人格推演的维度比较。
   String get signature =>
       '${form.name}|${bodyScale.toStringAsFixed(3)}|${palette.name}|'
       '${accessory.name}|${motionSet.name}|${expressionSet.name}|$frozen';
@@ -97,6 +143,8 @@ class AppearanceState {
     'accessory': accessory.name,
     'motionSet': motionSet.name,
     'expressionSet': expressionSet.name,
+    'outfit': outfit,
+    'outfitSource': outfitSource.name,
     'frozen': frozen,
     // 写 ISO 字符串便于人工排查；读取同时兼容毫秒整数。
     'updatedAt': updatedAt.toIso8601String(),
@@ -119,6 +167,13 @@ class AppearanceState {
     expressionSet:
         _enumOf(AppearanceExpressionSet.values, json['expressionSet']) ??
         AppearanceExpressionSet.soft,
+    // 旧档案没有 outfit 字段；非法名字（历史脏数据）回落默认居家。
+    outfit: isValidOutfitName(json['outfit'] as String?)
+        ? json['outfit'] as String
+        : defaultOutfit,
+    outfitSource:
+        _enumOf(AppearanceOutfitSource.values, json['outfitSource']) ??
+        AppearanceOutfitSource.builtin,
     frozen: json['frozen'] as bool? ?? false,
     updatedAtMs: _timestampOf(json['updatedAt']),
   );
