@@ -13,6 +13,7 @@ import '../../../persona/appearance/appearance_proposal.dart';
 import '../../../persona/appearance/appearance_state.dart';
 import '../../../persona/appearance/trend_outfit.dart';
 import '../../../persona/appearance/weather_outfit.dart';
+import '../../pet/render/face.dart';
 import 'settings_controls.dart';
 
 class AppearanceSection extends StatelessWidget {
@@ -527,58 +528,72 @@ class _AppearancePainter extends CustomPainter {
     double bodyW,
     double bodyH,
   ) {
-    final eye = Offset(cx + bodyW * 0.26, cy - bodyH * 0.08);
-    final eyeRadius = switch (state.expressionSet) {
-      AppearanceExpressionSet.bright => 4.8,
-      AppearanceExpressionSet.cool => 2.6,
-      _ => 3.6,
-    };
-    final mouthY = cy + bodyH * 0.2;
-    final mouthPaint = Paint()
+    // 参数与气泡配图同源（expressionFaces 表，P2-4）：预览保持侧面
+    // 单眼构图，但「睁大/眯眼、笑/平嘴、腮红」的语义与全局一致。
+    final face = expressionFaces[state.expressionSet]!;
+    final ink = Paint()..color = const Color(0xFF2A3442);
+    final stroke = Paint()
       ..color = const Color(0xFF2A3442)
       ..strokeWidth = 1.4
-      ..style = PaintingStyle.stroke;
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
 
-    if (state.expressionSet == AppearanceExpressionSet.cool) {
-      // 冷静：眯眼横线 + 平嘴。
+    final eye = Offset(cx + bodyW * 0.26, cy - bodyH * 0.08);
+    final openness = face.eyeOpenness.clamp(0.0, 1.0);
+    if (openness < 0.4) {
+      // 低开合：眯眼横线（冷静）。
       canvas.drawLine(
         Offset(eye.dx - 5, eye.dy),
         Offset(eye.dx + 5, eye.dy),
-        mouthPaint,
-      );
-      canvas.drawLine(
-        Offset(cx + bodyW * 0.18, mouthY),
-        Offset(cx + bodyW * 0.34, mouthY),
-        mouthPaint,
+        stroke,
       );
     } else {
-      canvas.drawCircle(
-        eye,
-        eyeRadius,
-        Paint()..color = const Color(0xFF1F2937),
-      );
+      // 开合映射圆眼半径：柔和 < 明亮。
+      final eyeRadius = 2.6 + openness * 2.4;
+      canvas.drawCircle(eye, eyeRadius, ink);
       canvas.drawCircle(
         Offset(eye.dx - eyeRadius * 0.34, eye.dy - eyeRadius * 0.34),
         eyeRadius * 0.36,
         Paint()..color = const Color(0xE6FFFFFF),
       );
-      final smile = (state.expressionSet == AppearanceExpressionSet.bright);
+    }
+
+    // 眉：角度映射一条短斜线（上挑/平/内压），角度为零画平眉。
+    final browY = eye.dy - bodyH * 0.14;
+    final tilt = face.browAngle.clamp(-1.0, 1.0) * 3;
+    canvas.drawLine(
+      Offset(eye.dx - 5, browY - tilt),
+      Offset(eye.dx + 5, browY + tilt),
+      stroke,
+    );
+
+    // 嘴：弧度映射笑的宽高，0（冷静）退化为平直线。
+    final smile = face.mouthCurve.clamp(-1.0, 1.0);
+    final mouthY = cy + bodyH * 0.2;
+    if (smile.abs() < 0.05) {
+      canvas.drawLine(
+        Offset(cx + bodyW * 0.18, mouthY),
+        Offset(cx + bodyW * 0.34, mouthY),
+        stroke,
+      );
+    } else {
       canvas.drawArc(
         Rect.fromCenter(
           center: Offset(cx + bodyW * 0.26, mouthY),
-          width: bodyW * (smile ? 0.2 : 0.14),
-          height: bodyH * (smile ? 0.16 : 0.11),
+          width: bodyW * (0.12 + smile.abs() * 0.08),
+          height: bodyH * (0.08 + smile.abs() * 0.08),
         ),
         math.pi * 0.14,
         math.pi * 0.72,
         false,
-        mouthPaint,
+        stroke,
       );
     }
 
-    if (state.expressionSet == AppearanceExpressionSet.shy) {
-      // 害羞：脸颊两团淡粉。
-      final blush = Paint()..color = const Color(0x66FF7B8A);
+    final blushOpacity = face.blushOpacity.clamp(0.0, 1.0);
+    if (blushOpacity > 0.05) {
+      // 腮红：透明度映射害羞程度。
+      final blush = Paint()..color = Color.fromRGBO(255, 123, 138, blushOpacity);
       canvas.drawCircle(
         Offset(cx + bodyW * 0.1, cy + bodyH * 0.09),
         4.2,
