@@ -11,6 +11,7 @@ import 'package:dsh_pet_flutter/features/settings/sections/appearance_section.da
 import 'package:dsh_pet_flutter/features/settings/sections/evolution_section.dart';
 import 'package:dsh_pet_flutter/learning/guideline_store.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_state.dart';
+import 'package:dsh_pet_flutter/persona/appearance/trend_outfit.dart';
 import 'package:dsh_pet_flutter/persona/appearance/weather_outfit.dart';
 import 'package:dsh_pet_flutter/persona/profile_store.dart';
 import 'package:dsh_pet_flutter/platform/pet_platform.dart';
@@ -175,6 +176,63 @@ void main() {
     // 开关关掉：回传 off（内核据此落盘并停止观察）。
     await tester.tap(find.text('天气装扮'));
     expect(sources, [AppearanceWeatherSource.off]);
+  });
+
+  testWidgets('P2-3b 热门趋势装扮：开关与提案卡片的两路回调', (tester) async {
+    final proposal = ValueNotifier<TrendOutfitProposal?>(
+      TrendOutfitProposal(
+        outfit: 'trend-冬日暖阳',
+        theme: '冬日暖阳',
+        main: 0xFFE23E3E,
+        trim: 0xFFF2C14E,
+        reason: '暖色围巾呼应初冬氛围',
+        proposedAt: DateTime(2026, 1, 1, 12),
+      ),
+    );
+    addTearDown(proposal.dispose);
+    var accepted = 0;
+    var rejected = 0;
+    final sources = <AppearanceTrendSource>[];
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          backgroundColor: const Color(0xFF26262C),
+          body: AppearanceSection(
+            state: const AppearanceState(),
+            reason: '',
+            hint: '',
+            onEvolve: () {},
+            onRollback: () {},
+            onFreeze: (_) {},
+            trendSource: AppearanceTrendSource.builtin,
+            trendSuggestion: proposal,
+            onTrendSourceChanged: sources.add,
+            onAcceptTrendOutfit: () => accepted++,
+            onRejectTrendOutfit: () => rejected++,
+          ),
+        ),
+      ),
+    );
+
+    // 开着 + 有提案：开关常驻，卡片带主题、理由与两路按钮。
+    expect(find.text('热门趋势装扮'), findsOneWidget);
+    expect(find.text('本周提案：冬日暖阳'), findsOneWidget);
+    expect(find.text('暖色围巾呼应初冬氛围'), findsOneWidget);
+
+    await tester.tap(find.text('穿上'));
+    expect(accepted, 1);
+    await tester.tap(find.text('拒绝'));
+    expect(rejected, 1);
+
+    // 提案清空（接受/拒绝后内核置 null）：卡片随 ValueListenable 消失。
+    proposal.value = null;
+    await tester.pump();
+    expect(find.text('本周提案：冬日暖阳'), findsNothing);
+
+    // 开关关掉：回传 off（内核据此落盘并进入冷却治理）。
+    await tester.tap(find.text('热门趋势装扮'));
+    expect(sources, [AppearanceTrendSource.off]);
   });
 
   testWidgets('P1-5 措辞替换提案卡片：新旧对照展示与两路回调', (tester) async {

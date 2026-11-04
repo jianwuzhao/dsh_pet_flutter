@@ -22,6 +22,7 @@ import '../../learning/learning_loop.dart';
 import '../../persona/appearance/appearance_evolution.dart';
 import '../../persona/appearance/appearance_proposal.dart';
 import '../../persona/appearance/appearance_state.dart';
+import '../../persona/appearance/trend_outfit.dart';
 import '../../persona/appearance/weather_outfit.dart';
 import '../../persona/memory/memory_entry.dart';
 import '../../persona/memory/memory_store.dart';
@@ -72,6 +73,10 @@ class SettingsPage extends StatefulWidget {
     this.onWeatherSourceChanged,
     this.onAcceptWeatherOutfit,
     this.onDismissWeatherOutfit,
+    this.trendSuggestion,
+    this.onTrendSourceChanged,
+    this.onAcceptTrendOutfit,
+    this.onRejectTrendOutfit,
     required this.onCheckAccessibility,
     required this.onClose,
     this.capabilities,
@@ -113,6 +118,16 @@ class SettingsPage extends StatefulWidget {
 
   final VoidCallback? onAcceptWeatherOutfit;
   final VoidCallback? onDismissWeatherOutfit;
+
+  /// 热门趋势装扮提案流（P2-3b）：内核 ValueNotifier，设置页只读。
+  final ValueListenable<TrendOutfitProposal?>? trendSuggestion;
+
+  /// 趋势装扮开关：返回落盘结果，失败时页面不翻转回显。
+  final Result<void> Function(AppearanceTrendSource value)?
+  onTrendSourceChanged;
+
+  final VoidCallback? onAcceptTrendOutfit;
+  final VoidCallback? onRejectTrendOutfit;
 
   /// 记忆库（内核实例）：查看/纠正/遗忘/导出直接操作，即时生效。
   final MemoryStore? memory;
@@ -725,6 +740,24 @@ class _SettingsPageState extends State<SettingsPage>
     });
   }
 
+  /// 热门趋势装扮开关：落盘成功才翻转本地回显（失败保持原样并提示）。
+  void _setTrendSource(AppearanceTrendSource value) {
+    final change = widget.onTrendSourceChanged;
+    if (change == null) return;
+    final result = change(value);
+    setState(() {
+      switch (result) {
+        case Success():
+          _appearance = _appearance.copyWith(trendSource: value);
+          _appearanceHint = value == AppearanceTrendSource.off
+              ? '已关闭热门趋势装扮'
+              : '已开启，每周至多收到 1 次提案';
+        case Failure(:final reason):
+          _appearanceHint = reason;
+      }
+    });
+  }
+
   void _acceptFormProposal() {
     final accept = widget.onAcceptFormProposal;
     if (accept == null) return;
@@ -991,6 +1024,14 @@ class _SettingsPageState extends State<SettingsPage>
                           : _setWeatherSource,
                       onAcceptWeatherOutfit: widget.onAcceptWeatherOutfit,
                       onDismissWeatherOutfit: widget.onDismissWeatherOutfit,
+                      trendSource: _appearance.trendSource,
+                      trendSuggestion: widget.trendSuggestion,
+                      onTrendSourceChanged:
+                          widget.onTrendSourceChanged == null
+                          ? null
+                          : _setTrendSource,
+                      onAcceptTrendOutfit: widget.onAcceptTrendOutfit,
+                      onRejectTrendOutfit: widget.onRejectTrendOutfit,
                     ),
                     if (widget.memory == null)
                       const Padding(

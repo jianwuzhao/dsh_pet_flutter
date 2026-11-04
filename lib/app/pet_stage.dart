@@ -24,6 +24,7 @@ import '../learning/learning_loop.dart';
 import '../persona/appearance/appearance_evolution.dart';
 import '../persona/appearance/appearance_proposal.dart';
 import '../persona/appearance/appearance_state.dart';
+import '../persona/appearance/trend_outfit.dart';
 import '../persona/appearance/weather_outfit.dart';
 import '../persona/memory/memory_store.dart';
 import '../persona/persona_dna.dart';
@@ -67,6 +68,10 @@ class PetStage extends StatefulWidget {
     this.onWeatherSourceChanged,
     this.onAcceptWeatherOutfit,
     this.onDismissWeatherOutfit,
+    this.trendSuggestion,
+    this.onTrendSourceChanged,
+    this.onAcceptTrendOutfit,
+    this.onRejectTrendOutfit,
     this.appearanceChanges,
     this.appearanceProposal,
     this.onAcceptFormProposal,
@@ -109,6 +114,13 @@ class PetStage extends StatefulWidget {
   onWeatherSourceChanged;
   final VoidCallback? onAcceptWeatherOutfit;
   final VoidCallback? onDismissWeatherOutfit;
+
+  /// 热门趋势装扮（P2-3b）：提案流 + 开关/接受/拒绝入口，纯透传。
+  final ValueListenable<TrendOutfitProposal?>? trendSuggestion;
+  final Result<void> Function(AppearanceTrendSource value)?
+  onTrendSourceChanged;
+  final VoidCallback? onAcceptTrendOutfit;
+  final VoidCallback? onRejectTrendOutfit;
 
   /// 形态提案：最显眼的变化需用户接受才生效。
   final AppearanceProposal? appearanceProposal;
@@ -433,6 +445,10 @@ class _PetStageState extends State<PetStage> {
             onWeatherSourceChanged: widget.onWeatherSourceChanged,
             onAcceptWeatherOutfit: widget.onAcceptWeatherOutfit,
             onDismissWeatherOutfit: widget.onDismissWeatherOutfit,
+            trendSuggestion: widget.trendSuggestion,
+            onTrendSourceChanged: widget.onTrendSourceChanged,
+            onAcceptTrendOutfit: widget.onAcceptTrendOutfit,
+            onRejectTrendOutfit: widget.onRejectTrendOutfit,
             onCheckAccessibility: widget.onCheckAccessibility,
             onClose: controller.closePanel,
             capabilities: widget.capabilities,

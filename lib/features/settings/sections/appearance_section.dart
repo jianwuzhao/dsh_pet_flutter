@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 
 import '../../../persona/appearance/appearance_proposal.dart';
 import '../../../persona/appearance/appearance_state.dart';
+import '../../../persona/appearance/trend_outfit.dart';
 import '../../../persona/appearance/weather_outfit.dart';
 import 'settings_controls.dart';
 
@@ -31,6 +32,11 @@ class AppearanceSection extends StatelessWidget {
     this.onWeatherSourceChanged,
     this.onAcceptWeatherOutfit,
     this.onDismissWeatherOutfit,
+    this.trendSource = AppearanceTrendSource.off,
+    this.trendSuggestion,
+    this.onTrendSourceChanged,
+    this.onAcceptTrendOutfit,
+    this.onRejectTrendOutfit,
   });
 
   final AppearanceState state;
@@ -59,6 +65,16 @@ class AppearanceSection extends StatelessWidget {
   final ValueChanged<AppearanceWeatherSource>? onWeatherSourceChanged;
   final VoidCallback? onAcceptWeatherOutfit;
   final VoidCallback? onDismissWeatherOutfit;
+
+  /// 热门趋势装扮源（P2-3b）：默认 off，开启后每周至多 1 次 LLM 提案。
+  final AppearanceTrendSource trendSource;
+
+  /// 本周待确认的提案；治理状态（周限/冷却）在内核，这里只展示。
+  final ValueListenable<TrendOutfitProposal?>? trendSuggestion;
+
+  final ValueChanged<AppearanceTrendSource>? onTrendSourceChanged;
+  final VoidCallback? onAcceptTrendOutfit;
+  final VoidCallback? onRejectTrendOutfit;
 
   @override
   Widget build(BuildContext context) {
@@ -192,6 +208,92 @@ class AppearanceSection extends StatelessWidget {
                           OutlinedButton(
                             onPressed: onDismissWeatherOutfit,
                             child: const Text('忽略'),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        // 热门趋势装扮（P2-3b）：同为提案制，但频控更严（每周 1 次、拒绝冷却 7 天）。
+        if (onTrendSourceChanged != null)
+          SettingsSwitch(
+            title: '热门趋势装扮',
+            subtitle: '开启后每周至多 1 次创意提案（主题+配色），素材仍用本地装扮，由你确认',
+            value: trendSource != AppearanceTrendSource.off,
+            onChanged: (value) => onTrendSourceChanged!(
+              value ? AppearanceTrendSource.builtin : AppearanceTrendSource.off,
+            ),
+          ),
+        if (trendSuggestion != null)
+          ValueListenableBuilder<TrendOutfitProposal?>(
+            valueListenable: trendSuggestion!,
+            builder: (context, proposal, _) {
+              if (proposal == null) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0x14CE93D8),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0x33CE93D8)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            '本周提案：${proposal.theme}',
+                            style: const TextStyle(
+                              color: Color(0xE6CE93D8),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // 主题双色直接画出来：配色是提案的一半信息。
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: Color(proposal.main),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Container(
+                            width: 10,
+                            height: 10,
+                            decoration: BoxDecoration(
+                              color: Color(proposal.trim),
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        proposal.reason,
+                        style: const TextStyle(
+                          color: Color(0xB3FFFFFF),
+                          fontSize: 11,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          OutlinedButton(
+                            onPressed: onAcceptTrendOutfit,
+                            child: const Text('穿上'),
+                          ),
+                          const SizedBox(width: 8),
+                          OutlinedButton(
+                            onPressed: onRejectTrendOutfit,
+                            child: const Text('拒绝'),
                           ),
                         ],
                       ),
