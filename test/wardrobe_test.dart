@@ -51,4 +51,37 @@ void main() {
     }
     expect(differs, isTrue);
   });
+
+  group('趋势装扮动态注册（P2-3b）', () {
+    setUp(resetTrendColors);
+    tearDown(resetTrendColors);
+
+    test('注册前不画；注册后按提案配色画，重复注册幂等', () async {
+      expect(wardrobeKnows('trend-冬日暖阳'), isFalse);
+      expect(hasVisiblePixels((await render('trend-冬日暖阳'))!), isFalse);
+
+      registerTrendColors('trend-冬日暖阳', 0xFFE23E3E, 0xFFF2C14E);
+      expect(wardrobeKnows('trend-冬日暖阳'), isTrue);
+      expect(hasVisiblePixels((await render('trend-冬日暖阳'))!), isTrue);
+
+      // 同主题重复注册（同周内重复提案场景）：幂等覆盖不炸。
+      registerTrendColors('trend-冬日暖阳', 0xFFE23E3E, 0xFFF2C14E);
+      expect(wardrobeKnows('trend-冬日暖阳'), isTrue);
+    });
+
+    test('同形状不同配色：两个趋势装扮像素可区分', () async {
+      registerTrendColors('trend-星夜', 0xFF6A3FA0, 0xFFF2C14E);
+      registerTrendColors('trend-薄荷', 0xFF4DB6AC, 0xFF212121);
+      final night = await render('trend-星夜');
+      final mint = await render('trend-薄荷');
+      var differs = false;
+      for (var i = 0; i < night!.lengthInBytes; i += 4) {
+        if (night.getUint8(i) != mint!.getUint8(i)) {
+          differs = true;
+          break;
+        }
+      }
+      expect(differs, isTrue);
+    });
+  });
 }

@@ -8,10 +8,26 @@ library;
 
 import 'dart:ui';
 
+import '../../../persona/appearance/appearance_state.dart' show trendOutfitPrefix;
+
+/// 趋势装扮的动态配色注册表：白名单之外，trend- 装扮由内核在
+/// 接受 LLM 提案时注册（重启后趋势装扮没有注册信息，
+/// 启动换装轨道会自然回落到季节/节令装，不需要持久化在这里补）。
+final Map<String, (Color, Color)> _trendColors = {};
+
+/// 注册趋势装扮配色（0xAARRGGBB，来自已过校验的提案）；同主题幂等覆盖。
+void registerTrendColors(String outfit, int main, int trim) {
+  _trendColors[outfit] = (Color(main), Color(trim));
+}
+
+/// 测试隔离用：清空动态注册表。
+void resetTrendColors() => _trendColors.clear();
+
 /// 该装扮是否有可见图层（设置页预览与测试用）。
 bool wardrobeKnows(String outfit) => switch (outfit) {
   'winter' || 'newyear' || 'midautumn' || 'halloween' || 'christmas' => true,
-  _ => false,
+  // 只认受控前缀：内置名永远不可能被注册表覆盖。
+  _ => outfit.startsWith(trendOutfitPrefix) && _trendColors.containsKey(outfit),
 };
 
 /// 画装扮：未知装扮静默不画（白名单扩张先于绘制器时走安全侧）。
@@ -62,5 +78,6 @@ void paintOutfit(Canvas canvas, Size size, String outfit) {
   'halloween' => (const Color(0xFFF2811D), const Color(0xFF6A3FA0)),
   // 圣诞：松绿 + 圣诞红。
   'christmas' => (const Color(0xFF2E7D52), const Color(0xFFD64545)),
-  _ => (null, null),
+  // 趋势装扮：注册表配色（未注册 = 没画，静默跳过）。
+  _ => _trendColors[outfit] ?? (null, null),
 };
