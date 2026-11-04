@@ -11,8 +11,8 @@ import 'dart:ui';
 import '../../../persona/appearance/appearance_state.dart' show trendOutfitPrefix;
 
 /// 趋势装扮的动态配色注册表：白名单之外，trend- 装扮由内核在
-/// 接受 LLM 提案时注册（重启后趋势装扮没有注册信息，
-/// 启动换装轨道会自然回落到季节/节令装，不需要持久化在这里补）。
+/// 接受 LLM 提案时注册；已接受的配色随治理状态落盘、内核启动时
+/// 回放注册（冻结形象时换装轨道不回落，图层不能只活在内存里）。
 final Map<String, (Color, Color)> _trendColors = {};
 
 /// 注册趋势装扮配色（0xAARRGGBB，来自已过校验的提案）；同主题幂等覆盖。

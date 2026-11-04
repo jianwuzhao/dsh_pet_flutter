@@ -670,6 +670,17 @@ class AssistantKernel {
       case Failure(:final reason):
         _host.showBubble('形态提案读取失败：$reason');
     }
+    // 回放已接受的趋势装扮配色（trend_outfit.json）：注册表是内存态，
+    // 冻结形象时换装轨道不回落，不补注册就是「穿着合法装扮却无图层」。
+    final acceptedTrend = _trendStore.load();
+    final acceptedOutfit = acceptedTrend.acceptedOutfit;
+    if (acceptedOutfit != null) {
+      registerTrendColors(
+        acceptedOutfit,
+        acceptedTrend.acceptedMain!,
+        acceptedTrend.acceptedTrim!,
+      );
+    }
     if (!_profile.emotionEnabled) _machine.reset(now: _clock());
     _lastActivityAt = _clock();
     emotion.value = _emotion.view;
@@ -949,6 +960,15 @@ class AssistantKernel {
     // 配色先注册再换装：渲染层拿到的一定是已注册的合法图层。
     registerTrendColors(proposal.outfit, proposal.main, proposal.trim);
     trendSuggestion.value = null;
+    // 配色随治理状态落盘（尽力而为）：注册表是内存态，冻结形象时
+    // 换装轨道不回落季节装，重启靠这份记录回放注册，图层才不会凭空消失。
+    _trendStore.save(
+      _trendStore.load().copyWith(
+        acceptedOutfit: proposal.outfit,
+        acceptedMain: proposal.main,
+        acceptedTrim: proposal.trim,
+      ),
+    );
     _applyOutfit(
       proposal.outfit,
       AppearanceOutfitSource.trend,

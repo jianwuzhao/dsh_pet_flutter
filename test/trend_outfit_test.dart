@@ -125,5 +125,41 @@ void main() {
       expect(gate.lastProposedWeek, isNull);
       expect(gate.rejectedUntilMs, isNull);
     });
+
+    test('已接受配色三元组往返；残缺与非前缀名整体丢弃', () {
+      final store = TrendOutfitStore(
+        directory: Directory('${tmpDir.path}/profile'),
+      );
+      store.save(
+        const TrendGate(
+          lastProposedWeek: '2026-w1',
+          acceptedOutfit: 'trend-星夜',
+          acceptedMain: 0xFF6A3FA0,
+          acceptedTrim: 0xFFF2C14E,
+        ),
+      );
+
+      final gate = store.load();
+      expect(gate.lastProposedWeek, '2026-w1');
+      expect(gate.acceptedOutfit, 'trend-星夜');
+      expect(gate.acceptedMain, 0xFF6A3FA0);
+      expect(gate.acceptedTrim, 0xFFF2C14E);
+
+      // 残缺三元组（缺 trim）：半个图层画不出来，按「没穿过」处理。
+      final dir = Directory('${tmpDir.path}/broken')..createSync(recursive: true);
+      final file = File('${dir.path}${Platform.pathSeparator}trend_outfit.json');
+      file.writeAsStringSync('{"acceptedOutfit":"trend-x","acceptedMain":1}');
+      final broken = TrendOutfitStore(directory: dir).load();
+      expect(broken.acceptedOutfit, isNull);
+      expect(broken.acceptedMain, isNull);
+      expect(broken.acceptedTrim, isNull);
+
+      // 非 trend- 前缀的脏装扮名不回放（内置名不进注册表）。
+      file.writeAsStringSync(
+        '{"acceptedOutfit":"winter","acceptedMain":1,"acceptedTrim":2}',
+      );
+      final fake = TrendOutfitStore(directory: dir).load();
+      expect(fake.acceptedOutfit, isNull);
+    });
   });
 }

@@ -14,6 +14,7 @@ import 'package:dsh_pet_flutter/core/result.dart';
 import 'package:dsh_pet_flutter/features/linkage/assistant_adapters.dart';
 import 'package:dsh_pet_flutter/features/linkage/dispatcher.dart';
 import 'package:dsh_pet_flutter/features/linkage/status/assistant_event.dart';
+import 'package:dsh_pet_flutter/features/pet/render/wardrobe.dart';
 import 'package:dsh_pet_flutter/gateway/interaction_gateway.dart';
 import 'package:dsh_pet_flutter/gateway/privacy_center.dart';
 import 'package:dsh_pet_flutter/learning/feedback_collector.dart';
@@ -196,6 +197,8 @@ void main() {
     tmpDir = Directory.systemTemp.createTempSync('assistant_kernel_test');
     host = _FakeHost();
     now = DateTime(2026, 1, 1, 12, 0);
+    // 趋势配色注册表是全局内存态：清空防止跨测试串色。
+    resetTrendColors();
   });
 
   tearDown(() {
@@ -658,6 +661,28 @@ void main() {
       expect(kernel.appearanceState.revision, 0);
       // 提案已记周：本周内不会再提。
       expect(gateStore().load().lastProposedWeek, trendWeekKey(now));
+    });
+
+    test('冻结穿着趋势装扮：重启回放配色注册，图层不丢', () async {
+      final kernel = buildKernel(provider: trendProvider())..start();
+      await pumpEventQueue();
+      kernel.setTrendSource(AppearanceTrendSource.builtin);
+      await pumpEventQueue();
+      kernel.acceptTrendOutfit();
+      expect(kernel.setAppearanceFrozen(true), isA<Success<void>>());
+      // 配色三元组随治理状态落盘（冻结时换装轨道不回落，重启要靠它回放）。
+      final gate = gateStore().load();
+      expect(gate.acceptedOutfit, 'trend-冬日暖阳');
+      expect(gate.acceptedMain, 0xFFE23E3E);
+
+      // 模拟重启：内存注册表清空，同一档案目录新建内核。
+      resetTrendColors();
+      expect(wardrobeKnows('trend-冬日暖阳'), isFalse);
+      final kernel2 = buildKernel(provider: trendProvider())..start();
+      // 冻结挡住换装轨道：trend 装扮原样保留；配色从盘上回放注册，
+      // 图层仍然可画（修复前这一步静默不画，围巾凭空消失）。
+      expect(kernel2.appearanceState.outfit, 'trend-冬日暖阳');
+      expect(wardrobeKnows('trend-冬日暖阳'), isTrue);
     });
 
     test('周限与冷却短路：预置治理状态后不再调 LLM', () async {
