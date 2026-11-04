@@ -657,4 +657,184 @@ void main() {
     // useCount=1 未达停用线，不生成停用提案。
     expect(guidelines.retireProposals, isEmpty);
   });
+
+  test('P1-5 低效判定与试验启动校验', () {
+    guidelines.propose(
+      Guideline(id: 'g1', title: '风格', content: '保持简洁', createdAt: now),
+    );
+    guidelines.accept('g1');
+    for (var i = 0; i < 5; i++) {
+      guidelines.markUsed(guidelines.active);
+    }
+    // 无反馈不算低效：没有证据就别动措辞。
+    expect(guidelines.inefficientGuidelines, isEmpty);
+
+    // 1 接受 1 纠正 = 50% < 60%：入选。
+    guidelines.recordInjectionOutcome(accepted: true);
+    guidelines.recordInjectionOutcome(accepted: false);
+    expect(guidelines.inefficientGuidelines, hasLength(1));
+    expect(guidelines.inefficientGuidelines.single.id, 'g1');
+
+    // 校验分支：空候选、未知准则都拒绝启动。
+    expect(
+      guidelines.startShadowTrial('g1', [' ', '']),
+      isA<Failure<void>>(),
+    );
+    expect(
+      guidelines.startShadowTrial('missing', ['候选一']),
+      isA<Failure<void>>(),
+    );
+    expect(
+      guidelines.startShadowTrial('g1', ['候选一', '候选二']),
+      isA<Success<void>>(),
+    );
+    // 已在试验中 / 拒绝过：不再重复开。
+    expect(
+      guidelines.startShadowTrial('g1', ['再来']),
+      isA<Failure<void>>(),
+    );
+    expect(guidelines.inefficientGuidelines, isEmpty, reason: '试验中不再入选');
+  });
+
+  test('P1-5 影子交替注入：轮换序、措辞边界与进度持久化', () {
+    guidelines.propose(
+      Guideline(
+        id: 'g1',
+        title: '风格',
+        content: '原文',
+        trigger: '表格',
+        createdAt: now,
+      ),
+    );
+    guidelines.accept('g1');
+    guidelines.startShadowTrial('g1', ['候选一', '候选二']);
+
+    String inject() {
+      final base = guidelines.active.singleWhere((item) => item.id == 'g1');
+      final armed = guidelines.applyShadowArm(base);
+      guidelines.markUsed([base]);
+      return armed.content;
+    }
+
+    expect(inject(), '原文');
+    expect(inject(), '候选一');
+    // 中途换实例（重启）：轮换进度与臂统计从盘上恢复。
+    guidelines = GuidelineStore(directory: tmpDir)..load();
+    final third = guidelines.active.single;
+    final armed = guidelines.applyShadowArm(third);
+    expect(armed.content, '候选二');
+    // 只换措辞：id/trigger 等语义边界一概不动。
+    expect(armed.id, 'g1');
+    expect(armed.trigger, '表格');
+    guidelines.markUsed([third]);
+
+    for (var i = 0; i < 12; i++) {
+      inject();
+    }
+    final active = guidelines.active.single;
+    expect(active.useCount, 15);
+    // 各臂恰好 5 次：第 16 次不再换措辞，等结果比较。
+    expect(guidelines.applyShadowArm(active).content, '原文');
+  });
+
+  test('P1-5 试验满额比较：胜者出替换提案，停用让路，接受换措辞留痕', () {
+    guidelines.propose(
+      Guideline(id: 'g1', title: '风格', content: '原文', createdAt: now),
+    );
+    guidelines.accept('g1');
+    guidelines.startShadowTrial('g1', ['候选一', '候选二']);
+
+    // 轮换序 base→候选一→候选二，各 5 次：
+    // base 2/5、候选一 4/5、候选二 1/5——只有候选一严格胜出。
+    final outcomes = [
+      false, true, true, //
+      true, true, false, //
+      false, true, false, //
+      true, false, false, //
+      false, true, false, //
+    ];
+    for (final accepted in outcomes) {
+      final base = guidelines.active.single;
+      guidelines.applyShadowArm(base);
+      guidelines.markUsed([base]);
+      guidelines.recordInjectionOutcome(accepted: accepted);
+    }
+
+    // 纠正 8/15 ≈ 53% 已过停用线，但试验期间停用让路。
+    expect(guidelines.retireProposals, isEmpty);
+    expect(guidelines.rewriteProposals, hasLength(1));
+    final proposal = guidelines.rewriteProposals.single;
+    expect(proposal.candidate, '候选一');
+    expect(proposal.previousContent, '原文');
+    expect(proposal.reason, contains('候选接受 4/5'));
+
+    // 接受：只换 content、版本 +1、历史记 rewritten（快照留旧措辞）。
+    expect(guidelines.acceptRewrite(proposal.id), isA<Success<void>>());
+    final rewritten = guidelines.active.single;
+    expect(rewritten.content, '候选一');
+    expect(rewritten.version, 2);
+    expect(rewritten.history.last.event, 'rewritten');
+    expect(rewritten.history.last.content, '原文');
+    expect(rewritten.history.last.trigger, 'shadow-trial');
+    expect(guidelines.rewriteProposals, isEmpty);
+    // 试验已结束：再次达低效线可开新一轮。
+    expect(
+      guidelines.startShadowTrial('g1', ['再试一', '再试二']),
+      isA<Success<void>>(),
+    );
+  });
+
+  test('P1-5 候选未严格胜过现版：不出提案，试验照常结束', () {
+    guidelines.propose(
+      Guideline(id: 'g1', title: '风格', content: '原文', createdAt: now),
+    );
+    guidelines.accept('g1');
+    guidelines.startShadowTrial('g1', ['候选一']);
+    // 全接受：候选与 base 同为 100%，不严格胜出。
+    for (var i = 0; i < 10; i++) {
+      final base = guidelines.active.single;
+      guidelines.applyShadowArm(base);
+      guidelines.markUsed([base]);
+      guidelines.recordInjectionOutcome(accepted: true);
+    }
+    expect(guidelines.rewriteProposals, isEmpty);
+    // 试验已被消费：可立即再开。
+    expect(
+      guidelines.startShadowTrial('g1', ['候选二']),
+      isA<Success<void>>(),
+    );
+  });
+
+  test('P1-5 替换提案持久化；拒绝后保持原文且本次运行不再试验', () {
+    guidelines.propose(
+      Guideline(id: 'g1', title: '风格', content: '原文', createdAt: now),
+    );
+    guidelines.accept('g1');
+    guidelines.startShadowTrial('g1', ['候选一']);
+    // 单候选 10 轮：base 全纠正、候选全接受。
+    for (var i = 0; i < 10; i++) {
+      final base = guidelines.active.single;
+      guidelines.applyShadowArm(base);
+      guidelines.markUsed([base]);
+      guidelines.recordInjectionOutcome(accepted: i.isOdd);
+    }
+
+    // 提案落盘可恢复。
+    final reloaded = GuidelineStore(directory: tmpDir)..load();
+    expect(reloaded.rewriteProposals, hasLength(1));
+    expect(reloaded.rewriteProposals.single.candidate, '候选一');
+
+    // 拒绝：准则保持原文，提案出队，本次运行不再开试验。
+    expect(
+      guidelines.rejectRewrite(guidelines.rewriteProposals.single.id),
+      isA<Success<void>>(),
+    );
+    expect(guidelines.active.single.content, '原文');
+    expect(guidelines.rewriteProposals, isEmpty);
+    expect(
+      guidelines.startShadowTrial('g1', ['再试']),
+      isA<Failure<void>>(),
+    );
+    expect(guidelines.inefficientGuidelines, isEmpty);
+  });
 }

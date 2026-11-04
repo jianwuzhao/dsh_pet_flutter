@@ -160,7 +160,10 @@ class Guideline {
     if (approvedAt != null) 'approvedAt': approvedAt!.toIso8601String(),
   };
 
+  /// content 仅由影子试验的措辞替换（P1-5）使用：只换说法，
+  /// 其余边界（id/trigger/来源）一概不动。
   Guideline copyWith({
+    String? content,
     GuidelineStatus? status,
     int? version,
     int? useCount,
@@ -173,7 +176,7 @@ class Guideline {
   }) => Guideline(
     id: id,
     title: title,
-    content: content,
+    content: content ?? this.content,
     trigger: trigger,
     source: source,
     status: status ?? this.status,
@@ -253,6 +256,155 @@ class GuidelineRetireProposal {
   };
 }
 
+/// 影子试验单臂统计：arm 0 = 现版（base），arm 1..n = 候选措辞。
+/// 只记注入与结果次数，不存措辞本体（措辞在试验对象上）。
+class GuidelineShadowArm {
+  const GuidelineShadowArm({
+    this.injected = 0,
+    this.accepted = 0,
+    this.corrected = 0,
+  });
+
+  final int injected;
+  final int accepted;
+  final int corrected;
+
+  int get outcomes => accepted + corrected;
+
+  /// 接受率口径：无反馈按 0 算（没有证据就当没赢）。
+  double get acceptRate =>
+      outcomes == 0 ? 0 : accepted / outcomes;
+
+  factory GuidelineShadowArm.fromJson(Map<String, dynamic> json) =>
+      GuidelineShadowArm(
+        injected: (json['injected'] as num?)?.toInt() ?? 0,
+        accepted: (json['accepted'] as num?)?.toInt() ?? 0,
+        corrected: (json['corrected'] as num?)?.toInt() ?? 0,
+      );
+
+  Map<String, dynamic> toJson() => {
+    'injected': injected,
+    'accepted': accepted,
+    'corrected': corrected,
+  };
+}
+
+/// 影子试验（P1-5 OPRO）：低效准则的候选措辞与现版交替注入
+/// （用户无感知），各臂满 [GuidelineStore.shadowTrialsPerArm] 次后
+/// 比较接受率，胜者产出措辞替换提案。
+class GuidelineShadowTrial {
+  const GuidelineShadowTrial({
+    required this.guidelineId,
+    required this.candidates,
+    required this.startedAt,
+    this.arms = const [],
+    this.cursor = 0,
+    this.lastArmIndex = -1,
+    this.lastArmAtMs = 0,
+  });
+
+  /// 试验目标准则 id。
+  final String guidelineId;
+
+  /// 候选措辞（不含现版；P1-5 由 deep 档生成 2 条）。
+  final List<String> candidates;
+  final DateTime startedAt;
+
+  /// arms[0] = 现版，arms[i] = candidates[i-1]。
+  final List<GuidelineShadowArm> arms;
+
+  /// 下一个轮到的臂：base → 候选1 → 候选2 循环。
+  final int cursor;
+
+  /// 最近一次注入的臂及其时间：反馈归因的锚点（复用准则的 24h 窗口）。
+  final int lastArmIndex;
+  final int lastArmAtMs;
+
+  factory GuidelineShadowTrial.fromJson(Map<String, dynamic> json) =>
+      GuidelineShadowTrial(
+        guidelineId: json['guidelineId'] as String? ?? '',
+        candidates: [
+          for (final item in json['candidates'] ?? const <Object?>[])
+            if (item is String && item.trim().isNotEmpty) item,
+        ],
+        startedAt:
+            DateTime.tryParse(json['startedAt'] as String? ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0),
+        arms: [
+          for (final item in json['arms'] ?? const <Object?>[])
+            if (item is Map<String, dynamic>) GuidelineShadowArm.fromJson(item),
+        ],
+        cursor: (json['cursor'] as num?)?.toInt() ?? 0,
+        lastArmIndex: (json['lastArmIndex'] as num?)?.toInt() ?? -1,
+        lastArmAtMs: (json['lastArmAtMs'] as num?)?.toInt() ?? 0,
+      );
+
+  Map<String, dynamic> toJson() => {
+    'guidelineId': guidelineId,
+    'candidates': candidates,
+    'startedAt': startedAt.toIso8601String(),
+    'arms': [for (final arm in arms) arm.toJson()],
+    'cursor': cursor,
+    'lastArmIndex': lastArmIndex,
+    'lastArmAtMs': lastArmAtMs,
+  };
+}
+
+/// 措辞替换提案（P1-5）：影子试验胜出的候选措辞，用户确认才换。
+/// 与停用提案同构：只建议，接受与否都在用户。
+class GuidelineRewriteProposal {
+  const GuidelineRewriteProposal({
+    required this.id,
+    required this.guidelineId,
+    required this.title,
+    required this.candidate,
+    required this.previousContent,
+    required this.reason,
+    required this.createdAt,
+  });
+
+  final String id;
+
+  /// 指向的准则 id：接受时只替换它的 content。
+  final String guidelineId;
+
+  /// 展示快照：提案可能比准则先出队，留快照避免空引用。
+  final String title;
+
+  /// 胜出的候选措辞：接受后成为准则新 content。
+  final String candidate;
+
+  /// 试验前的原文：卡片上“旧 → 新”对照用。
+  final String previousContent;
+
+  /// 给用户看的判定依据（各臂接受率对比）。
+  final String reason;
+  final DateTime createdAt;
+
+  factory GuidelineRewriteProposal.fromJson(Map<String, dynamic> json) =>
+      GuidelineRewriteProposal(
+        id: json['id'] as String? ?? '',
+        guidelineId: json['guidelineId'] as String? ?? '',
+        title: json['title'] as String? ?? '',
+        candidate: json['candidate'] as String? ?? '',
+        previousContent: json['previousContent'] as String? ?? '',
+        reason: json['reason'] as String? ?? '',
+        createdAt:
+            DateTime.tryParse(json['createdAt'] as String? ?? '') ??
+            DateTime.fromMillisecondsSinceEpoch(0),
+      );
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'guidelineId': guidelineId,
+    'title': title,
+    'candidate': candidate,
+    'previousContent': previousContent,
+    'reason': reason,
+    'createdAt': createdAt.toIso8601String(),
+  };
+}
+
 class GuidelineStore {
   GuidelineStore({Directory? directory})
     : _directory = directory ?? AppPaths.learningDir;
@@ -270,9 +422,29 @@ class GuidelineStore {
   /// 停用提案上限：无效准则集中爆发时也不刷屏。
   static const int retireProposalsMax = 10;
 
+  /// 影子试验每臂注入次数（P1-5）：各满 5 次才比较接受率。
+  static const int shadowTrialsPerArm = 5;
+
+  /// 影子试验门槛：注入 ≥5 次且接受率 <60% 才值得优化措辞。
+  static const int shadowMinUseCount = 5;
+  static const double shadowAcceptRateFloor = 0.6;
+
+  /// 替换提案上限：与停用提案同额，避免刷屏。
+  static const int rewriteProposalsMax = 10;
+
   final Directory _directory;
   final List<Guideline> _items = [];
   final List<GuidelineRetireProposal> _retireProposals = [];
+
+  /// 进行中的影子试验（P1-5）：一条准则同时最多一个。
+  final List<GuidelineShadowTrial> _shadowTrials = [];
+
+  /// 待确认的措辞替换提案（P1-5）。
+  final List<GuidelineRewriteProposal> _rewriteProposals = [];
+
+  /// 拒绝过的替换提案（guidelineId，仅内存）：用户否了这次措辞，
+  /// 本次运行不再对这条准则开新试验；重启后可再试。
+  final Set<String> _rejectedRewriteIds = {};
 
   /// 拒绝过的停用提案（guidelineId，仅内存）：用户说了“保留”，
   /// 本次运行内不再自动重提；重启后若仍达标可再提。
@@ -288,6 +460,37 @@ class GuidelineStore {
   /// 待确认的停用提案（P1-2）：只建议，接受与否都在用户。
   List<GuidelineRetireProposal> get retireProposals =>
       List.unmodifiable(_retireProposals);
+
+  /// 待确认的措辞替换提案（P1-5）：只建议，用户确认才换。
+  List<GuidelineRewriteProposal> get rewriteProposals =>
+      List.unmodifiable(_rewriteProposals);
+
+  /// 影子试验候选对象（P1-5）：注入 ≥[shadowMinUseCount] 且
+  /// 接受率 <[shadowAcceptRateFloor] 的 active 准则，排除已在试验、
+  /// 已有提案或用户拒绝过的。无反馈（分母 0）不算低效。
+  List<Guideline> get inefficientGuidelines {
+    final trialing = {
+      for (final trial in _shadowTrials) trial.guidelineId,
+    };
+    final proposed = {
+      for (final proposal in _rewriteProposals) proposal.guidelineId,
+    };
+    return [
+      for (final item in active)
+        if (!trialing.contains(item.id) &&
+            !proposed.contains(item.id) &&
+            !_rejectedRewriteIds.contains(item.id) &&
+            item.useCount >= shadowMinUseCount &&
+            _acceptRateOf(item) < shadowAcceptRateFloor)
+          item,
+    ];
+  }
+
+  /// 准则级接受率：无反馈返回 1（没有证据就当不低效）。
+  static double _acceptRateOf(Guideline item) {
+    final total = item.acceptedAfterUse + item.correctedAfterUse;
+    return total == 0 ? 1 : item.acceptedAfterUse / total;
+  }
 
   /// 当前 prompt 适用的准则：关键词命中的排前面（相关度），
   /// 其次是“始终适用”项；组内新的优先，最多 [max] 条。
@@ -360,23 +563,68 @@ class GuidelineStore {
         acceptedAfterUse: item.acceptedAfterUse + (accepted ? 1 : 0),
       );
       changed = true;
+      _attributeShadowOutcome(item.id, accepted: accepted, windowStartMs: windowStartMs, atMs: atMs);
     }
     if (!changed) return const [];
     if (_save() is Failure<void>) return const [];
+    _proposeRewrite(at);
     return _proposeRetire(at);
   }
 
+  /// 影子试验的臂归因（P1-5）：与准则同一次注入共用时间锚点，
+  /// 反馈记到最近一次注入的臂上（一次注入只走一个臂）。
+  void _attributeShadowOutcome(
+    String guidelineId, {
+    required bool accepted,
+    required int windowStartMs,
+    required int atMs,
+  }) {
+    final index = _shadowTrials.indexWhere(
+      (trial) => trial.guidelineId == guidelineId,
+    );
+    if (index < 0) return;
+    final trial = _shadowTrials[index];
+    if (trial.lastArmIndex < 0 ||
+        trial.lastArmAtMs < windowStartMs ||
+        trial.lastArmAtMs > atMs) {
+      return;
+    }
+    final arm = trial.arms[trial.lastArmIndex];
+    _shadowTrials[index] = _trialWithArm(
+      trial,
+      trial.lastArmIndex,
+      accepted
+          ? GuidelineShadowArm(
+              injected: arm.injected,
+              accepted: arm.accepted + 1,
+              corrected: arm.corrected,
+            )
+          : GuidelineShadowArm(
+              injected: arm.injected,
+              accepted: arm.accepted,
+              corrected: arm.corrected + 1,
+            ),
+    );
+  }
+
   /// 扫停用线并生成提案：useCount ≥ [retireMinUseCount] 且
-  /// 注入后纠正占比 ≥ [retireCorrectionShare]。同一准则不重复提案。
+  /// 注入后纠正占比 ≥ [retireCorrectionShare]。同一准则不重复提案；
+  /// 正在做影子试验的准则先缓议——等试验结果再定去留。
   List<GuidelineRetireProposal> _proposeRetire(DateTime at) {
     final existing = {
       for (final proposal in _retireProposals) proposal.guidelineId,
+    };
+    // 试验中或已有替换提案：停用让路，避免“边试验边劝退”。
+    final rewriting = {
+      for (final trial in _shadowTrials) trial.guidelineId,
+      for (final proposal in _rewriteProposals) proposal.guidelineId,
     };
     final created = <GuidelineRetireProposal>[];
     for (final item in active) {
       if (existing.contains(item.id) || _rejectedRetireIds.contains(item.id)) {
         continue;
       }
+      if (rewriting.contains(item.id)) continue;
       final total = item.correctedAfterUse + item.acceptedAfterUse;
       if (item.useCount < retireMinUseCount || total == 0) continue;
       if (item.correctedAfterUse / total < retireCorrectionShare) continue;
@@ -439,6 +687,241 @@ class GuidelineStore {
     if (saved is Failure<void>) {
       _retireProposals.insert(index, proposal);
       _rejectedRetireIds.remove(proposal.guidelineId);
+      return saved;
+    }
+    return const Success(null);
+  }
+
+  /// 启动影子试验（P1-5）：由内核在拿到候选措辞后调用。
+  /// 一条准则同时最多一个试验；已有替换提案或用户拒绝过的不再开。
+  Result<void> startShadowTrial(String guidelineId, List<String> candidates) {
+    final cleaned = [
+      for (final candidate in candidates)
+        if (candidate.trim().isNotEmpty) candidate.trim(),
+    ];
+    if (cleaned.isEmpty) {
+      return const Failure('guideline.invalid', '影子试验需要至少一个候选措辞');
+    }
+    final item = _items.firstWhere(
+      (entry) => entry.id == guidelineId,
+      orElse: () => Guideline(
+        id: '',
+        title: '',
+        content: '',
+        createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+      ),
+    );
+    if (item.id.isEmpty || item.status != GuidelineStatus.active) {
+      return const Failure('guideline.not-found', '这条准则不在生效列表里');
+    }
+    if (_shadowTrials.any((trial) => trial.guidelineId == guidelineId)) {
+      return const Failure('guideline.shadow-exists', '这条准则已有进行中的试验');
+    }
+    if (_rewriteProposals.any((proposal) => proposal.guidelineId == guidelineId)) {
+      return const Failure('guideline.rewrite-pending', '这条准则已有替换提案待确认');
+    }
+    if (_rejectedRewriteIds.contains(guidelineId)) {
+      return const Failure('guideline.rewrite-rejected', '用户已拒绝过这条准则的措辞优化');
+    }
+    final trial = GuidelineShadowTrial(
+      guidelineId: guidelineId,
+      candidates: List.unmodifiable(cleaned),
+      startedAt: DateTime.now(),
+      arms: List.generate(
+        cleaned.length + 1,
+        (_) => const GuidelineShadowArm(),
+        growable: false,
+      ),
+    );
+    _shadowTrials.add(trial);
+    final saved = _save();
+    if (saved is Failure<void>) {
+      _shadowTrials.remove(trial);
+      return saved;
+    }
+    return const Success(null);
+  }
+
+  /// 影子注入（P1-5）：轮到 base 臂时原样返回，轮到候选臂时返回
+  /// 换了措辞的副本（id/trigger 等边界不动，用户无感知）。
+  /// 各臂满额后不再换措辞，等结果比较。
+  Guideline applyShadowArm(Guideline item, {DateTime? now}) {
+    final index = _shadowTrials.indexWhere(
+      (trial) => trial.guidelineId == item.id,
+    );
+    if (index < 0) return item;
+    final trial = _shadowTrials[index];
+    final armIndex = _nextArmIndex(trial);
+    if (armIndex < 0) return item;
+    final at = now ?? DateTime.now();
+    final arm = trial.arms[armIndex];
+    _shadowTrials[index] = GuidelineShadowTrial(
+      guidelineId: trial.guidelineId,
+      candidates: trial.candidates,
+      startedAt: trial.startedAt,
+      arms: [
+        for (var i = 0; i < trial.arms.length; i++)
+          i == armIndex
+              // 只加注入数：当臂已累计的接受/纠正必须保留到比较时。
+              ? GuidelineShadowArm(
+                  injected: arm.injected + 1,
+                  accepted: arm.accepted,
+                  corrected: arm.corrected,
+                )
+              : trial.arms[i],
+      ],
+      cursor: (armIndex + 1) % trial.arms.length,
+      lastArmIndex: armIndex,
+      lastArmAtMs: at.millisecondsSinceEpoch,
+    );
+    _save();
+    if (armIndex == 0) return item;
+    return item.copyWith(content: trial.candidates[armIndex - 1]);
+  }
+
+  /// 下一个未满额的臂（从 cursor 起轮换）；全满返回 -1。
+  int _nextArmIndex(GuidelineShadowTrial trial) {
+    for (var step = 0; step < trial.arms.length; step++) {
+      final index = (trial.cursor + step) % trial.arms.length;
+      if (trial.arms[index].injected < shadowTrialsPerArm) return index;
+    }
+    return -1;
+  }
+
+  GuidelineShadowTrial _trialWithArm(
+    GuidelineShadowTrial trial,
+    int armIndex,
+    GuidelineShadowArm arm,
+  ) => GuidelineShadowTrial(
+    guidelineId: trial.guidelineId,
+    candidates: trial.candidates,
+    startedAt: trial.startedAt,
+    arms: [
+      for (var i = 0; i < trial.arms.length; i++)
+        i == armIndex ? arm : trial.arms[i],
+    ],
+    cursor: trial.cursor,
+    lastArmIndex: trial.lastArmIndex,
+    lastArmAtMs: trial.lastArmAtMs,
+  );
+
+  /// 试验满额后比较接受率：最优候选严格胜过 base 才出替换提案；
+  /// 无论成败试验都结束（败了就回到普通轨道，停用线可再接管）。
+  void _proposeRewrite(DateTime at) {
+    for (var index = _shadowTrials.length - 1; index >= 0; index--) {
+      final trial = _shadowTrials[index];
+      if (trial.arms.any((arm) => arm.injected < shadowTrialsPerArm)) continue;
+      _shadowTrials.removeAt(index);
+      final item = _items.firstWhere(
+        (entry) => entry.id == trial.guidelineId,
+        orElse: () => Guideline(
+          id: '',
+          title: '',
+          content: '',
+          createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+        ),
+      );
+      // 准则已不在/已归档：试验结果无处落地，直接丢弃。
+      if (item.id.isEmpty || item.status != GuidelineStatus.active) continue;
+      if (_rewriteProposals.any(
+        (proposal) => proposal.guidelineId == item.id,
+      )) {
+        continue;
+      }
+      final base = trial.arms.first;
+      var bestIndex = -1;
+      var bestRate = base.acceptRate;
+      for (var armIndex = 1; armIndex < trial.arms.length; armIndex++) {
+        final rate = trial.arms[armIndex].acceptRate;
+        if (rate > bestRate) {
+          bestIndex = armIndex;
+          bestRate = rate;
+        }
+      }
+      if (bestIndex < 0) continue;
+      final best = trial.arms[bestIndex];
+      final proposal = GuidelineRewriteProposal(
+        id: 'rewrite-${item.id}',
+        guidelineId: item.id,
+        title: item.title,
+        candidate: trial.candidates[bestIndex - 1],
+        previousContent: item.content,
+        reason:
+            '影子试验各臂注入 $shadowTrialsPerArm 次：'
+            '现版接受 ${base.accepted}/${base.outcomes}，'
+            '候选接受 ${best.accepted}/${best.outcomes}'
+            '（${(bestRate * 100).round()}%）',
+        createdAt: at,
+      );
+      _rewriteProposals.add(proposal);
+      if (_rewriteProposals.length > rewriteProposalsMax) {
+        _rewriteProposals.removeRange(
+          0,
+          _rewriteProposals.length - rewriteProposalsMax,
+        );
+      }
+    }
+    _save();
+  }
+
+  /// 接受替换提案：只换 content，版本 +1，历史记 rewritten
+  /// （快照留旧措辞，支持“恢复到此版”的审计诉求）。
+  Result<void> acceptRewrite(String proposalId) {
+    final index = _rewriteProposals.indexWhere(
+      (proposal) => proposal.id == proposalId,
+    );
+    if (index < 0) {
+      return const Failure('guideline.not-found', '这条替换提案已经不在队列里了');
+    }
+    final proposal = _rewriteProposals.removeAt(index);
+    final itemIndex = _items.indexWhere(
+      (item) => item.id == proposal.guidelineId,
+    );
+    if (itemIndex < 0 || _items[itemIndex].status != GuidelineStatus.active) {
+      _rewriteProposals.insert(index, proposal);
+      return const Failure('guideline.not-found', '这条准则已不在生效列表里');
+    }
+    final previous = _items[itemIndex];
+    final at = DateTime.now();
+    final next = previous.copyWith(
+      content: proposal.candidate,
+      version: previous.version + 1,
+      approvedAt: at,
+      history: [
+        ...previous.history,
+        GuidelineRevision(
+          version: previous.version + 1,
+          event: 'rewritten',
+          at: at,
+          content: previous.content,
+          trigger: 'shadow-trial',
+        ),
+      ],
+    );
+    _items[itemIndex] = next;
+    final saved = _save();
+    if (saved is Failure<void>) {
+      _items[itemIndex] = previous;
+      _rewriteProposals.insert(index, proposal);
+      return saved;
+    }
+    return const Success(null);
+  }
+
+  /// 拒绝替换提案：准则保持原文，提案出队且本次运行不再重试。
+  Result<void> rejectRewrite(String proposalId) {
+    final index = _rewriteProposals.indexWhere(
+      (proposal) => proposal.id == proposalId,
+    );
+    if (index < 0) {
+      return const Failure('guideline.not-found', '这条替换提案已经不在队列里了');
+    }
+    final proposal = _rewriteProposals.removeAt(index);
+    _rejectedRewriteIds.add(proposal.guidelineId);
+    final saved = _save();
+    if (saved is Failure<void>) {
+      _rewriteProposals.insert(index, proposal);
+      _rejectedRewriteIds.remove(proposal.guidelineId);
       return saved;
     }
     return const Success(null);
@@ -588,6 +1071,14 @@ class GuidelineStore {
             'retireProposals': [
               for (final proposal in _retireProposals) proposal.toJson(),
             ],
+          if (_shadowTrials.isNotEmpty)
+            'shadowTrials': [
+              for (final trial in _shadowTrials) trial.toJson(),
+            ],
+          if (_rewriteProposals.isNotEmpty)
+            'rewriteProposals': [
+              for (final proposal in _rewriteProposals) proposal.toJson(),
+            ],
         }),
         flush: true,
       );
@@ -601,6 +1092,8 @@ class GuidelineStore {
   void load() {
     _items.clear();
     _retireProposals.clear();
+    _shadowTrials.clear();
+    _rewriteProposals.clear();
     try {
       if (!_file.existsSync()) return;
       final raw = jsonDecode(_file.readAsStringSync());
@@ -617,6 +1110,22 @@ class GuidelineStore {
           for (final item in proposals)
             if (item is Map<String, dynamic>)
               GuidelineRetireProposal.fromJson(item),
+        ]);
+      }
+      final trials = raw['shadowTrials'];
+      if (trials is List) {
+        _shadowTrials.addAll([
+          for (final item in trials)
+            if (item is Map<String, dynamic>)
+              GuidelineShadowTrial.fromJson(item),
+        ]);
+      }
+      final rewrites = raw['rewriteProposals'];
+      if (rewrites is List) {
+        _rewriteProposals.addAll([
+          for (final item in rewrites)
+            if (item is Map<String, dynamic>)
+              GuidelineRewriteProposal.fromJson(item),
         ]);
       }
     } on Object catch (error) {
