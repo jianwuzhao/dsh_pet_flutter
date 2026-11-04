@@ -188,6 +188,8 @@ class _PetAppState extends State<PetApp> {
       onReactivateGuideline: _kernel?.reactivateGuideline,
       onAcceptRetire: _kernel?.acceptGuidelineRetire,
       onRejectRetire: _kernel?.rejectGuidelineRetire,
+      onAcceptRewrite: _kernel?.acceptGuidelineRewrite,
+      onRejectRewrite: _kernel?.rejectGuidelineRewrite,
       onSend: _dispatch,
       onSaveConfig: _saveConfig,
       onSaveEmotion: _saveEmotionProfile,

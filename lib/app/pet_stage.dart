@@ -52,6 +52,8 @@ class PetStage extends StatefulWidget {
     this.onReactivateGuideline,
     this.onAcceptRetire,
     this.onRejectRetire,
+    this.onAcceptRewrite,
+    this.onRejectRewrite,
     required this.onSend,
     required this.onSaveConfig,
     required this.onSaveEmotion,
@@ -124,6 +126,11 @@ class PetStage extends StatefulWidget {
   /// 停用提案（P1-2 有效性回路）：接受=归档低效准则；拒绝=保留。
   final Result<void> Function(String proposalId)? onAcceptRetire;
   final Result<void> Function(String proposalId)? onRejectRetire;
+
+  /// 措辞替换提案（P1-5 影子试验）：接受=只换 content；
+  /// 拒绝=保留原文且本次运行不再试验。
+  final Result<void> Function(String proposalId)? onAcceptRewrite;
+  final Result<void> Function(String proposalId)? onRejectRewrite;
 
   final Future<Result<DispatchOutcome>> Function(String prompt) onSend;
 
@@ -401,6 +408,8 @@ class _PetStageState extends State<PetStage> {
             onReactivateGuideline: widget.onReactivateGuideline,
             onAcceptRetire: widget.onAcceptRetire,
             onRejectRetire: widget.onRejectRetire,
+            onAcceptRewrite: widget.onAcceptRewrite,
+            onRejectRewrite: widget.onRejectRewrite,
             onSave: widget.onSaveConfig,
             onSaveEmotion: widget.onSaveEmotion,
             onEvolveAppearance: widget.onEvolveAppearance,

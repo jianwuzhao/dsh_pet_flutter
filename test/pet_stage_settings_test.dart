@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:dsh_pet_flutter/app/pet_stage.dart';
 import 'package:dsh_pet_flutter/core/config/animation_manifest.dart';
 import 'package:dsh_pet_flutter/core/config/app_config.dart';
@@ -5,6 +7,8 @@ import 'package:dsh_pet_flutter/core/result.dart';
 import 'package:dsh_pet_flutter/features/linkage/assistant_adapters.dart';
 import 'package:dsh_pet_flutter/features/pet/behavior/physics.dart';
 import 'package:dsh_pet_flutter/features/pet/pet_controller.dart';
+import 'package:dsh_pet_flutter/features/settings/sections/evolution_section.dart';
+import 'package:dsh_pet_flutter/learning/guideline_store.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_state.dart';
 import 'package:dsh_pet_flutter/persona/profile_store.dart';
 import 'package:dsh_pet_flutter/platform/pet_platform.dart';
@@ -116,5 +120,67 @@ void main() {
     }
 
     controller.dispose();
+  });
+
+  testWidgets('P1-5 措辞替换提案卡片：新旧对照展示与两路回调', (tester) async {
+    // 走一遍真实影子试验（单候选 10 轮）生成提案，不伪造状态。
+    final dir = Directory.systemTemp.createTempSync('rewrite_card');
+    addTearDown(() => dir.deleteSync(recursive: true));
+    final store = GuidelineStore(directory: dir)..load();
+    store.propose(
+      Guideline(
+        id: 'g1',
+        title: '风格',
+        content: '原文',
+        createdAt: DateTime(2026, 1, 1),
+      ),
+    );
+    store.accept('g1');
+    store.startShadowTrial('g1', ['候选一']);
+    for (var i = 0; i < 10; i++) {
+      final base = store.active.single;
+      store.applyShadowArm(base);
+      store.markUsed([base]);
+      store.recordInjectionOutcome(accepted: i.isOdd);
+    }
+    expect(store.rewriteProposals, hasLength(1));
+
+    final accepted = <String>[];
+    // 模拟 settings_page 的真实接线：回调透传到 store。
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: SingleChildScrollView(
+          child: EvolutionSection(
+            guidelines: store,
+            reflectionCount: 0,
+            onAccept: (_) {},
+            onReject: (_) {},
+            onArchive: (_) {},
+            onReactivate: (_) {},
+            onAcceptRetire: (_) {},
+            onRejectRetire: (_) {},
+            onAcceptRewrite: (id) {
+              accepted.add(id);
+              store.acceptRewrite(id);
+            },
+            onRejectRewrite: (_) {},
+            hint: '',
+          ),
+        ),
+      ),
+    );
+
+    // 新旧措辞对照与判定依据都可见。
+    expect(find.textContaining('现：原文'), findsOneWidget);
+    expect(find.textContaining('新：候选一'), findsOneWidget);
+    expect(find.textContaining('影子试验'), findsOneWidget);
+
+    await tester.tap(find.text('换新措辞'));
+    await tester.pump();
+    expect(accepted, ['rewrite-g1']);
+    // 接受生效：提案消费掉、准则换成候选措辞。
+    expect(store.rewriteProposals, isEmpty);
+    expect(store.active.single.content, '候选一');
   });
 }

@@ -58,6 +58,8 @@ class SettingsPage extends StatefulWidget {
     this.onReactivateGuideline,
     this.onAcceptRetire,
     this.onRejectRetire,
+    this.onAcceptRewrite,
+    this.onRejectRewrite,
     this.appearanceProposal,
     this.onAcceptFormProposal,
     this.onRejectFormProposal,
@@ -119,6 +121,11 @@ class SettingsPage extends StatefulWidget {
   /// 停用提案（P1-2 有效性回路）：接受=归档低效准则；拒绝=保留。
   final Result<void> Function(String proposalId)? onAcceptRetire;
   final Result<void> Function(String proposalId)? onRejectRetire;
+
+  /// 措辞替换提案（P1-5 影子试验）：接受=只换 content；
+  /// 拒绝=保留原文且本次运行不再试验。
+  final Result<void> Function(String proposalId)? onAcceptRewrite;
+  final Result<void> Function(String proposalId)? onRejectRewrite;
 
   /// 能力注册表（只读）：联动分区底部展示各外部软件的探测结果。
   final CapabilityRegistry? capabilities;
@@ -584,6 +591,30 @@ class _SettingsPageState extends State<SettingsPage>
     });
   }
 
+  void _acceptRewrite(String proposalId) {
+    final result =
+        widget.onAcceptRewrite?.call(proposalId) ??
+        const Failure<void>('guideline.offline', '进化引擎还没准备好');
+    setState(() {
+      _evolutionHint = switch (result) {
+        Success() => '已换成新措辞，旧措辞留在变更历史里',
+        Failure(:final reason) => reason,
+      };
+    });
+  }
+
+  void _rejectRewrite(String proposalId) {
+    final result =
+        widget.onRejectRewrite?.call(proposalId) ??
+        const Failure<void>('guideline.offline', '进化引擎还没准备好');
+    setState(() {
+      _evolutionHint = switch (result) {
+        Success() => '已保留原文，本次运行不再建议替换',
+        Failure(:final reason) => reason,
+      };
+    });
+  }
+
   void _archiveGuideline(String id) {
     final result =
         widget.onArchiveGuideline?.call(id) ??
@@ -964,6 +995,8 @@ class _SettingsPageState extends State<SettingsPage>
                       onReactivate: _reactivateGuideline,
                       onAcceptRetire: _acceptRetire,
                       onRejectRetire: _rejectRetire,
+                      onAcceptRewrite: _acceptRewrite,
+                      onRejectRewrite: _rejectRewrite,
                       hint: _evolutionHint,
                     ),
                     PersonaSection(

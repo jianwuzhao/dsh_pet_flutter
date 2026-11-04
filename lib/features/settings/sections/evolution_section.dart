@@ -20,6 +20,8 @@ class EvolutionSection extends StatelessWidget {
     required this.onReactivate,
     required this.onAcceptRetire,
     required this.onRejectRetire,
+    required this.onAcceptRewrite,
+    required this.onRejectRewrite,
     required this.hint,
   });
 
@@ -33,6 +35,11 @@ class EvolutionSection extends StatelessWidget {
   /// 停用提案（P1-2 有效性回路）：接受=停用低效准则；拒绝=保留。
   final void Function(String proposalId) onAcceptRetire;
   final void Function(String proposalId) onRejectRetire;
+
+  /// 措辞替换提案（P1-5 影子试验）：接受=只换 content；
+  /// 拒绝=保留原文且本次运行不再试验。
+  final void Function(String proposalId) onAcceptRewrite;
+  final void Function(String proposalId) onRejectRewrite;
   final String hint;
 
   @override
@@ -159,6 +166,61 @@ class EvolutionSection extends StatelessWidget {
                     child: const Text(
                       '保留',
                       style: TextStyle(color: Color(0xFF69F0AE), fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+        if (store.rewriteProposals.isNotEmpty) ...[
+          SettingsDivider('措辞替换提案（${store.rewriteProposals.length} 条）'),
+          for (final proposal in store.rewriteProposals)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 5),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          proposal.title,
+                          style: const TextStyle(
+                            color: Color(0xFFFFB74D),
+                            fontSize: 12.5,
+                          ),
+                        ),
+                        Text(
+                          '现：${proposal.previousContent}\n新：${proposal.candidate}',
+                          style: const TextStyle(
+                            color: Color(0x99FFFFFF),
+                            fontSize: 11,
+                            height: 1.45,
+                          ),
+                        ),
+                        Text(
+                          proposal.reason,
+                          style: const TextStyle(
+                            color: Color(0x59FFFFFF),
+                            fontSize: 10,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => onAcceptRewrite(proposal.id),
+                    child: const Text(
+                      '换新措辞',
+                      style: TextStyle(color: Color(0xFF69F0AE), fontSize: 12),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => onRejectRewrite(proposal.id),
+                    child: const Text(
+                      '保留原文',
+                      style: TextStyle(color: Color(0xFFFFB74D), fontSize: 12),
                     ),
                   ),
                 ],
