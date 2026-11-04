@@ -72,6 +72,8 @@ class PetStage extends StatefulWidget {
     this.onTrendSourceChanged,
     this.onAcceptTrendOutfit,
     this.onRejectTrendOutfit,
+    this.mementoEligible,
+    this.onGenerateMemento,
     this.appearanceChanges,
     this.appearanceProposal,
     this.onAcceptFormProposal,
@@ -121,6 +123,10 @@ class PetStage extends StatefulWidget {
   onTrendSourceChanged;
   final VoidCallback? onAcceptTrendOutfit;
   final VoidCallback? onRejectTrendOutfit;
+
+  /// 纪念头像（P2-5）：入口流 + 生成回调，纯透传。
+  final ValueListenable<bool>? mementoEligible;
+  final Future<Result<String>> Function()? onGenerateMemento;
 
   /// 形态提案：最显眼的变化需用户接受才生效。
   final AppearanceProposal? appearanceProposal;
@@ -449,6 +455,8 @@ class _PetStageState extends State<PetStage> {
             onTrendSourceChanged: widget.onTrendSourceChanged,
             onAcceptTrendOutfit: widget.onAcceptTrendOutfit,
             onRejectTrendOutfit: widget.onRejectTrendOutfit,
+            mementoEligible: widget.mementoEligible,
+            onGenerateMemento: widget.onGenerateMemento,
             onCheckAccessibility: widget.onCheckAccessibility,
             onClose: controller.closePanel,
             capabilities: widget.capabilities,

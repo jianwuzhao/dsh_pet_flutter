@@ -77,6 +77,8 @@ class SettingsPage extends StatefulWidget {
     this.onTrendSourceChanged,
     this.onAcceptTrendOutfit,
     this.onRejectTrendOutfit,
+    this.mementoEligible,
+    this.onGenerateMemento,
     required this.onCheckAccessibility,
     required this.onClose,
     this.capabilities,
@@ -128,6 +130,11 @@ class SettingsPage extends StatefulWidget {
 
   final VoidCallback? onAcceptTrendOutfit;
   final VoidCallback? onRejectTrendOutfit;
+
+  /// 纪念头像入口流（P2-5）：晋升后开放，内核 ValueNotifier。
+  final ValueListenable<bool>? mementoEligible;
+
+  final Future<Result<String>> Function()? onGenerateMemento;
 
   /// 记忆库（内核实例）：查看/纠正/遗忘/导出直接操作，即时生效。
   final MemoryStore? memory;
@@ -758,6 +765,22 @@ class _SettingsPageState extends State<SettingsPage>
     });
   }
 
+  /// 生成纪念头像：结果只落 hint（保存路径已由气泡即时报告）。
+  Future<void> _generateMemento() async {
+    final generate = widget.onGenerateMemento;
+    if (generate == null) return;
+    final result = await generate();
+    if (!mounted) return;
+    setState(() {
+      switch (result) {
+        case Success():
+          _appearanceHint = '纪念头像已保存到档案目录';
+        case Failure(:final reason):
+          _appearanceHint = reason;
+      }
+    });
+  }
+
   void _acceptFormProposal() {
     final accept = widget.onAcceptFormProposal;
     if (accept == null) return;
@@ -1032,6 +1055,10 @@ class _SettingsPageState extends State<SettingsPage>
                           : _setTrendSource,
                       onAcceptTrendOutfit: widget.onAcceptTrendOutfit,
                       onRejectTrendOutfit: widget.onRejectTrendOutfit,
+                      mementoEligible: widget.mementoEligible,
+                      onGenerateMemento: widget.onGenerateMemento == null
+                          ? null
+                          : _generateMemento,
                     ),
                     if (widget.memory == null)
                       const Padding(

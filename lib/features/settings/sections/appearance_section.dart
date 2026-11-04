@@ -38,6 +38,8 @@ class AppearanceSection extends StatelessWidget {
     this.onTrendSourceChanged,
     this.onAcceptTrendOutfit,
     this.onRejectTrendOutfit,
+    this.mementoEligible,
+    this.onGenerateMemento,
   });
 
   final AppearanceState state;
@@ -76,6 +78,12 @@ class AppearanceSection extends StatelessWidget {
   final ValueChanged<AppearanceTrendSource>? onTrendSourceChanged;
   final VoidCallback? onAcceptTrendOutfit;
   final VoidCallback? onRejectTrendOutfit;
+
+  /// 纪念头像入口（P2-5）：晋升后开放，生成或月限拦截后自动关闭
+  /// （ValueListenable 驱动卡片消失，无需刷新整页）。
+  final ValueListenable<bool>? mementoEligible;
+
+  final Future<void> Function()? onGenerateMemento;
 
   @override
   Widget build(BuildContext context) {
@@ -297,6 +305,52 @@ class AppearanceSection extends StatelessWidget {
                             child: const Text('拒绝'),
                           ),
                         ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        if (mementoEligible != null)
+          ValueListenableBuilder<bool>(
+            valueListenable: mementoEligible!,
+            builder: (context, eligible, _) {
+              if (!eligible) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0x146BC5B8),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0x336BC5B8)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        '新形象纪念头像',
+                        style: TextStyle(
+                          color: Color(0xE66BC5B8),
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        '为这次晋升生成一张纪念头像（保存到档案目录，每月限 1 次）',
+                        style: TextStyle(
+                          color: Color(0xB3FFFFFF),
+                          fontSize: 11,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      OutlinedButton(
+                        onPressed: onGenerateMemento == null
+                            ? null
+                            : () => onGenerateMemento!(),
+                        child: const Text('生成'),
                       ),
                     ],
                   ),

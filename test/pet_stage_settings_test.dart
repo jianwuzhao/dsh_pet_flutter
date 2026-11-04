@@ -235,6 +235,46 @@ void main() {
     expect(sources, [AppearanceTrendSource.off]);
   });
 
+  testWidgets('P2-5 纪念头像卡片：仅晋升后出现，生成回调与入口关闭', (tester) async {
+    final eligible = ValueNotifier<bool>(false);
+    addTearDown(eligible.dispose);
+    var generated = 0;
+
+    Widget buildHost() => MaterialApp(
+      home: Scaffold(
+        backgroundColor: const Color(0xFF26262C),
+        body: AppearanceSection(
+          state: const AppearanceState(),
+          reason: '',
+          hint: '',
+          onEvolve: () {},
+          onRollback: () {},
+          onFreeze: (_) {},
+          mementoEligible: eligible,
+          onGenerateMemento: () async {
+            generated++;
+          },
+        ),
+      ),
+    );
+
+    // 默认关：晋升前不出现入口。
+    await tester.pumpWidget(buildHost());
+    expect(find.text('新形象纪念头像'), findsNothing);
+
+    // 晋升解锁：卡片出现，点击生成走回调。
+    eligible.value = true;
+    await tester.pump();
+    expect(find.text('新形象纪念头像'), findsOneWidget);
+    await tester.tap(find.text('生成'));
+    expect(generated, 1);
+
+    // 生成后入口关闭：卡片随 ValueListenable 消失（每月限 1 次）。
+    eligible.value = false;
+    await tester.pump();
+    expect(find.text('新形象纪念头像'), findsNothing);
+  });
+
   testWidgets('P1-5 措辞替换提案卡片：新旧对照展示与两路回调', (tester) async {
     // 走一遍真实影子试验（单候选 10 轮）生成提案，不伪造状态。
     final dir = Directory.systemTemp.createTempSync('rewrite_card');

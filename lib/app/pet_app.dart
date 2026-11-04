@@ -183,6 +183,8 @@ class _PetAppState extends State<PetApp> {
       onTrendSourceChanged: _kernel?.setTrendSource,
       onAcceptTrendOutfit: _kernel?.acceptTrendOutfit,
       onRejectTrendOutfit: _kernel?.rejectTrendOutfit,
+      mementoEligible: _kernel?.mementoEligible,
+      onGenerateMemento: _kernel?.generateMemento,
       memory: _kernel?.memory,
       learning: _kernel?.learning,
       persona: _kernel?.dna ?? const PersonaDna(),
