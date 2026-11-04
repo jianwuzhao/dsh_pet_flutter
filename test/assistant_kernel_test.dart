@@ -24,6 +24,7 @@ import 'package:dsh_pet_flutter/learning/policy_store.dart';
 import 'package:dsh_pet_flutter/learning/reflection_store.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_state.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_store.dart';
+import 'package:dsh_pet_flutter/persona/appearance/trend_outfit.dart';
 import 'package:dsh_pet_flutter/persona/appearance/weather_outfit.dart';
 import 'package:dsh_pet_flutter/persona/emotion/emotion_machine.dart';
 import 'package:dsh_pet_flutter/persona/emotion/emotion_signal.dart';
@@ -167,6 +168,10 @@ void main() {
       ),
       // 天气装扮（P2-3）：测试注入 MockClient 版服务，绝不碰真实网络。
       weatherOutfit: weatherOutfit,
+      // 趋势治理状态同理：必须落在临时目录，绝不碰真实用户目录。
+      trendStore: TrendOutfitStore(
+        directory: Directory('${tmpDir.path}/profile'),
+      ),
       clock: () => now,
     );
   }
@@ -601,6 +606,107 @@ void main() {
       expect(kernel.weatherSuggestion.value, isNull);
       // 全周期修订号不动：换装不占版本历史额度。
       expect(kernel.appearanceState.revision, 0);
+    });
+  });
+
+  group('热门趋势装扮（P2-3b）', () {
+    // 1/1 是冬：提案提示词带季节背景；固定回复可稳定解析。
+    _ReplyProvider trendProvider() => _ReplyProvider(
+      '{"theme":"冬日暖阳","main":"#E23E3E","trim":"#F2C14E",'
+      '"reason":"暖色围巾呼应初冬氛围"}',
+    );
+
+    TrendOutfitStore gateStore() => TrendOutfitStore(
+      directory: Directory('${tmpDir.path}/profile'),
+    );
+
+    test('默认关：开启前零 LLM 调用', () async {
+      final provider = trendProvider();
+      buildKernel(provider: provider).start();
+      await pumpEventQueue();
+
+      expect(provider.systems, isEmpty);
+    });
+
+    test('开启后挂建议；接受才换装（source=trend）并记周', () async {
+      final kernel = buildKernel(provider: trendProvider())..start();
+      await pumpEventQueue();
+
+      expect(
+        kernel.setTrendSource(AppearanceTrendSource.builtin),
+        isA<Success<void>>(),
+      );
+      await pumpEventQueue();
+      final proposal = kernel.trendSuggestion.value;
+      expect(proposal?.outfit, 'trend-冬日暖阳');
+      // 提案不自动穿：当前仍是启动换上的冬装。
+      expect(kernel.appearanceState.outfit, 'winter');
+
+      kernel.acceptTrendOutfit();
+      expect(kernel.appearanceState.outfit, 'trend-冬日暖阳');
+      expect(
+        kernel.appearanceState.outfitSource,
+        AppearanceOutfitSource.trend,
+      );
+      expect(kernel.trendSuggestion.value, isNull);
+      expect(host.bubbles.single, contains('冬日暖阳'));
+      // 换装不动修订号（装饰轨道不占版本历史额度）。
+      expect(kernel.appearanceState.revision, 0);
+      // 提案已记周：本周内不会再提。
+      expect(gateStore().load().lastProposedWeek, trendWeekKey(now));
+    });
+
+    test('周限与冷却短路：预置治理状态后不再调 LLM', () async {
+      // 本周已提。
+      gateStore().save(TrendGate(lastProposedWeek: trendWeekKey(now)));
+      var provider = trendProvider();
+      var kernel = buildKernel(provider: provider)..start();
+      await pumpEventQueue();
+      kernel.setTrendSource(AppearanceTrendSource.builtin);
+      await pumpEventQueue();
+      expect(provider.systems, isEmpty);
+      expect(kernel.trendSuggestion.value, isNull);
+
+      // 拒绝冷却中（截止在未来 6 天）。
+      gateStore().save(
+        TrendGate(
+          rejectedUntilMs: now
+              .add(const Duration(days: 6))
+              .millisecondsSinceEpoch,
+        ),
+      );
+      provider = trendProvider();
+      kernel = buildKernel(provider: provider)..start();
+      await pumpEventQueue();
+      kernel.setTrendSource(AppearanceTrendSource.builtin);
+      await pumpEventQueue();
+      expect(provider.systems, isEmpty);
+    });
+
+    test('LLM 坏输出不烧周额度；拒绝落 7 天冷却', () async {
+      final kernel =
+          buildKernel(provider: _ReplyProvider('这不是 JSON'))..start();
+      await pumpEventQueue();
+      kernel.setTrendSource(AppearanceTrendSource.builtin);
+      await pumpEventQueue();
+      expect(kernel.trendSuggestion.value, isNull);
+      // 没记周：明天日终观察还能重试。
+      expect(gateStore().load().lastProposedWeek, isNull);
+
+      // 正常提案 → 拒绝：冷却落盘（保留已记的周键）。
+      final kernel2 = buildKernel(provider: trendProvider())..start();
+      await pumpEventQueue();
+      kernel2.setTrendSource(AppearanceTrendSource.builtin);
+      await pumpEventQueue();
+      expect(kernel2.trendSuggestion.value, isNotNull);
+      kernel2.rejectTrendOutfit();
+      expect(kernel2.trendSuggestion.value, isNull);
+      final gate = gateStore().load();
+      expect(gate.lastProposedWeek, trendWeekKey(now));
+      expect(
+        gate.rejectedUntilMs,
+        now.add(trendRejectCooldown).millisecondsSinceEpoch,
+      );
     });
   });
 

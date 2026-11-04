@@ -27,6 +27,9 @@ enum AppearanceOutfitSource { builtin, seasonal, festive, weather, trend, user }
 /// 天气装扮来源（P2-3 决策点 D4）：off 默认，显式 opt-in 才发网络请求。
 enum AppearanceWeatherSource { off, builtin }
 
+/// 热门趋势装扮来源（P2-3b）：off 默认，显式 opt-in 才调 LLM 出创意提案。
+enum AppearanceTrendSource { off, builtin }
+
 /// 默认装扮（居家）：没有情境信号时的兜底。
 const String defaultOutfit = 'home';
 
@@ -71,6 +74,7 @@ class AppearanceState {
     this.outfit = defaultOutfit,
     this.outfitSource = AppearanceOutfitSource.builtin,
     this.weatherSource = AppearanceWeatherSource.off,
+    this.trendSource = AppearanceTrendSource.off,
     this.frozen = false,
     this.updatedAtMs = 0,
   });
@@ -95,6 +99,9 @@ class AppearanceState {
   /// 天气装扮开关：off 默认（隐私优先），开启后才允许拉取天气。
   final AppearanceWeatherSource weatherSource;
 
+  /// 热门趋势装扮开关：off 默认，开启后每周最多 1 次 LLM 创意提案。
+  final AppearanceTrendSource trendSource;
+
   /// 冻结后不再接受任何自动演化（用户手动改不受限）。
   final bool frozen;
 
@@ -116,6 +123,7 @@ class AppearanceState {
     String? outfit,
     AppearanceOutfitSource? outfitSource,
     AppearanceWeatherSource? weatherSource,
+    AppearanceTrendSource? trendSource,
     bool? frozen,
     int? updatedAtMs,
   }) => AppearanceState(
@@ -130,6 +138,7 @@ class AppearanceState {
     outfit: isValidOutfitName(outfit) ? outfit! : this.outfit,
     outfitSource: outfitSource ?? this.outfitSource,
     weatherSource: weatherSource ?? this.weatherSource,
+    trendSource: trendSource ?? this.trendSource,
     frozen: frozen ?? this.frozen,
     updatedAtMs: updatedAtMs ?? this.updatedAtMs,
   );
@@ -155,6 +164,7 @@ class AppearanceState {
     'outfit': outfit,
     'outfitSource': outfitSource.name,
     'weatherSource': weatherSource.name,
+    'trendSource': trendSource.name,
     'frozen': frozen,
     // 写 ISO 字符串便于人工排查；读取同时兼容毫秒整数。
     'updatedAt': updatedAt.toIso8601String(),
@@ -187,6 +197,9 @@ class AppearanceState {
     weatherSource:
         _enumOf(AppearanceWeatherSource.values, json['weatherSource']) ??
         AppearanceWeatherSource.off,
+    trendSource:
+        _enumOf(AppearanceTrendSource.values, json['trendSource']) ??
+        AppearanceTrendSource.off,
     frozen: json['frozen'] as bool? ?? false,
     updatedAtMs: _timestampOf(json['updatedAt']),
   );

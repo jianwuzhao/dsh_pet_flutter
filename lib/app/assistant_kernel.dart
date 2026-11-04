@@ -25,6 +25,7 @@ import '../core/result.dart';
 import '../features/ai/chat_memory.dart';
 import '../features/linkage/assistant_adapters.dart';
 import '../features/linkage/status/assistant_event.dart';
+import '../features/pet/render/wardrobe.dart';
 import '../gateway/interaction_gateway.dart';
 import '../gateway/privacy_center.dart';
 import '../learning/correction_parser.dart';
@@ -43,6 +44,7 @@ import '../persona/appearance/appearance_evolution.dart';
 import '../persona/appearance/appearance_proposal.dart';
 import '../persona/appearance/appearance_state.dart';
 import '../persona/appearance/outfit_policy.dart';
+import '../persona/appearance/trend_outfit.dart';
 import '../persona/appearance/weather_outfit.dart';
 import '../persona/appearance/appearance_store.dart';
 import '../persona/emotion/emotion_machine.dart';
@@ -76,6 +78,7 @@ class AssistantKernel {
     AppearanceEvolution appearanceEvolution = const AppearanceEvolution(),
     SkillCurator? skillCurator,
     WeatherOutfitService? weatherOutfit,
+    TrendOutfitStore? trendStore,
     DateTime Function()? clock,
   }) : _gateway = gateway,
        _store = store,
@@ -106,6 +109,7 @@ class AssistantKernel {
        _appearanceEvolution = appearanceEvolution,
        _skillCurator = skillCurator,
        _weatherOutfit = weatherOutfit ?? WeatherOutfitService(),
+       _trendStore = trendStore ?? TrendOutfitStore(),
        _learning =
            learning ??
            LearningLoop(
@@ -264,6 +268,13 @@ class AssistantKernel {
 
   /// 待确认的天气装扮建议（UI 监听；内存态，生命周期只有当天）。
   final ValueNotifier<WeatherOutfitSuggestion?> weatherSuggestion =
+      ValueNotifier(null);
+
+  /// 趋势提案治理状态（周限/冷却）的持久层；数据可丢，坏档按空状态继续。
+  final TrendOutfitStore _trendStore;
+
+  /// 待确认的趋势装扮提案（UI 监听；内存态，确认/忽略/重启即清）。
+  final ValueNotifier<TrendOutfitProposal?> trendSuggestion =
       ValueNotifier(null);
 
   /// 用户点过「忽略」的日期（本地日键）：当日不再提同一建议。
@@ -769,6 +780,8 @@ class AssistantKernel {
     // 天气装扮（P2-3）：开关默认 off；开着才观察（内部还有 12h 缓存
     // 与日限兜底，这里无需再加节流）。
     unawaited(_checkWeatherOutfit());
+    // 趋势提案同样日频观察：周限与冷却在 _checkTrendOutfit 内部短路。
+    unawaited(_checkTrendOutfit());
     // 日终顺带检查待确认积压：重启（start 也走这里）与跨天各触达一次，
     // 冷却窗口防双发。放在最后：前面任何写入失败都不影响触达独立判断。
     notifyPendingConfirmations();
@@ -878,6 +891,94 @@ class AssistantKernel {
     }
     return const Success(null);
   }
+
+  /// 热门趋势装扮（P2-3b）：默认 off，每周最多 1 次提案，拒绝冷却 7 天。
+  /// 提示词只带季节背景——不含任何用户对话内容（计划的安全边界）。
+  Future<void> _checkTrendOutfit() async {
+    if (appearance.value.trendSource == AppearanceTrendSource.off) return;
+    final now = _clock();
+    final gate = _trendStore.load();
+    if (gate.lastProposedWeek == trendWeekKey(now)) return;
+    final cooldown = gate.rejectedUntilMs;
+    if (cooldown != null && now.millisecondsSinceEpoch < cooldown) return;
+    final route = await _gateway.router.resolve();
+    final provider = route?.provider;
+    if (provider == null || !provider.supportsReply) return;
+    if (!await provider.isReady) return;
+    final result = await provider
+        .chat(
+          LlmRequest(
+            system: '你是桌面宠物的装扮策划。结合季节氛围与流行色设计一个'
+                '围巾主题装扮。只输出 JSON：'
+                '{"theme":"主题，不超过12字","main":"#RRGGBB 围巾主色",'
+                '"trim":"#RRGGBB 点缀色","reason":"一句创意理由，不超过60字"}',
+            messages: [
+              LlmMessage.user(
+                '当前季节是${_seasonLabel(seasonOf(now))}，请给出一个装扮主题提案。',
+              ),
+            ],
+            thinkingTier: ThinkingTier.fast,
+          ),
+        )
+        .timeout(const Duration(seconds: 30));
+    if (result is Failure<LlmReply>) return;
+    final proposal = parseTrendProposal(
+      (result as Success<LlmReply>).value.content,
+      now,
+    );
+    if (proposal == null) return;
+    trendSuggestion.value = proposal;
+    // 提案成功才记周额度：LLM 坏输出不烧本周机会，
+    // 下次日终观察自然重试（日频触发，远低于计划的每日 3 次请求上限）。
+    _trendStore.save(gate.copyWith(lastProposedWeek: trendWeekKey(now)));
+  }
+
+  void acceptTrendOutfit() {
+    final proposal = trendSuggestion.value;
+    if (proposal == null) return;
+    // 配色先注册再换装：渲染层拿到的一定是已注册的合法图层。
+    registerTrendColors(proposal.outfit, proposal.main, proposal.trim);
+    trendSuggestion.value = null;
+    _applyOutfit(
+      proposal.outfit,
+      AppearanceOutfitSource.trend,
+      proposal.reason,
+    );
+    _host.showBubble('这身「${proposal.theme}」怎么样？');
+  }
+
+  void rejectTrendOutfit() {
+    if (trendSuggestion.value == null) return;
+    trendSuggestion.value = null;
+    // 拒绝 = 明确否定：7 天冷却落盘，同主题不再反复轰炸。
+    final until = _clock().add(trendRejectCooldown);
+    _trendStore.save(
+      _trendStore.load().copyWith(
+        rejectedUntilMs: until.millisecondsSinceEpoch,
+      ),
+    );
+  }
+
+  Result<void> setTrendSource(AppearanceTrendSource value) {
+    final next = appearance.value.copyWith(trendSource: value);
+    final saved = _appearanceStore.save(next, recordHistory: false);
+    if (saved is Failure<void>) {
+      debugPrint('[dafishu] 趋势装扮开关落盘失败：${saved.reason}');
+      return saved;
+    }
+    appearance.value = next;
+    if (value != AppearanceTrendSource.off) {
+      unawaited(_checkTrendOutfit());
+    }
+    return const Success(null);
+  }
+
+  String _seasonLabel(AppearanceSeason season) => switch (season) {
+    AppearanceSeason.spring => '春',
+    AppearanceSeason.summer => '夏',
+    AppearanceSeason.autumn => '秋',
+    AppearanceSeason.winter => '冬',
+  };
 
   String _localDayKey(DateTime now) => '${now.year}-${now.month}-${now.day}';
 
