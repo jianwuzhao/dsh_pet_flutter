@@ -55,9 +55,9 @@ void main() {
   });
 
   test('每日最多拉取 2 次，超限用旧缓存，跨天重置', () async {
-    // 从前夜 22:00 起步：两次 12h TTL 恰好都落在 11/4，第三次过期
-    // 仍在 11/4，被日限挡住；11/5 跨天重置后恢复拉取。
-    var now = DateTime(2026, 11, 3, 22);
+    // 从 11/4 凌晨起步：两次 12h TTL 都落在 11/4，第三次过期仍在 11/4，
+    // 被日限挡住；11/5 跨天重置后恢复拉取。
+    var now = DateTime(2026, 11, 4, 0, 30);
     var requests = 0;
     final service = WeatherOutfitService(
       client: MockClient((_) async {
@@ -68,12 +68,12 @@ void main() {
     );
 
     expect((await service.current())?.outfit, 'snow');
-    now = DateTime(2026, 11, 4, 10);
+    now = DateTime(2026, 11, 4, 13);
     expect((await service.current())?.outfit, 'snow');
     expect(requests, 2);
 
     // 同日第三次 TTL 过期：日限兜底，不发请求。
-    now = DateTime(2026, 11, 4, 22);
+    now = DateTime(2026, 11, 4, 23);
     expect((await service.current())?.outfit, 'snow');
     expect(requests, 2);
 
