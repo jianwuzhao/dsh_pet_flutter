@@ -24,6 +24,7 @@ import 'package:dsh_pet_flutter/learning/policy_store.dart';
 import 'package:dsh_pet_flutter/learning/reflection_store.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_state.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_store.dart';
+import 'package:dsh_pet_flutter/persona/appearance/avatar_memento.dart';
 import 'package:dsh_pet_flutter/persona/appearance/trend_outfit.dart';
 import 'package:dsh_pet_flutter/persona/appearance/weather_outfit.dart';
 import 'package:dsh_pet_flutter/persona/emotion/emotion_machine.dart';
@@ -172,9 +173,24 @@ void main() {
       trendStore: TrendOutfitStore(
         directory: Directory('${tmpDir.path}/profile'),
       ),
+      // 纪念头像治理同理：临时目录隔离，绝不碰真实用户目录。
+      mementoStore: AvatarMementoStore(
+        directory: Directory('${tmpDir.path}/profile'),
+      ),
       clock: () => now,
     );
   }
+
+  /// 除形态外都到顶：这样推演只能产出形态提案，便于验证提案制
+  /// （形象推演与纪念头像两组共用：后者要完整走一遍晋升路径）。
+  AppearanceState outlineAtCeiling() => AppearanceState(
+    motionSet: AppearanceMotionSet.lively,
+    expressionSet: AppearanceExpressionSet.bright,
+    accessory: AppearanceAccessory.hat,
+    bodyScale: appearanceMaxBodyScale,
+    revision: 1,
+    updatedAtMs: now.subtract(const Duration(hours: 13)).millisecondsSinceEpoch,
+  );
 
   setUp(() {
     tmpDir = Directory.systemTemp.createTempSync('assistant_kernel_test');
@@ -371,18 +387,6 @@ void main() {
   });
 
   group('形象推演接线', () {
-    /// 除形态外都到顶：这样推演只能产出形态提案，便于验证提案制。
-    AppearanceState outlineAtCeiling() => AppearanceState(
-      motionSet: AppearanceMotionSet.lively,
-      expressionSet: AppearanceExpressionSet.bright,
-      accessory: AppearanceAccessory.hat,
-      bodyScale: appearanceMaxBodyScale,
-      revision: 1,
-      updatedAtMs: now
-          .subtract(const Duration(hours: 13))
-          .millisecondsSinceEpoch,
-    );
-
     void seedOutline() => AppearanceStore(
       directory: Directory('${tmpDir.path}/profile'),
     ).save(outlineAtCeiling());
@@ -707,6 +711,77 @@ void main() {
         gate.rejectedUntilMs,
         now.add(trendRejectCooldown).millisecondsSinceEpoch,
       );
+    });
+  });
+
+  group('生成式头像里程碑（P2-5）', () {
+    // 走完「轮廓到顶 → 推演出提案 → 采纳」的完整晋升路径。
+    AssistantKernel promote() {
+      AppearanceStore(
+        directory: Directory('${tmpDir.path}/profile'),
+      ).save(outlineAtCeiling());
+      final kernel = buildKernel()..start();
+      for (var index = 0; index < 4; index++) {
+        kernel.applySignal(EmotionSignal.positiveFeedback);
+        kernel.acceptReply();
+      }
+      expect(kernel.evolveAppearance().proposal, isNotNull);
+      expect(kernel.acceptFormProposal(), isA<Success<AppearanceState>>());
+      return kernel;
+    }
+
+    test('未晋升没有入口：默认关，生成被拒且不产生任何文件', () async {
+      final kernel = buildKernel()..start();
+      expect(kernel.mementoEligible.value, isFalse);
+      final result = await kernel.generateMemento();
+      expect(result, isA<Failure<String>>());
+      expect(
+        Directory('${tmpDir.path}/profile')
+            .listSync()
+            .where((it) => it.path.contains('memento')),
+        isEmpty,
+      );
+    });
+
+    test('晋升解锁入口：生成 PNG 落盘、月键记账、气泡报告', () async {
+      final kernel = promote();
+      expect(kernel.mementoEligible.value, isTrue);
+
+      final result = await kernel.generateMemento();
+      expect(result, isA<Success<String>>());
+      final png = File('${tmpDir.path}/profile/memento_${mementoMonthKey(now)}.png');
+      expect(png.existsSync(), isTrue);
+      expect(png.lengthSync(), greaterThan(0));
+      // PNG 魔数头：确认是真 PNG 而不是空文件。
+      expect(png.readAsBytesSync().sublist(0, 4), [0x89, 0x50, 0x4E, 0x47]);
+      expect(
+        AvatarMementoStore(
+          directory: Directory('${tmpDir.path}/profile'),
+        ).load().lastGeneratedMonth,
+        mementoMonthKey(now),
+      );
+      // 生成即关入口；气泡把保存位置告诉用户。
+      expect(kernel.mementoEligible.value, isFalse);
+      expect(host.bubbles, isNotEmpty);
+      expect(host.bubbles.last, contains('纪念头像'));
+    });
+
+    test('月限 1 次：同月内再晋升也拦截', () async {
+      final first = promote();
+      expect(await first.generateMemento(), isA<Success<String>>());
+
+      // 同月内再次晋升（模拟用户快速进化）再生成：月限拦截并关入口。
+      final second = promote();
+      expect(second.mementoEligible.value, isTrue);
+      final blocked = await second.generateMemento();
+      expect(blocked, isA<Failure<String>>());
+      expect(second.mementoEligible.value, isFalse);
+      // 月内只有一个 PNG：不覆盖、不堆积。
+      final pngs = Directory('${tmpDir.path}/profile')
+          .listSync()
+          .where((it) => it.path.endsWith('.png'))
+          .toList();
+      expect(pngs, hasLength(1));
     });
   });
 

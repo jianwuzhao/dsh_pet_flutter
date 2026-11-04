@@ -13,6 +13,7 @@
 library;
 
 import 'dart:async';
+import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
 
@@ -47,6 +48,7 @@ import '../persona/appearance/outfit_policy.dart';
 import '../persona/appearance/trend_outfit.dart';
 import '../persona/appearance/weather_outfit.dart';
 import '../persona/appearance/appearance_store.dart';
+import '../persona/appearance/avatar_memento.dart';
 import '../persona/emotion/emotion_machine.dart';
 import '../persona/emotion/emotion_signal.dart';
 import '../persona/emotion/emotion_state.dart';
@@ -79,6 +81,7 @@ class AssistantKernel {
     SkillCurator? skillCurator,
     WeatherOutfitService? weatherOutfit,
     TrendOutfitStore? trendStore,
+    AvatarMementoStore? mementoStore,
     DateTime Function()? clock,
   }) : _gateway = gateway,
        _store = store,
@@ -110,6 +113,7 @@ class AssistantKernel {
        _skillCurator = skillCurator,
        _weatherOutfit = weatherOutfit ?? WeatherOutfitService(),
        _trendStore = trendStore ?? TrendOutfitStore(),
+       _mementoStore = mementoStore ?? AvatarMementoStore(),
        _learning =
            learning ??
            LearningLoop(
@@ -272,6 +276,12 @@ class AssistantKernel {
 
   /// 趋势提案治理状态（周限/冷却）的持久层；数据可丢，坏档按空状态继续。
   final TrendOutfitStore _trendStore;
+
+  final AvatarMementoStore _mementoStore;
+
+  /// 纪念头像入口是否开放（P2-5）：只在 form 晋升后置位，生成或月限
+  /// 拦截后关闭；内存态——重启后没有新晋升就没有入口（计划即如此约束）。
+  final ValueNotifier<bool> mementoEligible = ValueNotifier(false);
 
   /// 待确认的趋势装扮提案（UI 监听；内存态，确认/忽略/重启即清）。
   final ValueNotifier<TrendOutfitProposal?> trendSuggestion =
@@ -1286,6 +1296,8 @@ class AssistantKernel {
     _formProposal = null;
     appearance.value = next;
     _appearanceReason = '已采纳形态提案：${proposal.targetForm.name}';
+    // 晋升即解锁纪念头像入口（P2-5）：生成仍需用户在设置页主动点击。
+    mementoEligible.value = true;
     return Success(next);
   }
 
@@ -1305,6 +1317,53 @@ class AssistantKernel {
     return result;
   }
 
+  /// 生成晋升纪念头像（P2-5）：离线程序化绘制，月限 1 次，成功后
+  /// 落 PNG 到档案目录并在气泡里报告路径（用户能立刻找到图）。
+  Future<Result<String>> generateMemento() async {
+    if (!mementoEligible.value) {
+      return const Failure(
+        'memento.not-eligible',
+        '尚未晋升新形态，暂无纪念头像可生成',
+      );
+    }
+    final now = _clock();
+    final month = mementoMonthKey(now);
+    final gate = _mementoStore.load();
+    if (gate.lastGeneratedMonth == month) {
+      // 月限拦截同样关闭入口：下月新晋升前不再打扰。
+      mementoEligible.value = false;
+      return const Failure('memento.monthly-limit', '本月已生成过，下月晋升后再来');
+    }
+    try {
+      final recorder = ui.PictureRecorder();
+      paintMemento(
+        ui.Canvas(recorder),
+        const ui.Size(512, 512),
+        appearance.value,
+        now,
+      );
+      final image = await recorder.endRecording().toImage(512, 512);
+      final bytes = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (bytes == null) {
+        return const Failure('memento.encode-failed', '纪念头像编码失败');
+      }
+      final file = _mementoStore.pngFileFor(month);
+      file.writeAsBytesSync(bytes.buffer.asUint8List(), flush: true);
+      final saved = _mementoStore.save(
+        gate.copyWith(lastGeneratedMonth: month),
+      );
+      if (saved is Failure<void>) {
+        return Failure(saved.code, saved.reason);
+      }
+      mementoEligible.value = false;
+      _host.showBubble('新形象纪念头像已存好（${file.path}）');
+      return Success(file.path);
+    } on Object catch (error) {
+      // 无损降级：画不出图不影响形象档案与任何既有行为。
+      return Failure('memento.render-failed', '纪念头像生成失败：$error');
+    }
+  }
+
   /// 24h 内的某类反馈条数：只读学习流水，不产生新样本。
   int _feedbackCount(FeedbackVerdict verdict, DateTime now) {
     final since = now.subtract(const Duration(hours: 24));
@@ -1322,6 +1381,9 @@ class AssistantKernel {
     _vectors.dispose();
     emotion.dispose();
     appearance.dispose();
+    mementoEligible.dispose();
+    trendSuggestion.dispose();
+    weatherSuggestion.dispose();
   }
 
   /// 状态机同步 + 换态时的被动表达（纯动画，不说话、不耗预算）。

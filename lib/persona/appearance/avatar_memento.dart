@@ -69,6 +69,10 @@ class AvatarMementoStore {
       return Failure('memento.write-failed', '纪念头像治理状态写入失败：$error');
     }
   }
+
+  /// 纪念头像 PNG 的落点：月限保证月内唯一，文件名按月键不覆盖。
+  File pngFileFor(String month) =>
+      File('${_directory.path}${Platform.pathSeparator}memento_$month.png');
 }
 
 /// 调色板 → (身体色, 腹色)：纪念头像自含映射，与设置页预览各自演化。
