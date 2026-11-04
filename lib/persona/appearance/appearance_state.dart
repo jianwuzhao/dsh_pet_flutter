@@ -24,6 +24,9 @@ enum AppearanceExpressionSet { soft, bright, cool, shy }
 /// 装扮来源：这次 outfit 是谁定的（可解释 + 防止趋势装扮伪装成季节）。
 enum AppearanceOutfitSource { builtin, seasonal, festive, weather, trend, user }
 
+/// 天气装扮来源（P2-3 决策点 D4）：off 默认，显式 opt-in 才发网络请求。
+enum AppearanceWeatherSource { off, builtin }
+
 /// 默认装扮（居家）：没有情境信号时的兜底。
 const String defaultOutfit = 'home';
 
@@ -67,6 +70,7 @@ class AppearanceState {
     this.expressionSet = AppearanceExpressionSet.soft,
     this.outfit = defaultOutfit,
     this.outfitSource = AppearanceOutfitSource.builtin,
+    this.weatherSource = AppearanceWeatherSource.off,
     this.frozen = false,
     this.updatedAtMs = 0,
   });
@@ -88,6 +92,9 @@ class AppearanceState {
   /// 装扮来源：季节/节令/天气/热门/用户手选，展示「为什么换装」用。
   final AppearanceOutfitSource outfitSource;
 
+  /// 天气装扮开关：off 默认（隐私优先），开启后才允许拉取天气。
+  final AppearanceWeatherSource weatherSource;
+
   /// 冻结后不再接受任何自动演化（用户手动改不受限）。
   final bool frozen;
 
@@ -108,6 +115,7 @@ class AppearanceState {
     AppearanceExpressionSet? expressionSet,
     String? outfit,
     AppearanceOutfitSource? outfitSource,
+    AppearanceWeatherSource? weatherSource,
     bool? frozen,
     int? updatedAtMs,
   }) => AppearanceState(
@@ -121,6 +129,7 @@ class AppearanceState {
     // 非法装扮名一律回落默认：构造端也不给自由字符串留口子。
     outfit: isValidOutfitName(outfit) ? outfit! : this.outfit,
     outfitSource: outfitSource ?? this.outfitSource,
+    weatherSource: weatherSource ?? this.weatherSource,
     frozen: frozen ?? this.frozen,
     updatedAtMs: updatedAtMs ?? this.updatedAtMs,
   );
@@ -145,6 +154,7 @@ class AppearanceState {
     'expressionSet': expressionSet.name,
     'outfit': outfit,
     'outfitSource': outfitSource.name,
+    'weatherSource': weatherSource.name,
     'frozen': frozen,
     // 写 ISO 字符串便于人工排查；读取同时兼容毫秒整数。
     'updatedAt': updatedAt.toIso8601String(),
@@ -174,6 +184,9 @@ class AppearanceState {
     outfitSource:
         _enumOf(AppearanceOutfitSource.values, json['outfitSource']) ??
         AppearanceOutfitSource.builtin,
+    weatherSource:
+        _enumOf(AppearanceWeatherSource.values, json['weatherSource']) ??
+        AppearanceWeatherSource.off,
     frozen: json['frozen'] as bool? ?? false,
     updatedAtMs: _timestampOf(json['updatedAt']),
   );
