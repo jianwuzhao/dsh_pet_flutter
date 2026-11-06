@@ -1,9 +1,7 @@
 /// 宠物绘制：把当前帧（以及淡出中的旧帧）画进宠物矩形，支持镜像与交叉淡入。
 ///
 /// 只做“把 ui.Image 画出来”，选择哪一帧、何时切换都在 PetController。
-/// 这里不做任何程序化改色或叠加：底图是带明暗层次的成品立绘，滤镜与
-/// 色块都会破坏画风。形象演化走「素材包」——控制器选片时换资产路径，
-/// 渲染层永远只画原汁原味的帧。
+/// 可选 rig 按规范坐标合成槽位；未配置时继续播放素材帧。
 library;
 
 import 'dart:ui' as ui;
@@ -33,6 +31,17 @@ class _PetPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final rig = controller.rigPlayer;
+    if (rig != null) {
+      canvas.save();
+      if (controller.facing < 0) {
+        canvas.translate(size.width, 0);
+        canvas.scale(-1, 1);
+      }
+      rig.paint(canvas, size);
+      canvas.restore();
+      return;
+    }
     final progress = controller.fadeProgress;
     final outgoing = controller.fadeFrom;
     if (outgoing != null) _paintFrame(canvas, outgoing, size, 1 - progress);

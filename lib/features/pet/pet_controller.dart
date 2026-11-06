@@ -22,6 +22,7 @@ import 'behavior/pose_machine.dart';
 import 'behavior/roaming.dart';
 import 'hit_test.dart';
 import 'render/sprite_player.dart';
+import 'rig/rig.dart';
 import 'render/wardrobe.dart';
 
 enum PetPanel { menu, chat, settings }
@@ -82,6 +83,8 @@ class PetController {
     bodyScaleNotifier = ValueNotifier<double>(_bodyScale);
     _ticker = Ticker(_onTick);
   }
+
+  RigPlayer? rigPlayer;
 
   final PetConfig pet;
   final PhysicsParams physics;
@@ -452,6 +455,8 @@ class PetController {
     _lastElapsed = elapsed;
     if (previous == null) return;
     final dt = math.min((elapsed - previous).inMicroseconds / 1e6, 0.05);
+    final rig = rigPlayer;
+    if (rig != null) rig.seconds = (rig.seconds + dt) % rig.motion.duration;
     if (dt <= 0) return;
     final viewport = _viewport;
     if (viewport == null) return;
@@ -1175,10 +1180,9 @@ class PetController {
 
   /// 形象变体素材解析：变体包里有这个动作才用包内素材，否则默认包。
   /// 部分包（只生成了部分动作）由此自然回退，不会出现「断片」。
-  String _assetPathFor(String name) =>
-      wardrobe.has(_appearanceVariant, name)
-          ? 'assets/appearance/$_appearanceVariant/$name.webp'
-          : 'assets/animations/$name.webp';
+  String _assetPathFor(String name) => wardrobe.has(_appearanceVariant, name)
+      ? 'assets/appearance/$_appearanceVariant/$name.webp'
+      : 'assets/animations/$name.webp';
 
   /// 切换形象变体（来自形象状态：装扮优先、配色兜底）。
   /// 换装即刻可见：当前动画在新解析下素材路径变了就原地重启同一动作；
@@ -1204,10 +1208,7 @@ class PetController {
       return;
     }
 
-    final next = SpritePlayer(
-      assetPath: _assetPathFor(name),
-      loop: loop,
-    );
+    final next = SpritePlayer(assetPath: _assetPathFor(name), loop: loop);
     // 旧帧 clone 一份给淡出用：直接持有旧 player 的 image 会被它的 dispose 提前释放。
     final outgoingImage = current?.image?.clone();
     current?.dispose();
