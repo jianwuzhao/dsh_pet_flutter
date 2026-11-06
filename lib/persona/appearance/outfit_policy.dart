@@ -3,8 +3,7 @@
 /// 与人格驱动推演（AppearanceEvolution）是两条独立轨道：
 /// - 优先级：节令 > 天气 > 季节；每次只决定 outfit 一个维度；
 /// - 季节/节令换装全自动（装饰层低风险，冻结兜底可停）；
-///   天气与热门装扮只产生提案，用户确认后才经 [AppearanceSignals.weather]
-///   参与决策（P2-3 接线）；
+///   天气由开启后的新鲜观测提供，热门装扮由用户单独确认；
 /// - 时钟回拨等日期异常保持现状不切换，避免来回跳装。
 library;
 
@@ -102,8 +101,9 @@ String? festivalOf(DateTime now) {
 }
 
 bool _withinWindow(DateTime now, int month, int day) {
-  final target = DateTime(now.year, month, day);
-  return (now.difference(target).inDays).abs() <= festivalWindowDays;
+  final target = DateTime.utc(now.year, month, day);
+  final today = DateTime.utc(now.year, now.month, now.day);
+  return today.difference(target).inDays.abs() <= festivalWindowDays;
 }
 
 /// 换装决策结果：changed=false 时 outfit 沿用 current（调用方直接忽略）。
@@ -124,7 +124,7 @@ class OutfitDecision {
 /// 决策今天的装扮。只动 outfit/outfitSource 一维，其余维度原样保留。
 ///
 /// signals 里的 festival/season 通常留空由本地日期计算兜底；
-/// weather 只在用户确认过天气提案的当天由内核传入。
+/// weather 由内核在天气开关开启且观测有效时传入。
 OutfitDecision decideOutfit(AppearanceState current, AppearanceSignals signals) {
   if (current.frozen) {
     return OutfitDecision(
@@ -162,7 +162,7 @@ OutfitDecision decideOutfit(AppearanceState current, AppearanceSignals signals) 
       outfit: festival,
       source: AppearanceOutfitSource.festive,
       changed: true,
-      reason: '临近${_festivalLabel(festival)}，换上节令装扮',
+      reason: '临近${outfitLabel(festival)}，换上节令装扮',
     );
   }
   final weatherActive = weather != null && isValidOutfitName(weather);
@@ -172,7 +172,7 @@ OutfitDecision decideOutfit(AppearanceState current, AppearanceSignals signals) 
       outfit: weather,
       source: AppearanceOutfitSource.weather,
       changed: true,
-      reason: '按今日天气（${_festivalLabel(weather)}）换装',
+      reason: '按今日天气（${outfitLabel(weather)}）换装',
     );
   }
   final seasonalOutfit = season.name;
@@ -181,14 +181,15 @@ OutfitDecision decideOutfit(AppearanceState current, AppearanceSignals signals) 
       outfit: seasonalOutfit,
       source: AppearanceOutfitSource.seasonal,
       changed: true,
-      reason: '${_festivalLabel(seasonalOutfit)}到了，换上应季装扮',
+      reason: '${outfitLabel(seasonalOutfit)}到了，换上应季装扮',
     );
   }
   return keep();
 }
 
 /// 装扮名转展示文案；未知名原样返回（trend-* 提案自带主题名）。
-String _festivalLabel(String outfit) => switch (outfit) {
+String outfitLabel(String outfit) => switch (outfit) {
+  'home' => '居家',
   'newyear' => '春节',
   'midautumn' => '中秋',
   'halloween' => '万圣夜',

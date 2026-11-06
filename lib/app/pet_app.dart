@@ -175,10 +175,9 @@ class _PetAppState extends State<PetApp> {
       onEvolveAppearance: _kernel?.evolveAppearance,
       onRollbackAppearance: _kernel?.rollbackAppearance,
       onFreezeAppearance: _kernel?.setAppearanceFrozen,
-      weatherSuggestion: _kernel?.weatherSuggestion,
+      appearanceUpdates: _kernel?.appearance,
       onWeatherSourceChanged: _kernel?.setWeatherSource,
-      onAcceptWeatherOutfit: _kernel?.acceptWeatherOutfit,
-      onDismissWeatherOutfit: _kernel?.dismissWeatherOutfit,
+      onOutfitChanged: _kernel?.setManualOutfit,
       trendSuggestion: _kernel?.trendSuggestion,
       onTrendSourceChanged: _kernel?.setTrendSource,
       onAcceptTrendOutfit: _kernel?.acceptTrendOutfit,
@@ -996,8 +995,7 @@ class _PetExpressionHost extends ExpressionHost {
   );
 
   @override
-  void openPendingConfirmations() =>
-      _controller.openPanel(PetPanel.settings);
+  void openPendingConfirmations() => _controller.openPanel(PetPanel.settings);
 }
 
 class _ErrorView extends StatelessWidget {

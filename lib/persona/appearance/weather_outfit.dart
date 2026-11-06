@@ -1,7 +1,7 @@
 /// 天气装扮服务（P2-3）：显式开启后才工作，失败永远静默。
 ///
 /// 免费无 Key API（wttr.in ?format=j1）+ 12h 缓存 + 每日最多 2 次拉取：
-/// 天气只是装扮建议的输入之一，网络缺席或超限都不影响任何既有行为。
+/// 天气只是自动换装的输入之一，网络缺席或超限都不影响任何既有行为。
 library;
 
 import 'dart:async';
@@ -17,28 +17,6 @@ class WeatherOutfit {
   final String? outfit;
   final DateTime fetchedAt;
 }
-
-/// 待用户确认的天气装扮建议（内存态：生命周期只有当天，重启即清，
-/// 不值得为它持久化）。
-class WeatherOutfitSuggestion {
-  const WeatherOutfitSuggestion({
-    required this.outfit,
-    required this.reason,
-    required this.suggestedAt,
-  });
-
-  final String outfit;
-  final String reason;
-  final DateTime suggestedAt;
-}
-
-/// 天气装扮名的中文短语（建议理由与 UI 共用）。
-String weatherOutfitLabel(String outfit) => switch (outfit) {
-  'rain' => '雨具装扮',
-  'snow' => '雪装',
-  'sunny' => '晴日装',
-  _ => '$outfit 装扮',
-};
 
 class WeatherOutfitService {
   WeatherOutfitService({
@@ -62,6 +40,8 @@ class WeatherOutfitService {
   static const Duration requestTimeout = Duration(seconds: 8);
 
   WeatherOutfit? _cached;
+  DateTime? _lastAttempt;
+  static const _retryInterval = Duration(minutes: 30);
 
   /// 日限计数按本地日期翻篇；跨天自动重置。
   String _fetchedDay = '';
@@ -71,7 +51,8 @@ class WeatherOutfitService {
   Future<WeatherOutfit?> current() async {
     final now = _clock();
     final cached = _cached;
-    if (cached != null && now.difference(cached.fetchedAt) < cacheTtl) {
+    final age = cached == null ? null : now.difference(cached.fetchedAt);
+    if (age != null && !age.isNegative && age < cacheTtl) {
       return cached;
     }
     final dayKey = '${now.year}-${now.month}-${now.day}';
@@ -80,6 +61,13 @@ class WeatherOutfitService {
       _fetchedToday = 0;
     }
     if (_fetchedToday >= dailyFetchLimit) return cached;
+    final lastAttempt = _lastAttempt;
+    if (lastAttempt != null &&
+        !now.isBefore(lastAttempt) &&
+        now.difference(lastAttempt) < _retryInterval) {
+      return cached;
+    }
+    _lastAttempt = now;
     _fetchedToday++;
     try {
       final response = await _client.get(_endpoint).timeout(requestTimeout);
@@ -89,7 +77,7 @@ class WeatherOutfitService {
         fetchedAt: now,
       );
     } catch (_) {
-      // 静默失败：装扮建议缺席，宠物行为不受影响。
+      // 静默失败：天气信号缺席，宠物行为不受影响。
       return cached;
     }
   }

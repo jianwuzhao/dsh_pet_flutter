@@ -25,7 +25,6 @@ import '../persona/appearance/appearance_evolution.dart';
 import '../persona/appearance/appearance_proposal.dart';
 import '../persona/appearance/appearance_state.dart';
 import '../persona/appearance/trend_outfit.dart';
-import '../persona/appearance/weather_outfit.dart';
 import '../persona/memory/memory_store.dart';
 import '../persona/persona_dna.dart';
 import '../persona/profile_store.dart';
@@ -64,10 +63,9 @@ class PetStage extends StatefulWidget {
     this.onEvolveAppearance,
     this.onRollbackAppearance,
     this.onFreezeAppearance,
-    this.weatherSuggestion,
+    this.appearanceUpdates,
     this.onWeatherSourceChanged,
-    this.onAcceptWeatherOutfit,
-    this.onDismissWeatherOutfit,
+    this.onOutfitChanged,
     this.trendSuggestion,
     this.onTrendSourceChanged,
     this.onAcceptTrendOutfit,
@@ -106,12 +104,11 @@ class PetStage extends StatefulWidget {
   final Result<AppearanceState> Function()? onRollbackAppearance;
   final Result<void> Function(bool frozen)? onFreezeAppearance;
 
-  /// 天气装扮（P2-3）：建议流 + 开关/确认/忽略入口，纯透传。
-  final ValueListenable<WeatherOutfitSuggestion?>? weatherSuggestion;
+  /// 当前形象更新，供设置页实时显示正在使用的装扮。
+  final ValueListenable<AppearanceState>? appearanceUpdates;
+  final Result<void> Function(String? outfit)? onOutfitChanged;
   final Result<void> Function(AppearanceWeatherSource value)?
   onWeatherSourceChanged;
-  final VoidCallback? onAcceptWeatherOutfit;
-  final VoidCallback? onDismissWeatherOutfit;
 
   /// 热门趋势装扮（P2-3b）：提案流 + 开关/接受/拒绝入口，纯透传。
   final ValueListenable<TrendOutfitProposal?>? trendSuggestion;
@@ -329,13 +326,12 @@ class _PetStageState extends State<PetStage> {
                 tailDown: !below,
                 onDismiss: dismissible ? _dismissCare : null,
                 // 动作点击：先收气泡再执行（打开面板等），与关闭钮同语义。
-                onOpen:
-                    state.onTap == null
-                        ? null
-                        : () {
-                            controller.hideBubble();
-                            state.onTap!();
-                          },
+                onOpen: state.onTap == null
+                    ? null
+                    : () {
+                        controller.hideBubble();
+                        state.onTap!();
+                      },
               ),
             ),
           ),
@@ -402,6 +398,13 @@ class _PetStageState extends State<PetStage> {
             privacy: widget.privacy,
             emotion: widget.emotion,
             appearance: widget.appearance,
+            petPreview: FittedBox(
+              fit: BoxFit.contain,
+              child: SizedBox.fromSize(
+                size: controller.petSize,
+                child: PetView(controller: controller),
+              ),
+            ),
             appearanceReason: widget.appearanceReason,
             appearanceProposal: widget.appearanceProposal,
             onAcceptFormProposal: widget.onAcceptFormProposal,
@@ -425,10 +428,9 @@ class _PetStageState extends State<PetStage> {
             onEvolveAppearance: widget.onEvolveAppearance,
             onRollbackAppearance: widget.onRollbackAppearance,
             onFreezeAppearance: widget.onFreezeAppearance,
-            weatherSuggestion: widget.weatherSuggestion,
+            appearanceUpdates: widget.appearanceUpdates,
             onWeatherSourceChanged: widget.onWeatherSourceChanged,
-            onAcceptWeatherOutfit: widget.onAcceptWeatherOutfit,
-            onDismissWeatherOutfit: widget.onDismissWeatherOutfit,
+            onOutfitChanged: widget.onOutfitChanged,
             trendSuggestion: widget.trendSuggestion,
             onTrendSourceChanged: widget.onTrendSourceChanged,
             onAcceptTrendOutfit: widget.onAcceptTrendOutfit,

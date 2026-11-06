@@ -55,7 +55,7 @@ class AppearanceSignals {
   final int correctedCount;
 
   /// 情境信号（P2-1）：可选，留空时由本地日期计算兜底；
-  /// weather 仅在用户确认过天气提案的当天由内核传入（提案制）。
+  /// weather 由内核提供当前有效的天气观测。
   final AppearanceSeason? season;
   final String? solarTerm;
   final String? festival;

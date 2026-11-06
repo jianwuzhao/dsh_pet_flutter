@@ -136,8 +136,8 @@ class AssistantKernel {
     _vectorSync = MemoryVectorSync(
       memory: _memory,
       vectors: _vectors,
-      embeddingLoader:
-          () => embeddingLoader?.call() ?? const DisabledEmbeddingProvider(),
+      embeddingLoader: () =>
+          embeddingLoader?.call() ?? const DisabledEmbeddingProvider(),
     );
     _conversation = ConversationService(
       // 取值函数而不是值：配置热替换换掉 gateway.router 后仍能拿到最新。
@@ -170,9 +170,8 @@ class AssistantKernel {
               final curator = _skillCurator;
               final active = curator.active;
               if (active.isEmpty) return null;
-              final ranked = [...active]..sort(
-                  (a, b) => b.useCount.compareTo(a.useCount),
-                );
+              final ranked = [...active]
+                ..sort((a, b) => b.useCount.compareTo(a.useCount));
               final hits = curator.library.match(prompt);
               if (hits.isNotEmpty) curator.library.markUsed(hits);
               return SkillInjection(
@@ -183,18 +182,15 @@ class AssistantKernel {
       // 语义召回（P1-4）：提供者现取（配置热替换生效）；embed 失败在
       // provider 内折叠成 null，这里再折叠成空语义结果，contextFor
       // 回落关键词命中——语义层永远不挡对话主路径。
-      semanticRecallLoader:
-          embeddingLoader == null
-              ? null
-              : (prompt) async {
-                  final embedder = embeddingLoader();
-                  if (embedder == null) return null;
-                  final vector = await embedder.embed(prompt);
-                  if (vector == null) return null;
-                  return [
-                    for (final hit in _vectors.nearest(vector)) hit.id,
-                  ];
-                },
+      semanticRecallLoader: embeddingLoader == null
+          ? null
+          : (prompt) async {
+              final embedder = embeddingLoader();
+              if (embedder == null) return null;
+              final vector = await embedder.embed(prompt);
+              if (vector == null) return null;
+              return [for (final hit in _vectors.nearest(vector)) hit.id];
+            },
       clock: _clock,
       rounds: conversationRounds,
     );
@@ -215,7 +211,8 @@ class AssistantKernel {
           final result = await provider
               .chat(
                 LlmRequest(
-                  system: '你是会话摘要器。把新增对话合并进现有摘要，输出一段不超过 '
+                  system:
+                      '你是会话摘要器。把新增对话合并进现有摘要，输出一段不超过 '
                       '200 字的中文摘要：保留用户的稳定偏好、关键事实与未完结事项，'
                       '丢弃寒暄与重复。只输出摘要正文，不要解释或提问。',
                   messages: [
@@ -269,9 +266,9 @@ class AssistantKernel {
   /// 天气装扮服务（P2-3）：默认关闭，开启后才可能发网络请求。
   final WeatherOutfitService _weatherOutfit;
 
-  /// 待确认的天气装扮建议（UI 监听；内存态，生命周期只有当天）。
-  final ValueNotifier<WeatherOutfitSuggestion?> weatherSuggestion =
-      ValueNotifier(null);
+  bool _checkingWeather = false;
+  bool _disposed = false;
+  String? _manualOutfitDay;
 
   /// 趋势提案治理状态（周限/冷却）的持久层；数据可丢，坏档按空状态继续。
   final TrendOutfitStore _trendStore;
@@ -283,11 +280,9 @@ class AssistantKernel {
   final ValueNotifier<bool> mementoEligible = ValueNotifier(false);
 
   /// 待确认的趋势装扮提案（UI 监听；内存态，确认/忽略/重启即清）。
-  final ValueNotifier<TrendOutfitProposal?> trendSuggestion =
-      ValueNotifier(null);
-
-  /// 用户点过「忽略」的日期（本地日键）：当日不再提同一建议。
-  String _weatherOutfitDismissedDay = '';
+  final ValueNotifier<TrendOutfitProposal?> trendSuggestion = ValueNotifier(
+    null,
+  );
 
   /// 常驻索引行数：进模型视野的名额靠注入次数竞争（useCount Top N）。
   static const int skillIndexLines = 5;
@@ -523,9 +518,7 @@ class AssistantKernel {
         case Success(value: final drafts):
           final added = _evolution.proposeTaskLessons(
             drafts,
-            originReflectionIds: [
-              for (final entry in recent) entry.id,
-            ],
+            originReflectionIds: [for (final entry in recent) entry.id],
           );
           _lastTaskSynthesisAt = _clock();
           _lastTaskSynthesisCount = count;
@@ -673,6 +666,7 @@ class AssistantKernel {
     _lastActivityAt = _clock();
     emotion.value = _emotion.view;
     _housekeeping();
+    unawaited(_refreshEnvironmentOutfit());
     _decayTimer?.cancel();
     _decayTimer = Timer.periodic(
       const Duration(seconds: 60),
@@ -783,12 +777,6 @@ class AssistantKernel {
     unawaited(_vectorSync.run());
     _persistIntimacy();
     _recordMetrics();
-    // 跨天顺带做情境换装：季节/节令分界线常在夜间跨过，
-    // 挂在这里保证每天最多评估一次（装扮是装饰层，无需更细粒度）。
-    _refreshOutfit();
-    // 天气装扮（P2-3）：开关默认 off；开着才观察（内部还有 12h 缓存
-    // 与日限兜底，这里无需再加节流）。
-    unawaited(_checkWeatherOutfit());
     // 趋势提案同样日频观察：周限与冷却在 _checkTrendOutfit 内部短路。
     unawaited(_checkTrendOutfit());
     // 日终顺带检查待确认积压：重启（start 也走这里）与跨天各触达一次，
@@ -830,7 +818,10 @@ class AssistantKernel {
     AppearanceOutfitSource source,
     String reason,
   ) {
-    final next = appearance.value.copyWith(outfit: outfit, outfitSource: source);
+    final next = appearance.value.copyWith(
+      outfit: outfit,
+      outfitSource: source,
+    );
     final saved = _appearanceStore.save(next, recordHistory: false);
     if (saved is Failure<void>) {
       debugPrint('[dafishu] 换装落盘失败：${saved.reason}');
@@ -840,64 +831,64 @@ class AssistantKernel {
     _appearanceReason = reason;
   }
 
-  /// 拉天气并给出换装建议（P2-3）：开关关着或用户当日点过忽略时
-  /// 直接短路；建议只是提案，换不换由用户确认。
-  Future<void> _checkWeatherOutfit() async {
-    if (appearance.value.weatherSource == AppearanceWeatherSource.off) return;
-    final now = _clock();
-    if (_localDayKey(now) == _weatherOutfitDismissedDay) return;
-    final observed = await _weatherOutfit.current();
-    final outfit = observed?.outfit;
-    if (outfit == null || outfit == appearance.value.outfit) {
-      // 天气不值得换装或已经穿着：清掉旧建议，不打扰。
-      weatherSuggestion.value = null;
+  /// 启动与每分钟刷新。天气请求由服务缓存及限流，失败时回到日期装扮。
+  Future<void> _refreshEnvironmentOutfit() async {
+    if (_disposed || appearance.value.frozen) return;
+    if (appearance.value.outfitSource == AppearanceOutfitSource.user) return;
+    if (_manualOutfitDay == _localDayKey(_clock())) return;
+    if (appearance.value.weatherSource == AppearanceWeatherSource.off) {
+      _refreshOutfit();
       return;
     }
-    weatherSuggestion.value = WeatherOutfitSuggestion(
-      outfit: outfit,
-      reason: '今日${switch (outfit) {
-        'rain' => '有雨',
-        'snow' => '有雪',
-        'sunny' => '晴朗',
-        _ => '',
-      }}，建议换上${weatherOutfitLabel(outfit)}？',
-      suggestedAt: now,
-    );
+    if (_checkingWeather) return;
+    _checkingWeather = true;
+    try {
+      final observed = await _weatherOutfit.current();
+      if (_disposed ||
+          appearance.value.frozen ||
+          appearance.value.outfitSource == AppearanceOutfitSource.user ||
+          appearance.value.weatherSource == AppearanceWeatherSource.off ||
+          _manualOutfitDay == _localDayKey(_clock())) {
+        return;
+      }
+      final age = observed == null
+          ? null
+          : _clock().difference(observed.fetchedAt);
+      final fresh =
+          age != null && !age.isNegative && age < WeatherOutfitService.cacheTtl;
+      _refreshOutfit(weather: fresh ? observed?.outfit : null);
+    } finally {
+      _checkingWeather = false;
+    }
   }
 
-  /// 用户确认天气装扮：显式意图直接换，不再经情境优先级仲裁
-  /// （节令窗口也不该拦住用户刚点的确认）。
-  void acceptWeatherOutfit() {
-    final suggestion = weatherSuggestion.value;
-    if (suggestion == null) return;
-    weatherSuggestion.value = null;
-    _applyOutfit(
-      suggestion.outfit,
-      AppearanceOutfitSource.weather,
-      suggestion.reason,
-    );
-    _host.showBubble('换好了，这身应景吧');
-  }
-
-  /// 用户忽略天气装扮：当日不再提（次日天气若仍不同会再建议）。
-  void dismissWeatherOutfit() {
-    weatherSuggestion.value = null;
-    _weatherOutfitDismissedDay = _localDayKey(_clock());
-  }
-
-  /// 天气装扮开关（默认 off，决策点 D4）：开启后立刻观察一次天气。
-  /// 返回落盘结果：设置页据此决定要不要翻转开关回显。
+  /// 开启后按当前天气自动换装，关闭后恢复日期装扮。
   Result<void> setWeatherSource(AppearanceWeatherSource value) {
     final next = appearance.value.copyWith(weatherSource: value);
     final saved = _appearanceStore.save(next, recordHistory: false);
-    if (saved is Failure<void>) {
-      debugPrint('[dafishu] 天气装扮开关落盘失败：${saved.reason}');
-      return saved;
-    }
+    if (saved is Failure<void>) return saved;
     appearance.value = next;
-    if (value != AppearanceWeatherSource.off) {
-      unawaited(_checkWeatherOutfit());
+    unawaited(_refreshEnvironmentOutfit());
+    return const Success(null);
+  }
+
+  /// A manual garment survives restarts and in-flight weather responses.
+  /// Null releases the choice back to the environment policy.
+  Result<void> setManualOutfit(String? outfit) {
+    if (outfit != null && outfit != 'home' && outfit != 'rain') {
+      return const Failure('appearance.outfit-unavailable', '该服装尚未制作');
     }
+    final next = appearance.value.copyWith(
+      outfit: outfit ?? 'home',
+      outfitSource: outfit == null
+          ? AppearanceOutfitSource.builtin
+          : AppearanceOutfitSource.user,
+    );
+    final saved = _appearanceStore.save(next, recordHistory: false);
+    if (saved is Failure<void>) return saved;
+    appearance.value = next;
+    _manualOutfitDay = null;
+    if (outfit == null) unawaited(_refreshEnvironmentOutfit());
     return const Success(null);
   }
 
@@ -917,7 +908,8 @@ class AssistantKernel {
     final result = await provider
         .chat(
           LlmRequest(
-            system: '你是桌面宠物的装扮策划。结合季节氛围与流行色设计一个'
+            system:
+                '你是桌面宠物的装扮策划。结合季节氛围与流行色设计一个'
                 '围巾主题装扮。只输出 JSON：'
                 '{"theme":"主题，不超过12字","main":"#RRGGBB 围巾主色",'
                 '"trim":"#RRGGBB 点缀色","reason":"一句创意理由，不超过60字"}',
@@ -951,6 +943,7 @@ class AssistantKernel {
       AppearanceOutfitSource.trend,
       proposal.reason,
     );
+    _manualOutfitDay = _localDayKey(_clock());
     _host.showBubble('这身「${proposal.theme}」怎么样？');
   }
 
@@ -1060,14 +1053,14 @@ class AssistantKernel {
               event.verdict == FeedbackVerdict.accepted,
         )
         .length;
-    final replyAcceptRate = replyTotal == 0
-        ? -1.0
-        : replyAccepted / replyTotal;
+    final replyAcceptRate = replyTotal == 0 ? -1.0 : replyAccepted / replyTotal;
 
     final correctedTotal = recent
         .where((event) => event.verdict == FeedbackVerdict.corrected)
         .length;
-    final correctionRate = recent.isEmpty ? -1.0 : correctedTotal / recent.length;
+    final correctionRate = recent.isEmpty
+        ? -1.0
+        : correctedTotal / recent.length;
 
     final tasks = _evolution?.reflections
         .load()
@@ -1078,24 +1071,20 @@ class AssistantKernel {
         )
         .toList(growable: false);
     final taskTotal = tasks?.length ?? 0;
-    final taskSuccess = tasks
-        ?.where((entry) => entry.outcome == 'success')
-        .length ?? 0;
+    final taskSuccess =
+        tasks?.where((entry) => entry.outcome == 'success').length ?? 0;
     final taskSuccessRate = taskTotal == 0 ? -1.0 : taskSuccess / taskTotal;
 
     final guidelines = _evolution?.guidelines;
     final proposals7d = guidelines == null
         ? 0.0
-        : [
-                ...guidelines.pending,
-                ...guidelines.active,
-                ...guidelines.archived,
-              ]
+        : [...guidelines.pending, ...guidelines.active, ...guidelines.archived]
               .where((item) => item.createdAt.isAfter(now.subtract(window)))
               .length
               .toDouble();
 
-    final backlog = (_evolution?.guidelines.pending.length ?? 0) +
+    final backlog =
+        (_evolution?.guidelines.pending.length ?? 0) +
         _learning.policy.proposals.length;
 
     return (
@@ -1111,6 +1100,7 @@ class AssistantKernel {
   /// 三维回归基线，空闲超半小时再压唤醒。
   void decayOnce() {
     _housekeeping();
+    unawaited(_refreshEnvironmentOutfit());
     _emotion.decayTick();
     if (_clock().difference(_lastActivityAt) > const Duration(minutes: 30)) {
       _emotion.applyIdleFatigue();
@@ -1261,8 +1251,11 @@ class AssistantKernel {
     final next = appearance.value.copyWith(frozen: frozen);
     // 冻结不是一次外观变化：不写历史、不动修订号，避免污染回滚链。
     final result = _appearanceStore.save(next, recordHistory: false);
-    if (result is Success<void>) appearance.value = next;
-    _appearanceReason = frozen ? '已冻结：自动演化暂停' : '已解冻：下次推演恢复';
+    if (result is Success<void>) {
+      appearance.value = next;
+      _appearanceReason = frozen ? '已冻结：自动换装与推演暂停' : '已解冻：自动换装与推演恢复';
+      if (!frozen) unawaited(_refreshEnvironmentOutfit());
+    }
     return result;
   }
 
@@ -1318,10 +1311,7 @@ class AssistantKernel {
   /// 落 PNG 到档案目录并在气泡里报告路径（用户能立刻找到图）。
   Future<Result<String>> generateMemento() async {
     if (!mementoEligible.value) {
-      return const Failure(
-        'memento.not-eligible',
-        '尚未晋升新形态，暂无纪念头像可生成',
-      );
+      return const Failure('memento.not-eligible', '尚未晋升新形态，暂无纪念头像可生成');
     }
     final now = _clock();
     final month = mementoMonthKey(now);
@@ -1371,6 +1361,7 @@ class AssistantKernel {
   }
 
   void dispose() {
+    _disposed = true;
     _decayTimer?.cancel();
     _careTimer?.cancel();
     // 退出前兜一次亲密度快照：正常退出不靠日终那条路。
@@ -1380,7 +1371,6 @@ class AssistantKernel {
     appearance.dispose();
     mementoEligible.dispose();
     trendSuggestion.dispose();
-    weatherSuggestion.dispose();
   }
 
   /// 状态机同步 + 换态时的被动表达（纯动画，不说话、不耗预算）。

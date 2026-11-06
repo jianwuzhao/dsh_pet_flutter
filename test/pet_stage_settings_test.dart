@@ -12,7 +12,6 @@ import 'package:dsh_pet_flutter/features/settings/sections/evolution_section.dar
 import 'package:dsh_pet_flutter/learning/guideline_store.dart';
 import 'package:dsh_pet_flutter/persona/appearance/appearance_state.dart';
 import 'package:dsh_pet_flutter/persona/appearance/trend_outfit.dart';
-import 'package:dsh_pet_flutter/persona/appearance/weather_outfit.dart';
 import 'package:dsh_pet_flutter/persona/profile_store.dart';
 import 'package:dsh_pet_flutter/platform/pet_platform.dart';
 import 'package:flutter/material.dart';
@@ -124,17 +123,9 @@ void main() {
     controller.dispose();
   });
 
-  testWidgets('P2-3 天气装扮：开关与建议卡片的两路回调', (tester) async {
-    final suggestion = ValueNotifier<WeatherOutfitSuggestion?>(
-      WeatherOutfitSuggestion(
-        outfit: 'rain',
-        reason: '今日有雨，建议换上雨具装扮？',
-        suggestedAt: DateTime(2026, 1, 1, 12),
-      ),
-    );
-    addTearDown(suggestion.dispose);
-    var accepted = 0;
-    var dismissed = 0;
+  testWidgets('天气开关与当前装扮实时显示', (tester) async {
+    final updates = ValueNotifier(const AppearanceState());
+    addTearDown(updates.dispose);
     final sources = <AppearanceWeatherSource>[];
 
     await tester.pumpWidget(
@@ -149,32 +140,66 @@ void main() {
             onRollback: () {},
             onFreeze: (_) {},
             weatherSource: AppearanceWeatherSource.builtin,
-            weatherSuggestion: suggestion,
+            appearanceUpdates: updates,
             onWeatherSourceChanged: sources.add,
-            onAcceptWeatherOutfit: () => accepted++,
-            onDismissWeatherOutfit: () => dismissed++,
           ),
         ),
       ),
     );
 
-    // 开着 + 有建议：开关常驻，卡片带理由与两路按钮。
-    expect(find.text('天气装扮'), findsOneWidget);
-    expect(find.text('今日有雨，建议换上雨具装扮？'), findsOneWidget);
-
-    await tester.tap(find.text('穿上'));
-    expect(accepted, 1);
-    await tester.tap(find.text('忽略'));
-    expect(dismissed, 1);
-
-    // 建议清空：卡片随 ValueListenable 消失。
-    suggestion.value = null;
+    expect(find.text('居家 · 默认'), findsOneWidget);
+    updates.value = updates.value.copyWith(
+      outfit: 'rain',
+      outfitSource: AppearanceOutfitSource.weather,
+    );
     await tester.pump();
-    expect(find.text('今日有雨，建议换上雨具装扮？'), findsNothing);
+    expect(find.text('雨 · 天气'), findsOneWidget);
 
-    // 开关关掉：回传 off（内核据此落盘并停止观察）。
     await tester.tap(find.text('天气装扮'));
     expect(sources, [AppearanceWeatherSource.off]);
+  });
+
+  testWidgets('服装选择独立于动作，预览使用真实桌宠且展示经典素材状态', (tester) async {
+    final updates = ValueNotifier(const AppearanceState(frozen: true));
+    addTearDown(updates.dispose);
+    final choices = <String?>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: AppearanceSection(
+              state: updates.value,
+              appearanceUpdates: updates,
+              petPreview: const Text('实时桌宠预览'),
+              reason: '',
+              hint: '',
+              onEvolve: null,
+              onRollback: null,
+              onFreeze: null,
+              onOutfitChanged: (outfit) {
+                choices.add(outfit);
+                updates.value = updates.value.copyWith(
+                  outfit: outfit ?? 'winter',
+                  outfitSource: outfit == null
+                      ? AppearanceOutfitSource.seasonal
+                      : AppearanceOutfitSource.user,
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.text('实时桌宠预览'), findsOneWidget);
+    expect(find.byType(AppearancePreview), findsNothing);
+    await tester.tap(find.text('雨天主题'));
+    await tester.pump();
+    expect(find.text('雨 · 手选'), findsOneWidget);
+    expect(find.text('当前播放：经典素材包 · 原装角色。换装需要对应的独立动画素材包。'), findsOneWidget);
+    await tester.tap(find.text('自动'));
+    await tester.pump();
+    expect(choices, ['rain', null]);
+    expect(find.text('当前播放：经典素材包 · 原装角色。换装需要对应的独立动画素材包。'), findsOneWidget);
   });
 
   testWidgets('P2-3b 热门趋势装扮：开关与提案卡片的两路回调', (tester) async {

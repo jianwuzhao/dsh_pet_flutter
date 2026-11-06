@@ -4,6 +4,7 @@
 /// 主动关心流用可推进的假时钟完整走 worried → 预算 → 表达 → 记账。
 library;
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:dsh_pet_flutter/ai/embedding_provider.dart';
@@ -92,8 +93,9 @@ class _ReplyProvider implements LlmProvider {
   @override
   Future<Result<LlmReply>> chat(LlmRequest request) async {
     systems.add(request.system);
-    final body =
-        request.system.contains('措辞优化助手') ? (rewriteReply ?? reply) : reply;
+    final body = request.system.contains('措辞优化助手')
+        ? (rewriteReply ?? reply)
+        : reply;
     return Success(LlmReply(content: body));
   }
 
@@ -536,18 +538,57 @@ void main() {
   });
 
   group('天气装扮（P2-3）', () {
+    test('手选服装跨日期保持，恢复自动后重新应用季节', () async {
+      final kernel = buildKernel()..start();
+      expect(kernel.setManualOutfit('rain'), isA<Success<void>>());
+      now = DateTime(2026, 6, 4, 12);
+      kernel.decayOnce();
+      expect(kernel.appearanceState.outfit, 'rain');
+      expect(kernel.appearanceState.outfitSource, AppearanceOutfitSource.user);
+      expect(kernel.setManualOutfit('missing'), isA<Failure<void>>());
+      expect(kernel.appearanceState.outfit, 'rain');
+      final restored = buildKernel()..start();
+      expect(restored.appearanceState.outfit, 'rain');
+      expect(
+        restored.appearanceState.outfitSource,
+        AppearanceOutfitSource.user,
+      );
+      expect(kernel.setManualOutfit(null), isA<Success<void>>());
+      expect(kernel.appearanceState.outfit, 'summer');
+    });
+
+    test('进行中的天气请求不能覆盖手选服装', () async {
+      final response = Completer<http.Response>();
+      final kernel = buildKernel(
+        weatherOutfit: WeatherOutfitService(
+          client: MockClient((_) => response.future),
+          clock: () => now,
+        ),
+      )..start();
+      kernel.setWeatherSource(AppearanceWeatherSource.builtin);
+      await pumpEventQueue();
+      kernel.setManualOutfit('home');
+      response.complete(
+        http.Response('{"current_condition":[{"weatherCode":"293"}]}', 200),
+      );
+      await pumpEventQueue();
+      expect(kernel.appearanceState.outfit, 'home');
+      expect(kernel.appearanceState.outfitSource, AppearanceOutfitSource.user);
+      kernel.setManualOutfit(null);
+      await pumpEventQueue();
+      expect(kernel.appearanceState.outfit, 'rain');
+    });
+
     // 1/1 是冬：启动后已穿 winter，天气 rain 才值得建议。
     WeatherOutfitService rainyService() => WeatherOutfitService(
       client: MockClient(
-        (_) async => http.Response(
-          '{"current_condition":[{"weatherCode":"293"}]}',
-          200,
-        ),
+        (_) async =>
+            http.Response('{"current_condition":[{"weatherCode":"293"}]}', 200),
       ),
       clock: () => now,
     );
 
-    test('开关默认关：启动后不发任何天气请求', () async {
+    test('默认关闭天气查询，跨季时自动换上应季装扮', () async {
       var requests = 0;
       final kernel = buildKernel(
         weatherOutfit: WeatherOutfitService(
@@ -560,56 +601,44 @@ void main() {
       )..start();
       await pumpEventQueue();
 
-      expect(
-        kernel.appearanceState.weatherSource,
-        AppearanceWeatherSource.off,
-      );
+      expect(kernel.appearanceState.weatherSource, AppearanceWeatherSource.off);
+      expect(kernel.appearanceState.outfit, 'winter');
+      now = DateTime(2026, 2, 4, 12);
+      kernel.decayOnce();
+      expect(kernel.appearanceState.outfit, 'spring');
       expect(requests, 0);
-      expect(kernel.weatherSuggestion.value, isNull);
     });
 
-    test('开启后给出建议；确认才换装（source=weather）', () async {
+    test('开启后按天气自动换装，关闭后恢复季节装扮', () async {
       final kernel = buildKernel(weatherOutfit: rainyService())..start();
-      await pumpEventQueue();
-      // 开关关着：观察与建议都不存在。
-      expect(kernel.weatherSuggestion.value, isNull);
+      expect(kernel.appearanceState.outfit, 'winter');
 
       expect(
         kernel.setWeatherSource(AppearanceWeatherSource.builtin),
         isA<Success<void>>(),
       );
       await pumpEventQueue();
-      final suggestion = kernel.weatherSuggestion.value;
-      expect(suggestion?.outfit, 'rain');
-      expect(suggestion?.reason, contains('有雨'));
-      // 建议只是提案：形象还没换。
-      expect(kernel.appearanceState.outfit, 'winter');
-
-      kernel.acceptWeatherOutfit();
       expect(kernel.appearanceState.outfit, 'rain');
       expect(
         kernel.appearanceState.outfitSource,
         AppearanceOutfitSource.weather,
       );
-      expect(kernel.weatherSuggestion.value, isNull);
-      expect(host.bubbles.single, '换好了，这身应景吧');
+
+      kernel.setWeatherSource(AppearanceWeatherSource.off);
+      expect(kernel.appearanceState.outfit, 'winter');
+      expect(kernel.appearanceState.revision, 0);
     });
 
-    test('忽略后当日不再提；开关切换不动修订号（装饰轨道）', () async {
+    test('冻结时天气不换装，解冻后自动刷新', () async {
       final kernel = buildKernel(weatherOutfit: rainyService())..start();
-      await pumpEventQueue();
+      kernel.setAppearanceFrozen(true);
       kernel.setWeatherSource(AppearanceWeatherSource.builtin);
       await pumpEventQueue();
-      expect(kernel.weatherSuggestion.value, isNotNull);
+      expect(kernel.appearanceState.outfit, 'winter');
 
-      kernel.dismissWeatherOutfit();
-      // 同日关→开重新触发观察：日键命中「今日已忽略」，不再建议。
-      kernel.setWeatherSource(AppearanceWeatherSource.off);
-      kernel.setWeatherSource(AppearanceWeatherSource.builtin);
+      kernel.setAppearanceFrozen(false);
       await pumpEventQueue();
-      expect(kernel.weatherSuggestion.value, isNull);
-      // 全周期修订号不动：换装不占版本历史额度。
-      expect(kernel.appearanceState.revision, 0);
+      expect(kernel.appearanceState.outfit, 'rain');
     });
   });
 
@@ -620,9 +649,8 @@ void main() {
       '"reason":"暖色围巾呼应初冬氛围"}',
     );
 
-    TrendOutfitStore gateStore() => TrendOutfitStore(
-      directory: Directory('${tmpDir.path}/profile'),
-    );
+    TrendOutfitStore gateStore() =>
+        TrendOutfitStore(directory: Directory('${tmpDir.path}/profile'));
 
     test('默认关：开启前零 LLM 调用', () async {
       final provider = trendProvider();
@@ -648,10 +676,7 @@ void main() {
 
       kernel.acceptTrendOutfit();
       expect(kernel.appearanceState.outfit, 'trend-冬日暖阳');
-      expect(
-        kernel.appearanceState.outfitSource,
-        AppearanceOutfitSource.trend,
-      );
+      expect(kernel.appearanceState.outfitSource, AppearanceOutfitSource.trend);
       expect(kernel.trendSuggestion.value, isNull);
       expect(host.bubbles.single, contains('冬日暖阳'));
       // 换装不动修订号（装饰轨道不占版本历史额度）。
@@ -703,8 +728,7 @@ void main() {
     });
 
     test('LLM 坏输出不烧周额度；拒绝落 7 天冷却', () async {
-      final kernel =
-          buildKernel(provider: _ReplyProvider('这不是 JSON'))..start();
+      final kernel = buildKernel(provider: _ReplyProvider('这不是 JSON'))..start();
       await pumpEventQueue();
       kernel.setTrendSource(AppearanceTrendSource.builtin);
       await pumpEventQueue();
@@ -751,9 +775,9 @@ void main() {
       final result = await kernel.generateMemento();
       expect(result, isA<Failure<String>>());
       expect(
-        Directory('${tmpDir.path}/profile')
-            .listSync()
-            .where((it) => it.path.contains('memento')),
+        Directory(
+          '${tmpDir.path}/profile',
+        ).listSync().where((it) => it.path.contains('memento')),
         isEmpty,
       );
     });
@@ -764,7 +788,9 @@ void main() {
 
       final result = await kernel.generateMemento();
       expect(result, isA<Success<String>>());
-      final png = File('${tmpDir.path}/profile/memento_${mementoMonthKey(now)}.png');
+      final png = File(
+        '${tmpDir.path}/profile/memento_${mementoMonthKey(now)}.png',
+      );
       expect(png.existsSync(), isTrue);
       expect(png.lengthSync(), greaterThan(0));
       // PNG 魔数头：确认是真 PNG 而不是空文件。
@@ -792,10 +818,9 @@ void main() {
       expect(blocked, isA<Failure<String>>());
       expect(second.mementoEligible.value, isFalse);
       // 月内只有一个 PNG：不覆盖、不堆积。
-      final pngs = Directory('${tmpDir.path}/profile')
-          .listSync()
-          .where((it) => it.path.endsWith('.png'))
-          .toList();
+      final pngs = Directory(
+        '${tmpDir.path}/profile',
+      ).listSync().where((it) => it.path.endsWith('.png')).toList();
       expect(pngs, hasLength(1));
     });
   });
@@ -1086,12 +1111,7 @@ void main() {
         directory: Directory('${tmpDir.path}/learning'),
       )..load();
       guidelines.propose(
-        Guideline(
-          id: 'g1',
-          title: '风格',
-          content: '原文措辞',
-          createdAt: now,
-        ),
+        Guideline(id: 'g1', title: '风格', content: '原文措辞', createdAt: now),
       );
       guidelines.accept('g1');
       // 注入 5 次 + 1 次采纳：接受率 100%，还谈不上低效。
@@ -1134,12 +1154,7 @@ void main() {
         directory: Directory('${tmpDir.path}/learning'),
       )..load();
       guidelines.propose(
-        Guideline(
-          id: 'g1',
-          title: '风格',
-          content: '原文措辞',
-          createdAt: now,
-        ),
+        Guideline(id: 'g1', title: '风格', content: '原文措辞', createdAt: now),
       );
       guidelines.accept('g1');
       for (var i = 0; i < 3; i++) {
@@ -1152,10 +1167,7 @@ void main() {
         ..start();
       kernel.rejectReply(correction: '太啰嗦了');
       await pumpEventQueue();
-      expect(
-        provider.systems.where((s) => s.contains('措辞优化助手')),
-        isEmpty,
-      );
+      expect(provider.systems.where((s) => s.contains('措辞优化助手')), isEmpty);
       kernel.dispose();
     });
   });

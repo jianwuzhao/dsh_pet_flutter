@@ -1,7 +1,6 @@
-/// 形象分区：参数化预览 + 推演 / 回滚 / 冻结。
+/// 形象分区：真实桌宠预览、服装选择与推演 / 回滚 / 冻结。
 ///
-/// 预览是程序化绘制（不依赖外部图像生成）：形态、体型缩放、配色、配饰、
-/// 表情集直接映射到画布参数，用来验证「推演结果真的看得见」。
+/// 宿主提供与本体共用的实时预览；独立使用时回退到概念预览。
 library;
 
 import 'dart:math' as math;
@@ -12,7 +11,7 @@ import 'package:flutter/material.dart';
 import '../../../persona/appearance/appearance_proposal.dart';
 import '../../../persona/appearance/appearance_state.dart';
 import '../../../persona/appearance/trend_outfit.dart';
-import '../../../persona/appearance/weather_outfit.dart';
+import '../../../persona/appearance/outfit_policy.dart';
 import '../../pet/render/face.dart';
 import 'settings_controls.dart';
 
@@ -29,10 +28,10 @@ class AppearanceSection extends StatelessWidget {
     this.onAcceptProposal,
     this.onRejectProposal,
     this.weatherSource = AppearanceWeatherSource.off,
-    this.weatherSuggestion,
+    this.appearanceUpdates,
+    this.petPreview,
     this.onWeatherSourceChanged,
-    this.onAcceptWeatherOutfit,
-    this.onDismissWeatherOutfit,
+    this.onOutfitChanged,
     this.trendSource = AppearanceTrendSource.off,
     this.trendSuggestion,
     this.onTrendSourceChanged,
@@ -62,12 +61,11 @@ class AppearanceSection extends StatelessWidget {
   /// 天气装扮源（P2-3）：默认 off，开启后内核才允许发天气请求。
   final AppearanceWeatherSource weatherSource;
 
-  /// 当日换装建议；只在当天有效（内核不持久化），null = 不渲染建议卡片。
-  final ValueListenable<WeatherOutfitSuggestion?>? weatherSuggestion;
+  final ValueListenable<AppearanceState>? appearanceUpdates;
+  final Widget? petPreview;
+  final ValueChanged<String?>? onOutfitChanged;
 
   final ValueChanged<AppearanceWeatherSource>? onWeatherSourceChanged;
-  final VoidCallback? onAcceptWeatherOutfit;
-  final VoidCallback? onDismissWeatherOutfit;
 
   /// 热门趋势装扮源（P2-3b）：默认 off，开启后每周至多 1 次 LLM 提案。
   final AppearanceTrendSource trendSource;
@@ -95,13 +93,13 @@ class AppearanceSection extends StatelessWidget {
           children: [
             Container(
               width: 168,
-              height: 118,
+              height: petPreview == null ? 118 : 166,
               decoration: BoxDecoration(
                 color: const Color(0x14FFFFFF),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(color: const Color(0x1FFFFFFF)),
               ),
-              child: AppearancePreview(state: state),
+              child: petPreview ?? AppearancePreview(state: state),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -169,62 +167,24 @@ class AppearanceSection extends StatelessWidget {
             ),
           ),
         ],
-        // 天气装扮（P2-3）：提案制——先建议、你确认才换，不自动改形象。
+        const SizedBox(height: 8),
+        if (appearanceUpdates case final updates?)
+          ValueListenableBuilder<AppearanceState>(
+            valueListenable: updates,
+            builder: (context, appearance, _) => _outfitStatus(appearance),
+          )
+        else
+          _outfitStatus(state),
         if (onWeatherSourceChanged != null)
           SettingsSwitch(
             title: '天气装扮',
-            subtitle: '开启后每天最多 2 次免费天气查询，换装建议由你确认',
+            subtitle: '按网络所在地天气自动换装，每天最多查询两次。节令装扮优先，冻结时暂停。',
             value: weatherSource != AppearanceWeatherSource.off,
             onChanged: (value) => onWeatherSourceChanged!(
               value
                   ? AppearanceWeatherSource.builtin
                   : AppearanceWeatherSource.off,
             ),
-          ),
-        if (weatherSuggestion != null)
-          ValueListenableBuilder<WeatherOutfitSuggestion?>(
-            valueListenable: weatherSuggestion!,
-            builder: (context, suggestion, _) {
-              if (suggestion == null) return const SizedBox.shrink();
-              return Padding(
-                padding: const EdgeInsets.only(top: 6),
-                child: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0x14FFB74D),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: const Color(0x33FFB74D)),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        suggestion.reason,
-                        style: const TextStyle(
-                          color: Color(0xE6FFB74D),
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Row(
-                        children: [
-                          OutlinedButton(
-                            onPressed: onAcceptWeatherOutfit,
-                            child: const Text('穿上'),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton(
-                            onPressed: onDismissWeatherOutfit,
-                            child: const Text('忽略'),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
           ),
         // 热门趋势装扮（P2-3b）：同为提案制，但频控更严（每周 1 次、拒绝冷却 7 天）。
         if (onTrendSourceChanged != null)
@@ -389,14 +349,56 @@ class AppearanceSection extends StatelessWidget {
         const Text(
           '推演只由情绪三维、人格主动性与 24 小时内的接受/拒绝反馈驱动：'
           '至少间隔 12 小时、一次只改一个维度、信号不足就不动；'
-          '配色、体型、动作组、配饰与表情集都会作用到宠物本体；'
-          '形态（form）目前只影响预览/头像，不改变动画素材；'
+          '体型与动作组作用到桌宠；配色、配饰与形态目前只用于概念预览/头像，保持本体原色；'
           '形态提案由你决定是否接受；每一次变化都会写进历史并可回滚，冻结后完全暂停。',
           style: TextStyle(color: Color(0x66FFFFFF), fontSize: 10.5),
         ),
       ],
     );
   }
+
+  Widget _outfitStatus(AppearanceState appearance) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      _param(
+        '当前装扮',
+        '${outfitLabel(appearance.outfit)} · ${switch (appearance.outfitSource) {
+          AppearanceOutfitSource.builtin => '默认',
+          AppearanceOutfitSource.seasonal => '四季',
+          AppearanceOutfitSource.festive => '节令',
+          AppearanceOutfitSource.weather => '天气',
+          AppearanceOutfitSource.trend => '趋势',
+          AppearanceOutfitSource.user => '手选',
+        }}',
+      ),
+      const Text(
+        '当前播放：经典素材包 · 原装角色。换装需要对应的独立动画素材包。',
+        style: TextStyle(color: Color(0xB3FFFFFF), fontSize: 11),
+      ),
+      if (onOutfitChanged != null) ...[
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          children: [
+            for (final choice in const <String?, String>{
+              null: '自动',
+              'home': '原装',
+              'rain': '雨天主题',
+            }.entries)
+              ChoiceChip(
+                label: Text(choice.value),
+                selected: choice.key == null
+                    ? appearance.outfitSource != AppearanceOutfitSource.user
+                    : appearance.outfitSource == AppearanceOutfitSource.user &&
+                          appearance.outfit == choice.key,
+                onSelected: (_) => onOutfitChanged!(choice.key),
+              ),
+          ],
+        ),
+        const SizedBox(height: 8),
+      ],
+    ],
+  );
 
   Widget _param(String label, String value) => Padding(
     padding: const EdgeInsets.only(bottom: 3),
@@ -647,7 +649,8 @@ class _AppearancePainter extends CustomPainter {
     final blushOpacity = face.blushOpacity.clamp(0.0, 1.0);
     if (blushOpacity > 0.05) {
       // 腮红：透明度映射害羞程度。
-      final blush = Paint()..color = Color.fromRGBO(255, 123, 138, blushOpacity);
+      final blush = Paint()
+        ..color = Color.fromRGBO(255, 123, 138, blushOpacity);
       canvas.drawCircle(
         Offset(cx + bodyW * 0.1, cy + bodyH * 0.09),
         4.2,

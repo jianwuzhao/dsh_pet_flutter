@@ -89,6 +89,12 @@ class AppearanceStore {
     final restored = target.copyWith(
       revision: current.revision + 1,
       updatedAtMs: DateTime.now().millisecondsSinceEpoch,
+      // 情境装扮与开关属于当前设置，不随人格形象历史回退。
+      outfit: current.outfit,
+      outfitSource: current.outfitSource,
+      weatherSource: current.weatherSource,
+      trendSource: current.trendSource,
+      frozen: current.frozen,
     );
     // 回滚后的版本本身成为历史末条，保证连续回滚不会拿到同一条。
     history[history.length - 1] = restored;

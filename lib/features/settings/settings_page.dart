@@ -23,7 +23,6 @@ import '../../persona/appearance/appearance_evolution.dart';
 import '../../persona/appearance/appearance_proposal.dart';
 import '../../persona/appearance/appearance_state.dart';
 import '../../persona/appearance/trend_outfit.dart';
-import '../../persona/appearance/weather_outfit.dart';
 import '../../persona/memory/memory_entry.dart';
 import '../../persona/memory/memory_store.dart';
 import '../../persona/profile_store.dart';
@@ -69,10 +68,10 @@ class SettingsPage extends StatefulWidget {
     this.onEvolveAppearance,
     this.onRollbackAppearance,
     this.onFreezeAppearance,
-    this.weatherSuggestion,
+    this.appearanceUpdates,
+    this.petPreview,
     this.onWeatherSourceChanged,
-    this.onAcceptWeatherOutfit,
-    this.onDismissWeatherOutfit,
+    this.onOutfitChanged,
     this.trendSuggestion,
     this.onTrendSourceChanged,
     this.onAcceptTrendOutfit,
@@ -111,15 +110,13 @@ class SettingsPage extends StatefulWidget {
   /// 冻结/解冻自动演化。
   final Result<void> Function(bool frozen)? onFreezeAppearance;
 
-  /// 天气装扮建议流（P2-3）：内核 ValueNotifier，设置页只读。
-  final ValueListenable<WeatherOutfitSuggestion?>? weatherSuggestion;
+  final ValueListenable<AppearanceState>? appearanceUpdates;
+  final Widget? petPreview;
+  final Result<void> Function(String? outfit)? onOutfitChanged;
 
   /// 天气装扮开关（返回落盘结果，失败时页面不翻转回显）。
   final Result<void> Function(AppearanceWeatherSource value)?
   onWeatherSourceChanged;
-
-  final VoidCallback? onAcceptWeatherOutfit;
-  final VoidCallback? onDismissWeatherOutfit;
 
   /// 热门趋势装扮提案流（P2-3b）：内核 ValueNotifier，设置页只读。
   final ValueListenable<TrendOutfitProposal?>? trendSuggestion;
@@ -740,9 +737,28 @@ class _SettingsPageState extends State<SettingsPage>
           _appearance = _appearance.copyWith(weatherSource: value);
           _appearanceHint = value == AppearanceWeatherSource.off
               ? '已关闭天气装扮'
-              : '已开启，今日天气不同会给出换装建议';
+              : '已开启自动天气换装';
         case Failure(:final reason):
           _appearanceHint = reason;
+      }
+    });
+  }
+
+  void _setOutfit(String? outfit) {
+    final result = widget.onOutfitChanged?.call(outfit);
+    setState(() {
+      if (result is Failure<void>) {
+        _appearanceHint = result.reason;
+      } else if (result is Success<void>) {
+        _appearance =
+            widget.appearanceUpdates?.value ??
+            _appearance.copyWith(
+              outfit: outfit ?? 'home',
+              outfitSource: outfit == null
+                  ? AppearanceOutfitSource.builtin
+                  : AppearanceOutfitSource.user,
+            );
+        _appearanceHint = outfit == null ? '已恢复自动换装' : '已换装，保持手选服装';
       }
     });
   }
@@ -1040,17 +1056,18 @@ class _SettingsPageState extends State<SettingsPage>
                           ? null
                           : _toggleAppearanceFrozen,
                       weatherSource: _appearance.weatherSource,
-                      weatherSuggestion: widget.weatherSuggestion,
+                      appearanceUpdates: widget.appearanceUpdates,
+                      petPreview: widget.petPreview,
+                      onOutfitChanged: widget.onOutfitChanged == null
+                          ? null
+                          : _setOutfit,
                       onWeatherSourceChanged:
                           widget.onWeatherSourceChanged == null
                           ? null
                           : _setWeatherSource,
-                      onAcceptWeatherOutfit: widget.onAcceptWeatherOutfit,
-                      onDismissWeatherOutfit: widget.onDismissWeatherOutfit,
                       trendSource: _appearance.trendSource,
                       trendSuggestion: widget.trendSuggestion,
-                      onTrendSourceChanged:
-                          widget.onTrendSourceChanged == null
+                      onTrendSourceChanged: widget.onTrendSourceChanged == null
                           ? null
                           : _setTrendSource,
                       onAcceptTrendOutfit: widget.onAcceptTrendOutfit,
