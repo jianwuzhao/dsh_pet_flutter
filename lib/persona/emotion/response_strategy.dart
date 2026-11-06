@@ -73,14 +73,12 @@ class ExpressionDecision {
   const ExpressionDecision({
     required this.animation,
     this.bubbleText,
-    this.meme,
     this.tone = '',
     this.dismissible = false,
   });
 
   final String animation;
   final String? bubbleText;
-  final String? meme;
   final String tone;
 
   /// true = 气泡带“知道了”关闭入口（目前只有主动关心使用）。

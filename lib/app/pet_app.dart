@@ -984,12 +984,10 @@ class _PetExpressionHost extends ExpressionHost {
   @override
   void showBubble(
     String text, {
-    String? meme,
     bool dismissible = false,
     VoidCallback? onTap,
   }) => _controller.showBubble(
     text,
-    meme: meme,
     dismissible: dismissible,
     onTap: onTap,
   );

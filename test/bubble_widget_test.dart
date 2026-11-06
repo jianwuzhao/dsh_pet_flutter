@@ -50,9 +50,7 @@ void main() {
     expect(find.byIcon(Icons.close), findsNothing);
   });
 
-  testWidgets('P2-4 参数化表情配图：expression 优先于 meme，四态可切换', (
-    tester,
-  ) async {
+  testWidgets('P2-4 参数化表情配图：四态可切换', (tester) async {
     CustomPaint? facePaintOf() => tester.widget<CustomPaint>(
       find.byWidgetPredicate(
         (widget) =>
@@ -67,13 +65,11 @@ void main() {
         const BubbleWidget(
           state: BubbleState(
             text: '碎碎念',
-            meme: 'assets/memes/可爱.png',
             expression: AppearanceExpressionSet.bright,
           ),
         ),
       ),
     );
-    // expression 非空：画参数化表情图，不再加载光栅 asset。
     expect(find.byType(Image), findsNothing);
     expect(
       (facePaintOf()!.painter as dynamic).face,

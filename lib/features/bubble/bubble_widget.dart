@@ -55,21 +55,8 @@ class BubbleWidget extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (state.expression != null) ...[
-            // 参数化表情配图（P2-4）：随表情集四态变化，替代随机光栅。
+            // 参数化表情配图（P2-4）：随表情集四态变化。
             _FaceImage(expression: state.expression!),
-            const SizedBox(height: 8),
-          ] else if (state.meme != null) ...[
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Image.asset(
-                state.meme!,
-                width: 180,
-                height: 180,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stack) =>
-                    const SizedBox.shrink(),
-              ),
-            ),
             const SizedBox(height: 8),
           ],
           Text(
@@ -190,7 +177,7 @@ class _ActionButton extends StatelessWidget {
   );
 }
 
-/// 参数化表情图：与光栅 meme 同尺寸（180×180），带与光栅一致的圆角。
+/// 参数化表情图：180×180，与气泡文案区间距一致。
 class _FaceImage extends StatelessWidget {
   const _FaceImage({required this.expression});
 

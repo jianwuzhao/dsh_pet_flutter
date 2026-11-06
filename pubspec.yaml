@@ -32,10 +32,3 @@ flutter:
     - assets/animations/
     # 形象变体素材包（子目录每个包需另加一行，见 tools/appearance-prompt-kit）。
     - assets/appearance/
-    - assets/memes/
-    - assets/pic/
-
-  fonts:
-    - family: ShangShouRuanTang
-      fonts:
-        - asset: assets/fonts/上首软糖体.ttf

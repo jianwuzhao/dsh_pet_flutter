@@ -1,4 +1,4 @@
-/// 表达编排：把决策落到动画 + 气泡 + 表情包；TTS 留桩（ASR/TTS 暂缓）。
+/// 表达编排：把决策落到动画 + 气泡 + 参数化表情；TTS 留桩（ASR/TTS 暂缓）。
 ///
 /// 不依赖 features 层：宿主能力以 [ExpressionHost] 抽象注入，
 /// PetController 的适配在装配层完成。
@@ -18,7 +18,6 @@ abstract class ExpressionHost {
   /// [onTap] 非空时气泡带“去看看”动作入口（待确认队列触达用）。
   void showBubble(
     String text, {
-    String? meme,
     bool dismissible = false,
     VoidCallback? onTap,
   });
@@ -68,7 +67,6 @@ class ExpressionLayer {
     if (text != null && text.trim().isNotEmpty) {
       host.showBubble(
         text,
-        meme: decision.meme,
         dismissible: decision.dismissible,
       );
       tts.speak(text);
